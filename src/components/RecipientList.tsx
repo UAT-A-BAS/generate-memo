@@ -1,0 +1,90 @@
+"use client";
+
+import { Plus, Trash2 } from "lucide-react";
+import type { Recipient } from "@/types/memo";
+import { createRecipient } from "@/templates/bcaMemoTemplate";
+import { DragDropList } from "./DragDropList";
+
+type RecipientListProps = {
+  recipients: Recipient[];
+  onChange: (recipients: Recipient[]) => void;
+  minRows?: number;
+};
+
+const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
+
+export function RecipientList({ recipients, onChange, minRows = 1 }: RecipientListProps) {
+  function updateRecipient(id: string, patch: Partial<Recipient>) {
+    onChange(recipients.map((recipient) => (recipient.id === id ? { ...recipient, ...patch } : recipient)));
+  }
+
+  function removeRecipient(id: string) {
+    const next = recipients.filter((recipient) => recipient.id !== id);
+    onChange(next.length >= minRows ? next : [createRecipient()]);
+  }
+
+  return (
+    <div className="grid gap-3">
+      <DragDropList
+        items={recipients}
+        onReorder={onChange}
+        itemLabel={(recipient, index) => recipient.name || recipient.position || `penerima ${index + 1}`}
+        renderItem={(recipient) => (
+          <div className="grid gap-3">
+            <div className="grid items-end gap-3 md:grid-cols-[minmax(220px,1.1fr)_110px_minmax(220px,1fr)_40px]">
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Jabatan / Unit
+                <input
+                  value={recipient.position}
+                  onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
+                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Sapaan
+                <select
+                  value={recipient.gender}
+                  onChange={(event) =>
+                    updateRecipient(recipient.id, {
+                      gender: event.target.value as Recipient["gender"],
+                    })
+                  }
+                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                >
+                  {genderOptions.map((option) => (
+                    <option key={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Nama opsional
+                <input
+                  value={recipient.name ?? ""}
+                  onChange={(event) => updateRecipient(recipient.id, { name: event.target.value })}
+                  placeholder="Nama penerima"
+                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => removeRecipient(recipient.id)}
+                className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                aria-label="Hapus penerima"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+      />
+      <button
+        type="button"
+        onClick={() => onChange([...recipients, createRecipient()])}
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+      >
+        <Plus size={16} />
+        Tambah baris
+      </button>
+    </div>
+  );
+}
