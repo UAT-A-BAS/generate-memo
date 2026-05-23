@@ -3,7 +3,7 @@ import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
-import { richTextToHtml } from "@/utils/richText";
+import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
 import { HeaderFooterRenderer } from "./HeaderFooterRenderer";
 import { PageContainer } from "./PageContainer";
 
@@ -23,6 +23,13 @@ function scheduleTitle(draft: MemoDraft) {
 function initialsText(draft: MemoDraft) {
   const suffix = `/uat-${draft.initialsBureau.toLowerCase()}`;
   return draft.initials ? `${draft.initials}${suffix}` : suffix;
+}
+
+function referenceItems(draft: MemoDraft) {
+  return richTextToPlainText(draft.reference)
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function PreviewSection({
@@ -134,9 +141,17 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
         </PreviewSection>
       );
     case "reference":
+      const items = referenceItems(draft);
       return (
         <PreviewSection title="Referensi">
-          <RichTextView html={richTextToHtml(draft.reference)} />
+          <p>Memorandum ini mengacu pada.</p>
+          {items.length ? (
+            <ul className="mt-1 list-disc pl-5">
+              {items.map((item, index) => (
+                <li key={`${item}-${index}`}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
         </PreviewSection>
       );
     case "pilot-schedule":
@@ -384,7 +399,7 @@ export function MemoPreview({ draft }: { draft: MemoDraft }) {
   const pages = paginateMemoDraft(draft);
 
   return (
-    <div className="grid gap-8 py-6">
+    <div className="grid gap-5 py-4">
       {pages.map((page, index) => (
         <div key={page.id} className="origin-top">
           <PageContainer orientation={page.orientation}>

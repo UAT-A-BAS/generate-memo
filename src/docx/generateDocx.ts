@@ -31,6 +31,7 @@ import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination/paginate";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import { richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
 
 const VALIDATION_BOOKMARK = "Validasi_Dokumen";
@@ -72,6 +73,13 @@ function scheduleTitle(draft: MemoDraft) {
 function initialsText(draft: MemoDraft) {
   const suffix = `/uat-${draft.initialsBureau.toLowerCase()}`;
   return draft.initials ? `${draft.initials}${suffix}` : suffix;
+}
+
+function referenceItems(draft: MemoDraft) {
+  return richTextToPlainText(draft.reference)
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function run(
@@ -407,8 +415,12 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
         ]),
       ];
     case "reference":
+      const items = referenceItems(draft);
       return [
-        previewSection("Referensi", richTextToDocxParagraphs(draft.reference, { size: 22 })),
+        previewSection("Referensi", [
+          paragraph("Memorandum ini mengacu pada.", { size: 22 }),
+          ...items.map((item) => paragraph(`\u2022 ${item}`, { size: 22 })),
+        ]),
       ];
     case "pilot-schedule":
       return [

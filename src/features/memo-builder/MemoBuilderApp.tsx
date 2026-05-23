@@ -25,6 +25,8 @@ import { DragDropList } from "@/components/DragDropList";
 import { RecipientList } from "@/components/RecipientList";
 import { SectionTitle } from "@/components/SectionTitle";
 import { RichTextEditor } from "@/editor/RichTextEditor";
+import { paragraphRichText } from "@/types/richText";
+import { richTextToPlainText } from "@/utils/richText";
 import {
   createActivityRow,
   createContactRow,
@@ -388,11 +390,24 @@ function ReferencePanel({
           Tampilkan Referensi
         </label>
         {draft.referenceEnabled ? (
-          <RichTextEditor
-            value={draft.reference}
-            minHeight={120}
-            onChange={(reference) => updateDraft((current) => ({ ...current, reference }))}
-          />
+          <div className="grid gap-3">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+              Memorandum ini mengacu pada.
+            </div>
+            <FieldLabel label="Daftar Referensi">
+              <textarea
+                value={richTextToPlainText(draft.reference)}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    reference: paragraphRichText(event.target.value),
+                  }))
+                }
+                rows={5}
+                className="min-h-28 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              />
+            </FieldLabel>
+          </div>
         ) : null}
       </div>
     </Panel>
@@ -720,9 +735,9 @@ export function MemoBuilderApp() {
         </div>
       </header>
 
-      <div ref={splitRef} className="flex w-full gap-0 px-10 py-8">
+      <div ref={splitRef} className="flex w-full gap-0 px-6 py-5">
         <div
-          className="grid min-w-0 content-start gap-5 pr-3"
+          className="grid min-w-0 content-start gap-4 pr-2"
           style={{ width: `calc(${editorWidth}% - 8px)` }}
         >
           <Panel>
@@ -922,7 +937,7 @@ export function MemoBuilderApp() {
           style={{ width: `calc(${100 - editorWidth}% - 8px)` }}
         >
           <div className="max-h-[calc(100dvh-112px)] overflow-auto">
-            <div className="flex items-center justify-between border-b border-[#d8e2ec] bg-white px-8 py-5">
+            <div className="flex items-center justify-between border-b border-[#d8e2ec] bg-white px-5 py-3">
               <div>
                 <h2 className="text-sm font-bold text-[#0f2d4a]">Preview</h2>
               </div>
@@ -931,7 +946,7 @@ export function MemoBuilderApp() {
                 {pages.length} pages
               </span>
             </div>
-            <div className="min-w-[1180px]">
+            <div className="min-w-[1144px]">
               <MemoPreview draft={draft} />
             </div>
           </div>
