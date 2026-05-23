@@ -311,30 +311,44 @@ function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) 
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
-  const bodyRows = rows.flatMap((block, index) => {
-    const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate);
-    const previous = rows[index - 1];
-    const previousDate = previous ? formatDateRangeID(previous.row.startDate, previous.row.endDate) : "";
+  const bodyRows = rows.flatMap((block) => {
     const dateRows =
-      dateLabel !== "-" && dateLabel !== previousDate
+      block.meta.showDate
         ? [
             new TableRow({
-              children: [spanningCell([paragraph(dateLabel, { bold: true, size: 17 })], 4, true)],
+              children: [spanningCell([paragraph(block.meta.dateLabel, { bold: true, size: 17 })], 4, true)],
+            }),
+          ]
+        : [];
+    const sectionRows =
+      block.meta.showSection
+        ? [
+            new TableRow({
+              children: [
+                cell([paragraph(`${block.meta.sectionLetter}.`, { bold: true, size: 17, align: AlignmentType.CENTER })], 6, true),
+                new TableCell({
+                  columnSpan: 3,
+                  verticalAlign: VerticalAlign.CENTER,
+                  margins: { top: 70, bottom: 70, left: 90, right: 90 },
+                  shading: { fill: "D9D9D9" },
+                  width: { size: pct(94), type: WidthType.PERCENTAGE },
+                  borders: { top: border, bottom: border, left: border, right: border },
+                  children: [paragraph(block.meta.sectionTitle, { bold: true, size: 22 })],
+                }),
+              ],
             }),
           ]
         : [];
 
     return [
       ...dateRows,
+      ...sectionRows,
       new TableRow({
         children: [
-          cell([paragraph(`${block.index + 1}.`, { size: 17 })], 6),
-          cell([
-            paragraph(block.row.section, { bold: true, size: 22 }),
-            ...richTextToDocxParagraphs(block.row.scenario, { size: 22 }),
-          ], 43),
-          cell(richTextToDocxParagraphs(block.row.expectedResult, { size: 22 }), 36),
-          cell([paragraph(block.row.pic, { size: 22 })], 15),
+          cell([paragraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], 6),
+          cell(richTextToDocxParagraphs(block.row.scenario, { size: 22 }), 39),
+          cell(richTextToDocxParagraphs(block.row.expectedResult, { size: 22 }), 41),
+          cell([paragraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })], 14),
         ],
       }),
     ];
@@ -345,9 +359,9 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       tableHeader: true,
       children: [
         cell([paragraph("No", { bold: true, size: 17 })], 6, true),
-        cell([paragraph("Aktivitas", { bold: true, size: 17 })], 43, true),
-        cell([paragraph("Hasil/Keterangan", { bold: true, size: 17 })], 36, true),
-        cell([paragraph("PIC", { bold: true, size: 17 })], 15, true),
+        cell([paragraph("Aktivitas", { bold: true, size: 17, align: AlignmentType.CENTER })], 39, true),
+        cell([paragraph("Hasil/Keterangan", { bold: true, size: 17, align: AlignmentType.CENTER })], 41, true),
+        cell([paragraph("PIC", { bold: true, size: 17, align: AlignmentType.CENTER })], 14, true),
       ],
     }),
     ...bodyRows,

@@ -1,6 +1,8 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
+import BoldExtension from "@tiptap/extension-bold";
 import UnderlineExtension from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import { Bold, Italic, List, ListOrdered, Pilcrow, Underline } from "lucide-react";
@@ -13,9 +15,34 @@ type RichTextEditorProps = {
   minHeight?: number;
 };
 
+const ManualBold = BoldExtension.extend({
+  addInputRules() {
+    return [];
+  },
+  addPasteRules() {
+    return [];
+  },
+});
+
+const EnterWithoutMarks = Extension.create({
+  name: "enterWithoutMarks",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: () =>
+        this.editor.commands.first(({ commands }) => [
+          () => commands.newlineInCode(),
+          () => commands.createParagraphNear(),
+          () => commands.liftEmptyBlock(),
+          () => commands.splitBlock({ keepMarks: false }),
+        ]),
+    };
+  },
+});
+
 export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
   const editor = useEditor({
-    extensions: [StarterKit, UnderlineExtension],
+    extensions: [StarterKit.configure({ bold: false }), ManualBold, UnderlineExtension, EnterWithoutMarks],
     content: value,
     immediatelyRender: false,
     editorProps: {

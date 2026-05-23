@@ -141,25 +141,14 @@ function parseRoomInput(value: string) {
   }
 }
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
 function CollaborationModal({
   open,
   onClose,
   collaboration,
-  onExport,
 }: {
   open: boolean;
   onClose: () => void;
   collaboration: ReturnType<typeof useMemoCollaboration>;
-  onExport: () => void;
 }) {
   const [joinValue, setJoinValue] = useState("");
   const [copied, setCopied] = useState(false);
@@ -174,11 +163,13 @@ function CollaborationModal({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4">
-      <section className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-2xl">
+      <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 className="text-base font-bold text-[#0f2d4a]">Collaboration</h2>
-            <p className="text-xs text-slate-500">{collaboration.statusLabel}</p>
+            <h2 className="text-base font-bold text-[#0f2d4a]">Collab</h2>
+            <p className="text-xs text-slate-500">
+              {collaboration.active ? `Room ${collaboration.roomId}` : "Buat room atau join dari link"}
+            </p>
           </div>
           <button
             type="button"
@@ -189,8 +180,8 @@ function CollaborationModal({
             <X size={16} />
           </button>
         </div>
-        <div className="grid gap-4 px-5 py-5">
-          <div className="flex flex-wrap gap-2">
+        <div className="grid gap-5 px-5 py-5">
+          <div className="grid gap-2">
             <IconButton
               onClick={() => {
                 collaboration.start();
@@ -199,30 +190,17 @@ function CollaborationModal({
               variant="primary"
             >
               <Share2 size={16} />
-              {collaboration.active ? "Restart Collab" : "Start Collaboration"}
-            </IconButton>
-            <IconButton onClick={copyLink} disabled={!collaboration.active}>
-              <Copy size={16} />
-              {copied ? "Copied" : "Copy Share Link"}
-            </IconButton>
-            <IconButton
-              onClick={() => collaboration.leave()}
-              disabled={!collaboration.active}
-              variant="danger"
-            >
-              <X size={16} />
-              Leave
+              {collaboration.active ? "Buat Room Baru" : "Buat Room"}
             </IconButton>
           </div>
 
           <div className="grid gap-2">
-            <label className="text-xs font-medium text-slate-600" htmlFor="join-room">
-              Join collaboration by room code/link
-            </label>
+            <label className="text-xs font-medium text-slate-600" htmlFor="join-room">Join room</label>
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <input
                 id="join-room"
                 value={joinValue}
+                placeholder="Kode room atau link"
                 onChange={(event) => setJoinValue(event.target.value)}
                 className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
@@ -239,26 +217,29 @@ function CollaborationModal({
           </div>
 
           {collaboration.active ? (
-            <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-              <p>
-                Room: <span className="font-semibold text-slate-900">{collaboration.roomId}</span>
-              </p>
-              <p className="break-all">{collaboration.shareLink}</p>
+            <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+              <input
+                readOnly
+                value={collaboration.shareLink}
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-xs text-slate-700 outline-none"
+                aria-label="Share link"
+              />
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
-                  Users: {Math.max(1, collaboration.collaborators.length)}
-                </span>
-                <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
-                  Last synced: {collaboration.lastSyncedAt ?? "-"}
-                </span>
+                <IconButton onClick={copyLink}>
+                  <Copy size={16} />
+                  {copied ? "Copied" : "Copy Link"}
+                </IconButton>
+                <IconButton onClick={() => collaboration.leave()} variant="danger">
+                  <X size={16} />
+                  Leave
+                </IconButton>
               </div>
+              <p className="text-xs text-slate-500">
+                {collaboration.statusLabel} - {Math.max(1, collaboration.collaborators.length)} user -{" "}
+                {collaboration.lastSyncedAt ?? "-"}
+              </p>
             </div>
           ) : null}
-
-          <IconButton onClick={onExport} disabled={!collaboration.active}>
-            <FileJson size={16} />
-            Export collaboration data
-          </IconButton>
         </div>
       </section>
     </div>
@@ -281,32 +262,13 @@ function CollaborationStatusBar({
     <div className="flex flex-wrap items-center gap-2">
       <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
         <span className={`h-2 w-2 rounded-full ${statusColor}`} />
-        {collaboration.active ? "Live" : "Personal Draft"}
-      </span>
-      <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
-        <span className={`h-2 w-2 rounded-full ${statusColor}`} />
         {collaboration.statusLabel}
       </span>
-      <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
-        <Users size={14} />
-        Users: {collaboration.active ? Math.max(1, collaboration.collaborators.length) : 1}
-      </span>
-      <span className="inline-flex h-8 items-center rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
-        Last synced: {collaboration.lastSyncedAt ?? "-"}
-      </span>
       {collaboration.active ? (
-        <div className="flex -space-x-2 pl-1">
-          {collaboration.collaborators.slice(0, 5).map((user) => (
-            <span
-              key={user.id}
-              title={user.name}
-              className="grid h-8 w-8 place-items-center rounded-full border-2 border-white text-[10px] font-bold text-white"
-              style={{ backgroundColor: user.color }}
-            >
-              {initials(user.name)}
-            </span>
-          ))}
-        </div>
+        <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
+          <Users size={14} />
+          {Math.max(1, collaboration.collaborators.length)} user
+        </span>
       ) : null}
     </div>
   );
@@ -798,9 +760,7 @@ function AppendixPanel({
 
 export function MemoBuilderApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const splitRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [editorWidth, setEditorWidth] = useState(50);
   const [collaborationOpen, setCollaborationOpen] = useState(false);
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
@@ -829,23 +789,6 @@ export function MemoBuilderApp() {
     downloadBlob(
       new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }),
       `memo-draft-${draft.id}.json`,
-    );
-  }
-
-  function exportCollaborationData() {
-    downloadBlob(
-      new Blob([
-        JSON.stringify(
-          {
-            roomId: collaboration.roomId,
-            exportedAt: new Date().toISOString(),
-            draft,
-          },
-          null,
-          2,
-        ),
-      ], { type: "application/json" }),
-      `memo-collaboration-${collaboration.roomId || draft.id}.json`,
     );
   }
 
@@ -882,29 +825,6 @@ export function MemoBuilderApp() {
     }
   }
 
-  function startSplitDrag(event: React.PointerEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    const container = splitRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const pointerId = event.pointerId;
-    event.currentTarget.setPointerCapture(pointerId);
-
-    function handleMove(moveEvent: PointerEvent) {
-      const ratio = ((moveEvent.clientX - rect.left) / rect.width) * 100;
-      setEditorWidth(Math.min(72, Math.max(36, ratio)));
-    }
-
-    function handleUp() {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-    }
-
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-  }
-
   if (!hasLoaded) {
     return (
       <main className="grid min-h-dvh place-items-center bg-slate-100">
@@ -932,7 +852,7 @@ export function MemoBuilderApp() {
               <CollaborationStatusBar collaboration={collaboration} />
             </div>
             <p className="hidden">
-              {draft.metadata.perihal} · {pages.length} preview pages ·{" "}
+              {draft.metadata.perihal} - {pages.length} preview pages -{" "}
               {" "}
             </p>
           </div>
@@ -965,14 +885,10 @@ export function MemoBuilderApp() {
         open={collaborationOpen}
         onClose={() => setCollaborationOpen(false)}
         collaboration={collaboration}
-        onExport={exportCollaborationData}
       />
 
-      <div ref={splitRef} className="flex w-full gap-0 px-6 py-5">
-        <div
-          className="grid min-w-0 content-start gap-4 pr-2"
-          style={{ width: `calc(${editorWidth}% - 8px)` }}
-        >
+      <div className="grid w-full gap-4 px-6 py-5 xl:grid-cols-[minmax(0,40%)_minmax(0,60%)]">
+        <div className="grid min-w-0 content-start gap-4">
           <Panel>
             <SectionTitle title="Kepada" />
             <div className="mt-6">
@@ -1156,18 +1072,8 @@ export function MemoBuilderApp() {
           <AppendixPanel rows={draft.appendixScenarios} updateDraft={updateDraft} />
         </div>
 
-        <button
-          type="button"
-          onPointerDown={startSplitDrag}
-          className="sticky top-[88px] z-10 my-1 h-[calc(100dvh-112px)] w-4 cursor-col-resize rounded-full bg-transparent px-1 focus:outline-none"
-          aria-label="Atur lebar editor dan preview"
-        >
-          <span className="block h-full w-1 rounded-full bg-[#c6d3e1] transition hover:bg-[#0a67b1]" />
-        </button>
-
         <aside
           className="sticky top-[88px] max-h-[calc(100dvh-112px)] min-w-0 self-start overflow-hidden rounded-lg border border-[#d8e2ec] bg-[#edf4fb]"
-          style={{ width: `calc(${100 - editorWidth}% - 8px)` }}
         >
           <div className="max-h-[calc(100dvh-112px)] overflow-auto">
             <div className="flex items-center justify-between border-b border-[#d8e2ec] bg-white px-5 py-3">

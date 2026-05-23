@@ -321,25 +321,29 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
         <MemoTable
           key={`appendix-${index}`}
           headers={["No", "Aktivitas", "Hasil/Keterangan", "PIC"]}
-          columnWidths={["6%", "40%", "39%", "15%"]}
+          columnWidths={["6%", "39%", "41%", "14%"]}
         >
-          {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item, rowIndex, allRows) => {
-            const dateLabel = formatDateRangeID(item.row.startDate, item.row.endDate);
-            const previous = allRows[rowIndex - 1];
-            const previousDate = previous ? formatDateRangeID(previous.row.startDate, previous.row.endDate) : "";
-            const showDate = dateLabel !== "-" && dateLabel !== previousDate;
-
+          {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item) => {
             return (
               <Fragment key={item.id}>
-                {showDate ? (
+                {item.meta.showDate ? (
                   <tr className="bg-[#d9d9d9] font-bold">
-                    <td className="border border-slate-900 px-2 py-1" colSpan={4}>{dateLabel}</td>
+                    <td className="border border-slate-900 px-2 py-1" colSpan={4}>{item.meta.dateLabel}</td>
+                  </tr>
+                ) : null}
+                {item.meta.showSection ? (
+                  <tr className="bg-[#d9d9d9] font-bold">
+                    <td className="border border-slate-900 px-2 py-0.5 text-center align-top">
+                      {item.meta.sectionLetter}.
+                    </td>
+                    <td className="border border-slate-900 px-2 py-0.5 align-top" colSpan={3}>
+                      {item.meta.sectionTitle}
+                    </td>
                   </tr>
                 ) : null}
                 <tr>
-                  <td className="w-10 border border-slate-900 px-2 py-1 text-center align-top">{item.index + 1}.</td>
+                  <td className="w-10 border border-slate-900 px-2 py-1 text-center align-top">{item.meta.number}.</td>
                   <td className="border border-slate-900 px-2 py-1 align-top">
-                    <p className="font-bold">{item.row.section}</p>
                     <RichTextView html={richTextToHtml(item.row.scenario)} />
                   </td>
                   <td className="border border-slate-900 px-2 py-1 align-top">
@@ -364,14 +368,16 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
 }
 
 function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
+  const isAppendix = page.kind === "appendix";
+
   return (
     <div
-      className="absolute bottom-16 left-24 right-20"
-      style={{ top: page.continuationTitle || page.kind === "appendix" ? 96 : 64 }}
+      className={`absolute bottom-16 ${isAppendix ? "left-10 right-14" : "left-24 right-20"}`}
+      style={{ top: page.continuationTitle || isAppendix ? 88 : 64 }}
     >
       {page.continuationTitle ? (
-        <h2 className="mb-5 border-b border-slate-800 pb-3">
-          {page.kind === "appendix" ? (
+        <h2 className={isAppendix ? "mb-4" : "mb-5 border-b border-slate-800 pb-3"}>
+          {isAppendix ? (
             <>
               <strong className="text-[13.33px]">{page.continuationTitle.replace(", Sambungan", "")}</strong>
               <span className="text-[13.33px]">, Sambungan</span>

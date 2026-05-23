@@ -6,10 +6,21 @@ import type {
 } from "@/types/memo";
 import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
+import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToPlainText } from "@/utils/richText";
 
 export type PreviewOrientation = "portrait" | "landscape";
 export type PreviewKind = "main" | "appendix" | "validation";
+
+export type AppendixRowMeta = {
+  dateLabel: string;
+  showDate: boolean;
+  sectionTitle: string;
+  showSection: boolean;
+  sectionLetter: string;
+  number: number;
+  isSplitContinuation: boolean;
+};
 
 export type PreviewBlock =
   | { id: string; type: "memo-heading"; estimatedHeight: number }
@@ -24,7 +35,7 @@ export type PreviewBlock =
   | { id: string; type: "signature"; estimatedHeight: number }
   | { id: string; type: "cc"; estimatedHeight: number }
   | { id: string; type: "initials"; estimatedHeight: number }
-  | { id: string; type: "appendix-row"; estimatedHeight: number; row: ScenarioRow; index: number }
+  | { id: string; type: "appendix-row"; estimatedHeight: number; row: ScenarioRow; index: number; meta: AppendixRowMeta }
   | { id: string; type: "validation"; estimatedHeight: number };
 
 export type PreviewPage = {
@@ -145,6 +156,23 @@ function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
   });
 }
 
+function alphaIndex(index: number) {
+  let value = index + 1;
+  let result = "";
+
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
+  }
+
+  return result;
+}
+
+function sourceBlockId(id: string) {
+  return id.replace(/-part-\d+$/, "");
+}
+
 function mainBlocks(draft: MemoDraft): PreviewBlock[] {
   const blocks: PreviewBlock[] = [
     { id: "memo-heading", type: "memo-heading", estimatedHeight: 170 },
@@ -204,11 +232,27 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
 }
 
 function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
-  return draft.appendixScenarios.map((row, index) => ({
+  let previousDate = "";
+  let previousSection = "";
+  let previousSource = "";
+  let sectionIndex = -1;
+  let numberInSection = 0;
+  let currentNumber = 0;
+
+  const blocks = draft.appendixScenarios.map((row, index) => ({
     id: `appendix-${row.id}`,
     type: "appendix-row" as const,
     row,
     index,
+    meta: {
+      dateLabel: "",
+      showDate: false,
+      sectionTitle: "",
+      showSection: false,
+      sectionLetter: "",
+      number: 0,
+      isSplitContinuation: false,
+    },
     estimatedHeight: Math.max(
       54,
       textHeight(
@@ -225,7 +269,42 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
         120,
       ),
     ),
-  })).flatMap(expandLargeAppendixBlock);
+  })).flatMap(expandLargeAppendixBlock) as Extract<PreviewBlock, { type: "appendix-row" }>[];
+
+  return blocks.map((block) => {
+    const sourceId = sourceBlockId(block.id);
+    const isSplitContinuation = sourceId === previousSource;
+    const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate);
+    const sectionTitle = block.row.section.trim();
+    const showDate = !isSplitContinuation && dateLabel !== "-" && dateLabel !== previousDate;
+    const showSection = !isSplitContinuation && Boolean(sectionTitle) && sectionTitle !== previousSection;
+
+    if (!isSplitContinuation) {
+      if (showDate) previousDate = dateLabel;
+      if (showSection) {
+        sectionIndex += 1;
+        previousSection = sectionTitle;
+        numberInSection = 0;
+      }
+      numberInSection += 1;
+      currentNumber = numberInSection;
+      previousSource = sourceId;
+    }
+
+    return {
+      ...block,
+      meta: {
+        dateLabel,
+        showDate,
+        sectionTitle,
+        showSection,
+        sectionLetter: showSection ? alphaIndex(sectionIndex) : "",
+        number: currentNumber,
+        isSplitContinuation,
+      },
+      estimatedHeight: block.estimatedHeight + (showDate ? 24 : 0) + (showSection ? 26 : 0),
+    };
+  });
 }
 
 function packPages(
@@ -289,8 +368,8 @@ export function paginateMemoDraft(draft: MemoDraft): PreviewPage[] {
   const appendixPages = packPages(appendixBlocks(draft), {
     kind: "appendix",
     orientation: "landscape",
-    title: `Lampiran – Skenario ${draft.metadata.perihal}`,
-    continuationTitle: `Lampiran – Skenario ${draft.metadata.perihal}, Sambungan`,
+    title: `Lampiran - Skenario ${draft.metadata.perihal}`,
+    continuationTitle: `Lampiran - Skenario ${draft.metadata.perihal}, Sambungan`,
   });
 
   const validationPage: PreviewPage = {
