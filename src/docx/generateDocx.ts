@@ -1,14 +1,10 @@
 import {
   AlignmentType,
   BorderStyle,
-  Bookmark,
   convertInchesToTwip,
   Document,
   Footer,
   Header,
-  HorizontalPositionRelativeFrom,
-  ImageRun,
-  InternalHyperlink,
   Packer,
   PageBreak,
   PageNumber,
@@ -19,9 +15,7 @@ import {
   TableCell,
   TableRow,
   TextRun,
-  TextWrappingType,
   UnderlineType,
-  VerticalPositionRelativeFrom,
   VerticalAlign,
   WidthType,
   type FileChild,
@@ -33,8 +27,7 @@ import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
-
-const VALIDATION_BOOKMARK = "Validasi_Dokumen";
+import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
@@ -164,50 +157,10 @@ function spanningCell(children: Paragraph[], span: number, shaded = false) {
   });
 }
 
-function validationCell(children: Paragraph[], width?: number) {
-  return new TableCell({
-    margins: { top: 45, bottom: 45, left: 90, right: 90 },
-    shading: { fill: "F0F0F0" },
-    width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
-    borders: noBorder,
-    children,
-  });
-}
-
 function table(rows: TableRow[], width = 100) {
   return new Table({
     width: { size: pct(width), type: WidthType.PERCENTAGE },
     rows,
-  });
-}
-
-function validationWatermark(watermarkData: Uint8Array) {
-  return new Paragraph({
-    children: [
-      new ImageRun({
-        type: "png",
-        data: watermarkData,
-        transformation: {
-          width: 700,
-          height: 990,
-        },
-        floating: {
-          behindDocument: true,
-          allowOverlap: true,
-          horizontalPosition: {
-            relative: HorizontalPositionRelativeFrom.PAGE,
-            offset: 1280000,
-          },
-          verticalPosition: {
-            relative: VerticalPositionRelativeFrom.PAGE,
-            offset: 2050000,
-          },
-          wrap: {
-            type: TextWrappingType.NONE,
-          },
-        },
-      }),
-    ],
   });
 }
 
@@ -216,15 +169,9 @@ function header() {
     children: [
       new Paragraph({
         children: [
-          new InternalHyperlink({
-            anchor: VALIDATION_BOOKMARK,
-            children: [run("[No Memo]", { size: 22, color: "BFBFBF" })],
-          }),
+          run("[No Memo]", { size: 22, color: "BFBFBF" }),
           new TextRun({ break: 1 }),
-          new InternalHyperlink({
-            anchor: VALIDATION_BOOKMARK,
-            children: [run("[Tanggal Rilis]", { size: 22, color: "BFBFBF" })],
-          }),
+          run("[Tanggal Rilis]", { size: 22, color: "BFBFBF" }),
         ],
       }),
     ],
@@ -237,14 +184,9 @@ function footer() {
       new Paragraph({
         alignment: AlignmentType.RIGHT,
         children: [
-          new InternalHyperlink({
-            anchor: VALIDATION_BOOKMARK,
-            children: [
-              new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 22, color: "7F7F7F" }),
-              run(" / ", { size: 22, color: "7F7F7F" }),
-              new TextRun({ children: [PageNumber.TOTAL_PAGES], font: "Times New Roman", size: 22, color: "7F7F7F" }),
-            ],
-          }),
+          new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 22, color: "7F7F7F" }),
+          run(" / ", { size: 22, color: "7F7F7F" }),
+          new TextRun({ children: [PageNumber.TOTAL_PAGES], font: "Times New Roman", size: 22, color: "7F7F7F" }),
         ],
       }),
     ],
@@ -384,7 +326,7 @@ function consumeTableRows(
   return { rows, nextIndex: index };
 }
 
-function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uint8Array): FileChild[] {
+function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
   switch (block.type) {
     case "memo-heading":
       return [
@@ -483,70 +425,12 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
       ];
     case "initials":
       return [paragraph(initialsText(draft), { size: 20 })];
-    case "validation":
-      return [
-        validationWatermark(watermarkData),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 520, after: 60 },
-          children: [run("INTERNAL BCA/RAHASIA/SANGAT RAHASIA", { size: 18 })],
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 20 },
-          children: [
-            new Bookmark({
-              id: VALIDATION_BOOKMARK,
-              children: [run("Validasi Dokumen", { bold: true, size: 36, color: "1F4E79" })],
-            }),
-          ],
-        }),
-        paragraph("Dibuat oleh Document Approval", { align: AlignmentType.CENTER, size: 20 }),
-        table([
-          new TableRow({
-            children: [
-              validationCell([paragraph("Nomor Dokumen", { size: 18, color: "003B7A" })], 28),
-              validationCell([paragraph(":", { size: 18, color: "003B7A" })], 3),
-              validationCell([paragraph("[No Memo]", { size: 18, color: "003B7A" })], 69),
-            ],
-          }),
-          new TableRow({
-            children: [
-              validationCell([paragraph("Tanggal Rilis Dokumen", { size: 18, color: "003B7A" })], 28),
-              validationCell([paragraph(":", { size: 18, color: "003B7A" })], 3),
-              validationCell([paragraph("[Tanggal Rilis]", { size: 18, color: "003B7A" })], 69),
-            ],
-          }),
-          new TableRow({
-            children: [
-              validationCell([paragraph("Jumlah Lembar Dokumen", { size: 18, color: "003B7A" })], 28),
-              validationCell([paragraph(":", { size: 18, color: "003B7A" })], 3),
-              validationCell([paragraph("[Total Lembar]", { size: 18, color: "003B7A" })], 69),
-            ],
-          }),
-        ], 88),
-        paragraph("Document Approval History of", { size: 22 }),
-        paragraph(`[${draft.metadata.perihal}]`, { bold: true, size: 22 }),
-        paragraph("[Request Log]", { size: 19 }),
-        paragraph("[Approval Log]", { size: 19 }),
-        paragraph("[Release Log]", { size: 19 }),
-        paragraph("Disclaimer:", { italics: true, size: 19 }),
-        paragraph("Validasi dokumen ini dibuat oleh sistem dan didokumentasi secara otomatis di myBCA Portal yang dapat diverifikasi pada link berikut:", { italics: true, size: 19 }),
-        paragraph("https://verifikasi.bca.co.id/document/view/", { underline: true, color: "0563C1", size: 19 }),
-        paragraph("Document Details", { size: 22 }),
-        table([
-          new TableRow({ children: [new TableCell({ borders: noBorder, children: [paragraph("Ditujukan Kepada", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph(":", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph("[Kepada]", { size: 18 })] })] }),
-          new TableRow({ children: [new TableCell({ borders: noBorder, children: [paragraph("Divisi/Biro/Cabang Tujuan", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph(":", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph("[Divisi]", { size: 18 })] })] }),
-          new TableRow({ children: [new TableCell({ borders: noBorder, children: [paragraph("Tembusan", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph(":", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph("[Tembusan]", { size: 18 })] })] }),
-          new TableRow({ children: [new TableCell({ borders: noBorder, children: [paragraph("Unit Pembuat", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph(":", { size: 18 })] }), new TableCell({ borders: noBorder, children: [paragraph("[Unit Pembuat]", { size: 18 })] })] }),
-        ], 70),
-      ];
     default:
       return [];
   }
 }
 
-function pageChildren(draft: MemoDraft, page: PreviewPage, watermarkData: Uint8Array): FileChild[] {
+function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
   const children: FileChild[] = [];
 
   if (page.continuationTitle) {
@@ -614,7 +498,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage, watermarkData: Uint8A
       continue;
     }
 
-    children.push(...blockChildren(draft, block, watermarkData));
+    children.push(...blockChildren(draft, block));
     index += 1;
   }
 
@@ -645,10 +529,10 @@ function sectionProperties(orientation: PreviewOrientation) {
   };
 }
 
-function buildSection(draft: MemoDraft, pages: PreviewPage[], watermarkData: Uint8Array): ISectionOptions {
+function buildSection(draft: MemoDraft, pages: PreviewPage[]): ISectionOptions {
   const orientation = pages[0]?.orientation ?? "portrait";
   const children = pages.flatMap((page, index) => {
-    const pageContent = pageChildren(draft, page, watermarkData);
+    const pageContent = pageChildren(draft, page);
     return index < pages.length - 1
       ? [...pageContent, new Paragraph({ children: [new PageBreak()] })]
       : pageContent;
@@ -666,24 +550,22 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
   const pages = paginateMemoDraft(draft);
   const mainPages = pages.filter((page) => page.kind === "main");
   const appendixPages = pages.filter((page) => page.kind === "appendix");
-  const validationPages = pages.filter((page) => page.kind === "validation");
-  const watermarkBuffer = await fetch("/template-assets/validation-watermark-source-pale.png").then(
+  const validationTemplateBuffer = await fetch("/template-assets/validation-template.docx").then(
     (response) => response.arrayBuffer(),
   );
-  const watermarkData = new Uint8Array(watermarkBuffer);
 
   const doc = new Document({
     title: draft.metadata.perihal,
     creator: "Memo Builder",
     description: "Generated memo document",
     sections: [
-      buildSection(draft, mainPages, watermarkData),
-      buildSection(draft, appendixPages, watermarkData),
-      buildSection(draft, validationPages, watermarkData),
+      buildSection(draft, mainPages),
+      buildSection(draft, appendixPages),
     ],
   });
 
-  return Packer.toBlob(doc);
+  const generatedDocx = await Packer.toBlob(doc);
+  return spliceValidationTemplate(generatedDocx, validationTemplateBuffer, draft, pages.length);
 }
 
 export function memoDocxFileName(draft: MemoDraft) {
