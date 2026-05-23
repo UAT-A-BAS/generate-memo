@@ -73,7 +73,7 @@ function FieldLabel({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-1 text-xs font-medium text-slate-600">
+    <label className="grid content-start gap-1 text-xs font-medium text-slate-600">
       {label}
       {children}
     </label>
@@ -256,7 +256,7 @@ function DevelopmentPanel({
                   <Trash2 size={15} />
                 </button>
               </div>
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid items-start gap-3 lg:grid-cols-2">
                 <FieldLabel label="Item">
                   <RichTextEditor
                     value={row.item}
