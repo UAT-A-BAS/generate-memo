@@ -18,6 +18,7 @@ type MemoDraftStore = {
   error?: string;
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
   updateMetadata: (patch: Partial<MemoMetadata>) => void;
+  replaceDraft: (draft: MemoDraft, status?: SaveStatus) => void;
   loadFromLocal: () => void;
   saveToLocal: () => void;
   importDraft: (payload: unknown) => void;
@@ -64,15 +65,21 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
       };
     });
   },
+  replaceDraft: (draft, status = "idle") => {
+    set({
+      draft,
+      status,
+      error: undefined,
+    });
+  },
   loadFromLocal: () => {
     if (typeof window === "undefined") return;
 
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
       set({
-        draft: raw ? normalizeMemoDraft(JSON.parse(raw)) : get().draft,
+        draft: createInitialMemoDraft(),
         hasLoaded: true,
-        status: raw ? "loaded" : "idle",
+        status: "idle",
         error: undefined,
       });
     } catch (error) {

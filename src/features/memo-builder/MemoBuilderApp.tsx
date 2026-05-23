@@ -3,13 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
+  Copy,
   Download,
   FileJson,
   FileText,
+  Link,
   Plus,
   RefreshCcw,
+  Share2,
   Trash2,
   Upload,
+  Users,
+  X,
 } from "lucide-react";
 import type {
   ActivityRow,
@@ -39,6 +44,7 @@ import { paginateMemoDraft } from "@/pagination/paginate";
 import { useMemoDraftStore } from "@/store/useMemoDraftStore";
 import { generateMomJsonToMemoDraft } from "@/utils/generateMomJsonToMemoDraft";
 import { MemoPreview } from "@/preview/MemoPreview";
+import { useMemoCollaboration } from "@/collaboration/useMemoCollaboration";
 
 const memoTypes: MemoType[] = [
   "Pilot",
@@ -120,6 +126,189 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+function parseRoomInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    const url = new URL(trimmed);
+    return url.searchParams.get("room") ?? trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function CollaborationModal({
+  open,
+  onClose,
+  collaboration,
+  onExport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  collaboration: ReturnType<typeof useMemoCollaboration>;
+  onExport: () => void;
+}) {
+  const [joinValue, setJoinValue] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  if (!open) return null;
+
+  async function copyLink() {
+    await collaboration.copyLink();
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4">
+      <section className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="text-base font-bold text-[#0f2d4a]">Collaboration</h2>
+            <p className="text-xs text-slate-500">{collaboration.statusLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            aria-label="Tutup collaboration"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="grid gap-4 px-5 py-5">
+          <div className="flex flex-wrap gap-2">
+            <IconButton
+              onClick={() => {
+                collaboration.start();
+                setCopied(false);
+              }}
+              variant="primary"
+            >
+              <Share2 size={16} />
+              {collaboration.active ? "Restart Collab" : "Start Collaboration"}
+            </IconButton>
+            <IconButton onClick={copyLink} disabled={!collaboration.active}>
+              <Copy size={16} />
+              {copied ? "Copied" : "Copy Share Link"}
+            </IconButton>
+            <IconButton
+              onClick={() => collaboration.leave()}
+              disabled={!collaboration.active}
+              variant="danger"
+            >
+              <X size={16} />
+              Leave
+            </IconButton>
+          </div>
+
+          <div className="grid gap-2">
+            <label className="text-xs font-medium text-slate-600" htmlFor="join-room">
+              Join collaboration by room code/link
+            </label>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <input
+                id="join-room"
+                value={joinValue}
+                onChange={(event) => setJoinValue(event.target.value)}
+                className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              />
+              <IconButton
+                onClick={() => {
+                  const roomId = parseRoomInput(joinValue);
+                  if (roomId) collaboration.join(roomId);
+                }}
+              >
+                <Link size={16} />
+                Join
+              </IconButton>
+            </div>
+          </div>
+
+          {collaboration.active ? (
+            <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              <p>
+                Room: <span className="font-semibold text-slate-900">{collaboration.roomId}</span>
+              </p>
+              <p className="break-all">{collaboration.shareLink}</p>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
+                  Users: {Math.max(1, collaboration.collaborators.length)}
+                </span>
+                <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
+                  Last synced: {collaboration.lastSyncedAt ?? "-"}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          <IconButton onClick={onExport} disabled={!collaboration.active}>
+            <FileJson size={16} />
+            Export collaboration data
+          </IconButton>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CollaborationStatusBar({
+  collaboration,
+}: {
+  collaboration: ReturnType<typeof useMemoCollaboration>;
+}) {
+  const statusColor =
+    collaboration.status === "connected"
+      ? "bg-emerald-500"
+      : collaboration.status === "reconnecting"
+        ? "bg-amber-500"
+        : "bg-slate-400";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
+        <span className={`h-2 w-2 rounded-full ${statusColor}`} />
+        {collaboration.active ? "Live" : "Personal Draft"}
+      </span>
+      <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
+        <span className={`h-2 w-2 rounded-full ${statusColor}`} />
+        {collaboration.statusLabel}
+      </span>
+      <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
+        <Users size={14} />
+        Users: {collaboration.active ? Math.max(1, collaboration.collaborators.length) : 1}
+      </span>
+      <span className="inline-flex h-8 items-center rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
+        Last synced: {collaboration.lastSyncedAt ?? "-"}
+      </span>
+      {collaboration.active ? (
+        <div className="flex -space-x-2 pl-1">
+          {collaboration.collaborators.slice(0, 5).map((user) => (
+            <span
+              key={user.id}
+              title={user.name}
+              className="grid h-8 w-8 place-items-center rounded-full border-2 border-white text-[10px] font-bold text-white"
+              style={{ backgroundColor: user.color }}
+            >
+              {initials(user.name)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -612,14 +801,17 @@ export function MemoBuilderApp() {
   const splitRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [editorWidth, setEditorWidth] = useState(50);
+  const [collaborationOpen, setCollaborationOpen] = useState(false);
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
   const updateMetadata = useMemoDraftStore((state) => state.updateMetadata);
+  const replaceDraft = useMemoDraftStore((state) => state.replaceDraft);
   const loadFromLocal = useMemoDraftStore((state) => state.loadFromLocal);
   const saveToLocal = useMemoDraftStore((state) => state.saveToLocal);
   const importDraft = useMemoDraftStore((state) => state.importDraft);
   const resetDraft = useMemoDraftStore((state) => state.resetDraft);
+  const collaboration = useMemoCollaboration(draft, replaceDraft);
 
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
 
@@ -638,6 +830,33 @@ export function MemoBuilderApp() {
       new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }),
       `memo-draft-${draft.id}.json`,
     );
+  }
+
+  function exportCollaborationData() {
+    downloadBlob(
+      new Blob([
+        JSON.stringify(
+          {
+            roomId: collaboration.roomId,
+            exportedAt: new Date().toISOString(),
+            draft,
+          },
+          null,
+          2,
+        ),
+      ], { type: "application/json" }),
+      `memo-collaboration-${collaboration.roomId || draft.id}.json`,
+    );
+  }
+
+  function handleResetDraft() {
+    if (
+      collaboration.active &&
+      !window.confirm("Reset akan menghapus data shared room untuk semua user. Lanjutkan?")
+    ) {
+      return;
+    }
+    resetDraft();
   }
 
   async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
@@ -709,12 +928,19 @@ export function MemoBuilderApp() {
         <div className="flex w-full flex-col gap-3 px-10 py-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h1 className="text-lg font-bold tracking-tight text-[#0f2d4a]">Memo Generator</h1>
+            <div className="mt-2">
+              <CollaborationStatusBar collaboration={collaboration} />
+            </div>
             <p className="hidden">
               {draft.metadata.perihal} · {pages.length} preview pages ·{" "}
               {" "}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <IconButton onClick={() => setCollaborationOpen(true)}>
+              <Share2 size={16} />
+              Collaboration
+            </IconButton>
             <IconButton onClick={saveDraftData}>
               <FileJson size={16} />
               Save Draft Data
@@ -727,13 +953,20 @@ export function MemoBuilderApp() {
               <Download size={16} />
               {isExporting ? "Exporting" : "DOCX"}
             </IconButton>
-            <IconButton onClick={resetDraft}>
+            <IconButton onClick={handleResetDraft}>
               <RefreshCcw size={16} />
               Reset Draft
             </IconButton>
           </div>
         </div>
       </header>
+
+      <CollaborationModal
+        open={collaborationOpen}
+        onClose={() => setCollaborationOpen(false)}
+        collaboration={collaboration}
+        onExport={exportCollaborationData}
+      />
 
       <div ref={splitRef} className="flex w-full gap-0 px-6 py-5">
         <div
