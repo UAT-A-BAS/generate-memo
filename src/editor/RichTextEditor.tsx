@@ -1,12 +1,12 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
-import { Extension } from "@tiptap/core";
+import { Extension, type Editor } from "@tiptap/core";
 import BoldExtension from "@tiptap/extension-bold";
 import UnderlineExtension from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import { Bold, Italic, List, ListOrdered, Pilcrow, Underline } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { RichTextDoc } from "@/types/richText";
 
 type RichTextEditorProps = {
@@ -29,8 +29,6 @@ const EnterWithoutMarks = Extension.create({
   priority: 1000,
   addKeyboardShortcuts() {
     return {
-      "Mod-b": () => this.editor.commands.toggleBold(),
-      "Mod-B": () => this.editor.commands.toggleBold(),
       Enter: () =>
         this.editor.commands.first(({ commands }) => [
           () => commands.newlineInCode(),
@@ -43,19 +41,58 @@ const EnterWithoutMarks = Extension.create({
 });
 
 export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
+  const manualBoldRef = useRef(false);
+  const ctrlBoldShortcut = useMemo(
+    () =>
+      Extension.create({
+        name: "manualCtrlBold",
+        priority: 1100,
+        addKeyboardShortcuts() {
+          return {
+            "Mod-b": () => {
+              const willEnableBold = !this.editor.isActive("bold");
+              this.editor.commands.toggleBold();
+              manualBoldRef.current = willEnableBold;
+              return true;
+            },
+            "Mod-B": () => {
+              const willEnableBold = !this.editor.isActive("bold");
+              this.editor.commands.toggleBold();
+              manualBoldRef.current = willEnableBold;
+              return true;
+            },
+          };
+        },
+      }),
+    [],
+  );
+
+  function clearStoredBoldMark(currentEditor: Editor) {
+    currentEditor.commands.unsetBold();
+    const boldMark = currentEditor.schema.marks.bold;
+    if (boldMark) {
+      currentEditor.view.dispatch(currentEditor.state.tr.removeStoredMark(boldMark));
+    }
+  }
+
   const editor = useEditor({
-    extensions: [StarterKit.configure({ bold: false }), ManualBold, UnderlineExtension, EnterWithoutMarks],
+    extensions: [
+      StarterKit.configure({ bold: false }),
+      ManualBold,
+      UnderlineExtension,
+      ctrlBoldShortcut,
+      EnterWithoutMarks,
+    ],
     content: value,
     immediatelyRender: false,
     onFocus: ({ editor: currentEditor }) => {
-      if (!currentEditor.state.doc.textContent.trim()) {
-        currentEditor.commands.unsetAllMarks();
-      }
+      manualBoldRef.current = false;
+      clearStoredBoldMark(currentEditor);
     },
     editorProps: {
       attributes: {
         class:
-          "prose prose-sm max-w-none outline-none text-slate-800 prose-p:my-1 prose-ul:my-1 prose-ol:my-1",
+          "prose prose-sm max-w-none outline-none text-slate-950 prose-p:my-1 prose-ul:my-1 prose-ol:my-1",
       },
     },
     onUpdate: ({ editor: currentEditor }) => {
@@ -69,6 +106,7 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
     const next = JSON.stringify(value);
     if (current !== next) {
       editor.commands.setContent(value);
+      clearStoredBoldMark(editor);
     }
   }, [editor, value]);
 
@@ -82,16 +120,20 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
   }
 
   const buttonClass =
-    "flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10";
+    "flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-900/10";
   const activeClass = "bg-slate-900 text-white hover:bg-slate-800 hover:text-white";
 
   return (
-    <div className="overflow-hidden rounded-md border border-slate-300 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
-      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1">
+    <div className="overflow-hidden rounded-md border border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-300 bg-slate-50 px-2 py-1">
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("bold") ? activeClass : ""}`}
-          onClick={() => editor.chain().focus().toggleBold().run()}
+          onClick={() => {
+            const willEnableBold = !editor.isActive("bold");
+            editor.chain().focus().toggleBold().run();
+            manualBoldRef.current = willEnableBold;
+          }}
           aria-label="Bold"
         >
           <Bold size={15} />
@@ -143,9 +185,19 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         className="px-3 py-2"
         style={{ minHeight }}
         onKeyDown={(event) => {
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
-            event.preventDefault();
-            editor.chain().focus().toggleBold().run();
+          if (
+            event.key.length === 1 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            editor.isActive("bold") &&
+            !manualBoldRef.current
+          ) {
+            clearStoredBoldMark(editor);
+          }
+
+          if (event.key === "Enter") {
+            manualBoldRef.current = false;
           }
         }}
       />

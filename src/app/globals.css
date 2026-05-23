@@ -28,6 +28,17 @@ textarea {
 .ProseMirror {
   min-height: inherit;
   font-family: "Times New Roman", Times, serif;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  color: #0f172a;
+  font-weight: 600;
 }
 
 .ProseMirror ul,

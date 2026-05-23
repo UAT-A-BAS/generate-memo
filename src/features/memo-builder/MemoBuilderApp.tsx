@@ -79,7 +79,7 @@ function FieldLabel({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid content-start gap-1 text-xs font-medium text-slate-600">
+    <label className="grid content-start gap-1 text-[13px] font-semibold text-slate-700">
       {label}
       {children}
     </label>
@@ -94,7 +94,7 @@ function Panel({
   className?: string;
 }) {
   return (
-    <section className={`rounded-lg border border-[#d8e2ec] bg-white p-8 shadow-sm ${className}`}>
+    <section className={`min-w-0 rounded-lg border border-[#c6d3e1] bg-white p-3 shadow-sm xl:p-4 ${className}`}>
       {children}
     </section>
   );
@@ -113,7 +113,7 @@ function IconButton({
 }) {
   const variants = {
     primary: "border-slate-900 bg-slate-900 text-white hover:bg-slate-800",
-    secondary: "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+    secondary: "border-slate-400 bg-white text-slate-700 hover:bg-slate-50",
     danger: "border-rose-200 bg-white text-rose-600 hover:bg-rose-50",
     word: "border-[#185abd] bg-[#185abd] text-white hover:bg-[#124078]",
   };
@@ -123,7 +123,7 @@ function IconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`}
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`}
     >
       {children}
     </button>
@@ -203,7 +203,7 @@ function CollaborationModal({
                 value={joinValue}
                 placeholder="Kode room atau link"
                 onChange={(event) => setJoinValue(event.target.value)}
-                className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
               <IconButton
                 onClick={() => {
@@ -222,7 +222,7 @@ function CollaborationModal({
               <input
                 readOnly
                 value={collaboration.shareLink}
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-xs text-slate-700 outline-none"
+                className="h-10 rounded-md border border-slate-400 bg-white px-3 text-xs text-slate-700 outline-none"
                 aria-label="Share link"
               />
               <div className="flex flex-wrap gap-2">
@@ -316,7 +316,7 @@ function MetadataPanel({
           <FieldLabel label="Jenis Implementasi">
             <select
               {...registerField("memoType")}
-              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             >
               {memoTypes.map((type) => (
                 <option key={type}>{type}</option>
@@ -326,7 +326,7 @@ function MetadataPanel({
           <FieldLabel label="Bureau UAT">
             <select
               {...registerField("bureau")}
-              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             >
               {bureaus.map((bureau) => (
                 <option key={bureau}>{bureau}</option>
@@ -337,7 +337,7 @@ function MetadataPanel({
         <FieldLabel label="Nama Project">
           <input
             {...registerField("projectName")}
-            className="h-10 rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </FieldLabel>
         <div className="grid gap-2">
@@ -345,7 +345,7 @@ function MetadataPanel({
             <input
               type="checkbox"
               {...registerField("autoPerihal")}
-              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+              className="h-4 w-4 rounded border-slate-400 text-slate-900 focus:ring-slate-900"
             />
             Perihal otomatis
           </label>
@@ -356,7 +356,7 @@ function MetadataPanel({
           ) : (
             <input
               {...registerField("perihal")}
-              className="h-10 rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             />
           )}
         </div>
@@ -408,11 +408,11 @@ function DevelopmentPanel({
                   <Trash2 size={15} />
                 </button>
               </div>
-              <div className="grid items-start gap-3 lg:grid-cols-2">
+              <div className="grid items-start gap-3 xl:grid-cols-2">
                 <FieldLabel label="Item">
                   <RichTextEditor
                     value={row.item}
-                    minHeight={105}
+                    minHeight={92}
                     onChange={(value) =>
                       setRows(rows.map((item) => (item.id === row.id ? { ...item, item: value } : item)))
                     }
@@ -421,7 +421,7 @@ function DevelopmentPanel({
                 <FieldLabel label="Keterangan">
                   <RichTextEditor
                     value={row.description}
-                    minHeight={105}
+                    minHeight={92}
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>
@@ -469,7 +469,7 @@ function ActivitiesPanel({
           itemLabel={(row, index) => row.owner || `aktivitas ${index + 1}`}
           renderItem={(row) => (
             <div className="grid gap-3">
-              <div className="grid items-end gap-3 lg:grid-cols-[minmax(280px,1fr)_minmax(280px,1fr)_42px]">
+              <div className="grid items-end gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_38px]">
                 <DateRangePicker
                   compact
                   startDate={row.startDate}
@@ -488,13 +488,13 @@ function ActivitiesPanel({
                         ),
                       )
                     }
-                    className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                   />
                 </FieldLabel>
                 <button
                   type="button"
                   onClick={() => setRows(rows.filter((item) => item.id !== row.id))}
-                  className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
                   aria-label="Hapus aktivitas"
                 >
                   <Trash2 size={15} />
@@ -503,7 +503,7 @@ function ActivitiesPanel({
               <FieldLabel label="Aktivitas">
                 <RichTextEditor
                   value={row.activity}
-                  minHeight={100}
+                  minHeight={92}
                   onChange={(value) =>
                     setRows(rows.map((item) => (item.id === row.id ? { ...item, activity: value } : item)))
                   }
@@ -537,7 +537,7 @@ function ReferencePanel({
             onChange={(event) =>
               updateDraft((current) => ({ ...current, referenceEnabled: event.target.checked }))
             }
-            className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+            className="h-4 w-4 rounded border-slate-400 text-slate-900 focus:ring-slate-900"
           />
           Tampilkan Referensi
         </label>
@@ -556,7 +556,7 @@ function ReferencePanel({
                   }))
                 }
                 rows={5}
-                className="min-h-28 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                className="min-h-28 rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
             </FieldLabel>
           </div>
@@ -612,7 +612,7 @@ function ContactsPanel({
                       ),
                     )
                   }
-                  className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
               <FieldLabel label="Email">
@@ -625,7 +625,7 @@ function ContactsPanel({
                       ),
                     )
                   }
-                  className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
               <button
@@ -677,7 +677,7 @@ function AppendixPanel({
           itemLabel={(row, index) => row.section || `skenario ${index + 1}`}
           renderItem={(row) => (
             <div className="grid gap-3">
-              <div className="grid items-end gap-3 lg:grid-cols-[minmax(240px,0.9fr)_minmax(220px,1fr)_minmax(220px,1fr)_42px]">
+              <div className="grid items-end gap-3 xl:grid-cols-[minmax(180px,0.8fr)_minmax(180px,1fr)_minmax(160px,0.8fr)_38px]">
                 <FieldLabel label="Tanggal">
                   <DateRangePicker
                     compact
@@ -698,7 +698,7 @@ function AppendixPanel({
                         ),
                       )
                     }
-                    className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                   />
                 </FieldLabel>
                 <FieldLabel label="PIC">
@@ -707,7 +707,7 @@ function AppendixPanel({
                     onChange={(event) =>
                       setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
                     }
-                    className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                   />
                 </FieldLabel>
                 <button
@@ -716,17 +716,17 @@ function AppendixPanel({
                     const nextRows = rows.filter((item) => item.id !== row.id);
                     setRows(nextRows.length ? nextRows : [createScenarioRow()]);
                   }}
-                  className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
                   aria-label="Hapus skenario"
                 >
                   <Trash2 size={15} />
                 </button>
               </div>
-              <div className="grid gap-3 lg:grid-cols-3">
+              <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
                 <FieldLabel label="Skenario">
                   <RichTextEditor
                     value={row.scenario}
-                    minHeight={110}
+                    minHeight={92}
                     onChange={(value) =>
                       setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
                     }
@@ -735,7 +735,7 @@ function AppendixPanel({
                 <FieldLabel label="Expected Result">
                   <RichTextEditor
                     value={row.expectedResult}
-                    minHeight={110}
+                    minHeight={92}
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>
@@ -748,7 +748,7 @@ function AppendixPanel({
                 <FieldLabel label="Catatan">
                   <RichTextEditor
                     value={row.notes}
-                    minHeight={110}
+                    minHeight={92}
                     onChange={(value) =>
                       setRows(rows.map((item) => (item.id === row.id ? { ...item, notes: value } : item)))
                     }
@@ -856,7 +856,7 @@ export function MemoBuilderApp() {
         onChange={handleImport}
       />
       <header className="sticky top-0 z-30 border-b border-[#d8e2ec] bg-white/95 backdrop-blur">
-        <div className="flex w-full flex-col gap-3 px-10 py-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex w-full flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between xl:px-6">
           <div>
             <h1 className="text-lg font-bold tracking-tight text-[#0f2d4a]">Memo Generator</h1>
             <div className="mt-2">
@@ -894,8 +894,8 @@ export function MemoBuilderApp() {
         collaboration={collaboration}
       />
 
-      <div className="grid w-full gap-4 px-6 py-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <div className="grid min-w-0 content-start gap-4">
+      <div className="grid w-full gap-3 px-3 py-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:px-4">
+        <div className="grid min-w-0 content-start gap-3">
           <Panel>
             <SectionTitle title="Kepada" />
             <div className="mt-6">
@@ -943,13 +943,13 @@ export function MemoBuilderApp() {
                   ].map(([label, value]) => (
                     <label
                       key={String(label)}
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700"
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-400 bg-white px-3 text-sm font-medium text-slate-700"
                     >
                       <input
                         type="radio"
                         checked={draft.metadata.accessLinkEnabled === value}
                         onChange={() => updateMetadata({ accessLinkEnabled: Boolean(value) })}
-                        className="h-4 w-4 border-slate-300 text-slate-900 focus:ring-slate-900"
+                        className="h-4 w-4 border-slate-400 text-slate-900 focus:ring-slate-900"
                       />
                       {label}
                     </label>
@@ -960,7 +960,7 @@ export function MemoBuilderApp() {
                 value={draft.metadata.accessLink}
                 disabled={!draft.metadata.accessLinkEnabled}
                 onChange={(event) => updateMetadata({ accessLink: event.target.value })}
-                className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-100 disabled:text-slate-400"
+                className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-100 disabled:text-slate-400"
               />
             </div>
           </Panel>
@@ -998,7 +998,7 @@ export function MemoBuilderApp() {
                           ),
                         }))
                       }
-                      className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                      className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                     />
                   </FieldLabel>
                   <FieldLabel label="Jabatan">
@@ -1012,7 +1012,7 @@ export function MemoBuilderApp() {
                           ),
                         }))
                       }
-                      className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                      className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                     />
                   </FieldLabel>
                   <button
@@ -1054,7 +1054,7 @@ export function MemoBuilderApp() {
                   onChange={(event) =>
                     updateDraft((current) => ({ ...current, initials: event.target.value }))
                   }
-                  className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className="h-10 w-full rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
               <FieldLabel label="UAT">
@@ -1066,7 +1066,7 @@ export function MemoBuilderApp() {
                       initialsBureau: event.target.value as Bureau,
                     }))
                   }
-                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 >
                   {bureaus.map((bureau) => (
                     <option key={bureau} value={bureau}>UAT {bureau}</option>
@@ -1085,9 +1085,9 @@ export function MemoBuilderApp() {
         </div>
 
         <aside
-          className="sticky top-[88px] max-h-[calc(100dvh-112px)] min-w-0 self-start overflow-hidden rounded-lg border border-[#d8e2ec] bg-[#edf4fb]"
+          className="sticky top-[76px] max-h-[calc(100dvh-92px)] min-w-0 self-start overflow-hidden rounded-lg border border-[#d8e2ec] bg-[#edf4fb]"
         >
-          <div className="max-h-[calc(100dvh-112px)] overflow-auto">
+          <div className="max-h-[calc(100dvh-92px)] overflow-auto">
             <div className="flex items-center justify-between border-b border-[#d8e2ec] bg-white px-5 py-3">
               <div>
                 <h2 className="text-sm font-bold text-[#0f2d4a]">Preview</h2>

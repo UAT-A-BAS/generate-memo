@@ -48,20 +48,20 @@ function SortableItem<T extends Identified>({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`grid grid-cols-[36px_1fr] gap-3 rounded-md border bg-white p-3 shadow-sm ${
-        isDragging ? "border-slate-900 shadow-md" : "border-slate-200"
+      className={`grid grid-cols-[32px_1fr] gap-2 rounded-md border bg-white p-2 shadow-sm ${
+        isDragging ? "border-slate-900 shadow-md" : "border-slate-300"
       }`}
     >
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+        className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
         aria-label={`Ubah urutan ${itemLabel(item, index)}`}
         {...attributes}
         {...listeners}
       >
         <GripVertical size={17} />
       </button>
-      <div>{renderItem(item, index)}</div>
+      <div className="min-w-0">{renderItem(item, index)}</div>
     </div>
   );
 }
@@ -106,4 +106,3 @@ export function DragDropList<T extends Identified>({
     </DndContext>
   );
 }
-
