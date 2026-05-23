@@ -11,10 +11,27 @@ test("exports DOCX from current draft", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "DOCX" }).click();
+  await page.getByRole("button", { name: "Generate Docx" }).click();
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toMatch(/^Memo .+\.docx$/);
+});
+
+test("empty rich text fields start in plain text mode", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const editors = page.locator(".ProseMirror");
+  const count = await editors.count();
+
+  for (let index = 0; index < count; index += 1) {
+    await editors.nth(index).evaluate((node) => (node as HTMLElement).focus());
+    await page.keyboard.type(`plain-${index}`);
+  }
+
+  for (let index = 0; index < count; index += 1) {
+    const html = await editors.nth(index).evaluate((node) => node.innerHTML);
+    expect(html).not.toContain("<strong>");
+  }
 });
 
 test("enter after bold starts plain text", async ({ page }) => {
@@ -22,7 +39,10 @@ test("enter after bold starts plain text", async ({ page }) => {
 
   const editor = page.locator(".ProseMirror").first();
   await editor.click();
+  await expect(editor).toBeFocused();
+  await page.waitForTimeout(100);
   await page.keyboard.press("Control+B");
+  await page.waitForTimeout(100);
   await page.keyboard.type("Bold");
   await page.keyboard.press("Enter");
   await page.keyboard.type("Normal");

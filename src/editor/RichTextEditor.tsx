@@ -29,6 +29,8 @@ const EnterWithoutMarks = Extension.create({
   priority: 1000,
   addKeyboardShortcuts() {
     return {
+      "Mod-b": () => this.editor.commands.toggleBold(),
+      "Mod-B": () => this.editor.commands.toggleBold(),
       Enter: () =>
         this.editor.commands.first(({ commands }) => [
           () => commands.newlineInCode(),
@@ -45,6 +47,11 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
     extensions: [StarterKit.configure({ bold: false }), ManualBold, UnderlineExtension, EnterWithoutMarks],
     content: value,
     immediatelyRender: false,
+    onFocus: ({ editor: currentEditor }) => {
+      if (!currentEditor.state.doc.textContent.trim()) {
+        currentEditor.commands.unsetAllMarks();
+      }
+    },
     editorProps: {
       attributes: {
         class:
@@ -135,6 +142,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         editor={editor}
         className="px-3 py-2"
         style={{ minHeight }}
+        onKeyDown={(event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+            event.preventDefault();
+            editor.chain().focus().toggleBold().run();
+          }
+        }}
       />
     </div>
   );

@@ -108,13 +108,14 @@ function IconButton({
 }: {
   children: React.ReactNode;
   onClick?: () => void;
-  variant?: "primary" | "secondary" | "danger";
+  variant?: "primary" | "secondary" | "danger" | "word";
   disabled?: boolean;
 }) {
   const variants = {
     primary: "border-slate-900 bg-slate-900 text-white hover:bg-slate-800",
     secondary: "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
     danger: "border-rose-200 bg-white text-rose-600 hover:bg-rose-50",
+    word: "border-[#185abd] bg-[#185abd] text-white hover:bg-[#124078]",
   };
 
   return (
@@ -646,9 +647,13 @@ function ContactsPanel({
 function AppendixPanel({
   rows,
   updateDraft,
+  onGenerateDocx,
+  isExporting,
 }: {
   rows: ScenarioRow[];
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  onGenerateDocx: () => void;
+  isExporting: boolean;
 }) {
   function setRows(nextRows: ScenarioRow[]) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }));
@@ -753,6 +758,12 @@ function AppendixPanel({
             </div>
           )}
         />
+      </div>
+      <div className="mt-5 flex justify-end border-t border-slate-200 pt-4">
+        <IconButton onClick={onGenerateDocx} disabled={isExporting} variant="word">
+          <Download size={16} />
+          Generate Docx
+        </IconButton>
       </div>
     </Panel>
   );
@@ -869,10 +880,6 @@ export function MemoBuilderApp() {
               <Upload size={16} />
               Load Draft Data
             </IconButton>
-            <IconButton onClick={exportDocx} disabled={isExporting} variant="primary">
-              <Download size={16} />
-              {isExporting ? "Exporting" : "DOCX"}
-            </IconButton>
             <IconButton onClick={handleResetDraft}>
               <RefreshCcw size={16} />
               Reset Draft
@@ -887,7 +894,7 @@ export function MemoBuilderApp() {
         collaboration={collaboration}
       />
 
-      <div className="grid w-full gap-4 px-6 py-5 xl:grid-cols-[minmax(0,40%)_minmax(0,60%)]">
+      <div className="grid w-full gap-4 px-6 py-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 content-start gap-4">
           <Panel>
             <SectionTitle title="Kepada" />
@@ -1069,7 +1076,12 @@ export function MemoBuilderApp() {
             </div>
           </Panel>
 
-          <AppendixPanel rows={draft.appendixScenarios} updateDraft={updateDraft} />
+          <AppendixPanel
+            rows={draft.appendixScenarios}
+            updateDraft={updateDraft}
+            onGenerateDocx={exportDocx}
+            isExporting={isExporting}
+          />
         </div>
 
         <aside
