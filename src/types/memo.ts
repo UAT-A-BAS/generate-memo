@@ -75,6 +75,8 @@ export type MemoDraft = {
   metadata: MemoMetadata;
   recipients: Recipient[];
   introduction: RichTextDoc;
+  referenceEnabled: boolean;
+  reference: RichTextDoc;
   developmentRows: DevelopmentRow[];
   pilotSchedule: PilotSchedule;
   activities: ActivityRow[];

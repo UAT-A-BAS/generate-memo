@@ -363,6 +363,42 @@ function ActivitiesPanel({
   );
 }
 
+function ReferencePanel({
+  draft,
+  updateDraft,
+}: {
+  draft: MemoDraft;
+  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+}) {
+  if (draft.metadata.memoType !== "Nasional") return null;
+
+  return (
+    <Panel>
+      <SectionTitle title="Referensi" />
+      <div className="mt-6 grid gap-4">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={draft.referenceEnabled}
+            onChange={(event) =>
+              updateDraft((current) => ({ ...current, referenceEnabled: event.target.checked }))
+            }
+            className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+          />
+          Tampilkan Referensi
+        </label>
+        {draft.referenceEnabled ? (
+          <RichTextEditor
+            value={draft.reference}
+            minHeight={120}
+            onChange={(reference) => updateDraft((current) => ({ ...current, reference }))}
+          />
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
 function ContactsPanel({
   draft,
   updateDraft,
@@ -704,6 +740,8 @@ export function MemoBuilderApp() {
             metadata={draft.metadata}
             updateMetadata={updateMetadata}
           />
+
+          <ReferencePanel draft={draft} updateDraft={updateDraft} />
 
           <DevelopmentPanel rows={draft.developmentRows} updateDraft={updateDraft} />
 

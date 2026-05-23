@@ -10,7 +10,7 @@ import { PageContainer } from "./PageContainer";
 function RichTextView({ html }: { html: string }) {
   return (
     <div
-      className="preview-rich-text text-[13px] leading-[1.55]"
+      className="preview-rich-text text-[14.67px] leading-[1.45]"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -34,19 +34,20 @@ function PreviewSection({
 }) {
   return (
     <section className="mt-4 border-t border-slate-800 pt-3">
-      <div className="grid grid-cols-[120px_1fr] gap-5 text-[12.5px] leading-[1.25]">
-        <h3 className="font-bold">{title}</h3>
+      <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.3]">
+        <h3 className="text-[13.33px] font-bold leading-[1.25]">{title}</h3>
         <div>{children}</div>
       </div>
     </section>
   );
 }
 
-function recipientLine(recipient: Recipient, index: number) {
+function recipientLine(recipient: Recipient, index: number, total: number) {
   const name = recipient.name?.trim() ? `U.p. Yth. ${recipient.gender} ${recipient.name}` : "";
+  const prefix = total > 1 ? "- " : "";
   return (
     <div className="grid gap-1" key={recipient.id}>
-      <p>{index === 0 ? "- " : "- "}{recipient.position}</p>
+      <p>{prefix}{recipient.position}</p>
       {name ? <p className="pl-5">{name}</p> : null}
     </div>
   );
@@ -62,7 +63,7 @@ function MemoTable({
   children: React.ReactNode;
 }) {
   return (
-    <table className="memo-preview-table w-full table-fixed border-collapse text-[12px] leading-[1.15]">
+    <table className="memo-preview-table w-full table-fixed border-collapse text-[14.67px] leading-[1.15]">
       {columnWidths ? (
         <colgroup>
           {columnWidths.map((width, index) => (
@@ -102,12 +103,12 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
   switch (block.type) {
     case "memo-heading":
       return (
-        <div className="mt-14 text-[12.5px] leading-[1.55]">
+        <div className="mt-14 text-[14.67px] leading-[1.45]">
           <div className="grid grid-cols-[92px_14px_1fr] gap-x-2">
             <span>Kepada</span>
             <span>:</span>
             <div className="grid gap-1">
-              {draft.recipients.map((recipient, index) => recipientLine(recipient, index))}
+              {draft.recipients.map((recipient, index) => recipientLine(recipient, index, draft.recipients.length))}
             </div>
             <span className="mt-2">Dari</span>
             <span className="mt-2">:</span>
@@ -115,9 +116,9 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
             <span>Jenis Informasi</span>
             <span>:</span>
             <span>INTERNAL BCA</span>
-            <span>Perihal</span>
-            <span>:</span>
-            <span className="font-bold">{draft.metadata.perihal}</span>
+            <span className="font-[Arial] text-[14.67px]">Perihal</span>
+            <span className="font-[Arial] text-[14.67px]">:</span>
+            <span className="font-[Arial] text-[16px] font-bold leading-[1.25]">{draft.metadata.perihal}</span>
           </div>
         </div>
       );
@@ -130,6 +131,12 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
             Sehubungan dengan akan dilakukannya {draft.metadata.perihal}, berikut kami sampaikan
             informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.
           </p>
+        </PreviewSection>
+      );
+    case "reference":
+      return (
+        <PreviewSection title="Referensi">
+          <RichTextView html={richTextToHtml(draft.reference)} />
         </PreviewSection>
       );
     case "pilot-schedule":
@@ -161,7 +168,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "signature":
       return (
-        <div className="mt-5 text-[12.5px] leading-[1.45]">
+        <div className="mt-5 text-[14.67px] leading-[1.45]">
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
           {draft.signers.map((signer) => (
@@ -174,7 +181,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "cc":
       return (
-        <div className="mt-5 text-[12.5px] leading-[1.35]">
+        <div className="mt-5 text-[14.67px] leading-[1.35]">
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
             {draft.ccRecipients.map((recipient) => (
@@ -187,7 +194,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
         </div>
       );
     case "initials":
-      return <p className="mt-5 text-[11px]">{initialsText(draft)}</p>;
+      return <p className="mt-5 text-[13.33px]">{initialsText(draft)}</p>;
     case "validation":
       return (
         <div className="relative h-full overflow-hidden px-2 pt-12 text-[12px] text-[#333]">
@@ -196,8 +203,8 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
           <img
             src="/template-assets/validation-watermark-source-pale.png"
             alt=""
-            className="pointer-events-none absolute bottom-[-4px] right-[-42px] object-cover object-bottom"
-            style={{ width: 720, height: 1018 }}
+            className="pointer-events-none absolute bottom-[-12px] right-[-22px] object-cover object-bottom opacity-95"
+            style={{ width: 700, height: 990 }}
           />
           <div className="relative mx-auto w-[605px]">
             <p className="text-center tracking-[0.16em]">INTERNAL BCA/RAHASIA/SANGAT RAHASIA</p>
@@ -348,23 +355,26 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
       style={{ top: page.continuationTitle || page.kind === "appendix" ? 96 : 64 }}
     >
       {page.continuationTitle ? (
-        <h2 className="mb-5 border-b border-slate-800 pb-3 text-[13px]">
+        <h2 className="mb-5 border-b border-slate-800 pb-3">
           {page.kind === "appendix" ? (
             <>
-              <strong>{page.continuationTitle.replace(", Sambungan", "")}</strong>, Sambungan
+              <strong className="text-[13.33px]">{page.continuationTitle.replace(", Sambungan", "")}</strong>
+              <span className="text-[13.33px]">, Sambungan</span>
             </>
           ) : (
             <>
-              Perihal: <strong>{draft.metadata.perihal}</strong>, Sambungan
+              <span className="font-[Arial] text-[14.67px]">Perihal: </span>
+              <strong className="font-[Arial] text-[16px]">{draft.metadata.perihal}</strong>
+              <span className="font-[Arial] text-[14.67px]">, Sambungan</span>
             </>
           )}
         </h2>
       ) : page.kind === "appendix" ? (
-        <h2 className="mb-5 text-[14px] font-bold">{page.title}</h2>
+        <h2 className="mb-5 text-[13.33px] font-bold">{page.title}</h2>
       ) : null}
       {renderGroupedBlocks(draft, page.blocks)}
       {page.continues && page.kind === "main" ? (
-        <p className="mt-3 border-t border-slate-800 pt-1 text-right text-[12px] italic">Bersambung ke halaman berikut</p>
+        <p className="mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic">Bersambung ke halaman berikut</p>
       ) : null}
     </div>
   );

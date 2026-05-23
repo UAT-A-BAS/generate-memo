@@ -15,6 +15,7 @@ export type PreviewBlock =
   | { id: string; type: "memo-heading"; estimatedHeight: number }
   | { id: string; type: "recipients"; estimatedHeight: number }
   | { id: string; type: "introduction"; estimatedHeight: number }
+  | { id: string; type: "reference"; estimatedHeight: number }
   | { id: string; type: "development-row"; estimatedHeight: number; row: DevelopmentRow; index: number }
   | { id: string; type: "pilot-schedule"; estimatedHeight: number }
   | { id: string; type: "activity-row"; estimatedHeight: number; row: ActivityRow; index: number }
@@ -157,6 +158,13 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       type: "introduction",
       estimatedHeight: 88,
     },
+    ...(draft.metadata.memoType === "Nasional" && draft.referenceEnabled
+      ? [{
+          id: "reference",
+          type: "reference" as const,
+          estimatedHeight: richBlockHeight(draft.reference, 68, 72),
+        }]
+      : []),
     ...draft.developmentRows.map((row, index) => ({
       id: `development-${row.id}`,
       type: "development-row" as const,

@@ -76,7 +76,7 @@ function initialsText(draft: MemoDraft) {
 
 function run(
   text: string,
-  options: { bold?: boolean; size?: number; allCaps?: boolean; italics?: boolean; color?: string; underline?: boolean } = {},
+  options: { bold?: boolean; size?: number; allCaps?: boolean; italics?: boolean; color?: string; underline?: boolean; font?: string } = {},
 ) {
   return new TextRun({
     text: breakLongWords(options.allCaps ? text.toUpperCase() : text),
@@ -85,7 +85,7 @@ function run(
     color: options.color,
     underline: options.underline ? { type: UnderlineType.SINGLE } : undefined,
     size: options.size ?? 22,
-    font: "Times New Roman",
+    font: options.font ?? "Times New Roman",
   });
 }
 
@@ -98,6 +98,7 @@ function paragraph(
     italics?: boolean;
     color?: string;
     underline?: boolean;
+    font?: string;
   } = {},
 ) {
   return new Paragraph({
@@ -126,7 +127,7 @@ function previewSection(title: string, content: FileChild[]) {
   return table([
     new TableRow({
       children: [
-        sectionCell([paragraph(title, { bold: true, size: 21 })], 22),
+        sectionCell([paragraph(title, { bold: true, size: 20 })], 22),
         sectionCell(content, 78),
       ],
     }),
@@ -179,19 +180,19 @@ function validationWatermark(watermarkData: Uint8Array) {
         type: "png",
         data: watermarkData,
         transformation: {
-          width: 720,
-          height: 1018,
+          width: 700,
+          height: 990,
         },
         floating: {
           behindDocument: true,
           allowOverlap: true,
           horizontalPosition: {
             relative: HorizontalPositionRelativeFrom.PAGE,
-            offset: 1180000,
+            offset: 1280000,
           },
           verticalPosition: {
             relative: VerticalPositionRelativeFrom.PAGE,
-            offset: 1980000,
+            offset: 2050000,
           },
           wrap: {
             type: TextWrappingType.NONE,
@@ -209,12 +210,12 @@ function header() {
         children: [
           new InternalHyperlink({
             anchor: VALIDATION_BOOKMARK,
-            children: [run("[No Memo]", { size: 18, color: "BFBFBF" })],
+            children: [run("[No Memo]", { size: 22, color: "BFBFBF" })],
           }),
           new TextRun({ break: 1 }),
           new InternalHyperlink({
             anchor: VALIDATION_BOOKMARK,
-            children: [run("[Tanggal Rilis]", { size: 18, color: "BFBFBF" })],
+            children: [run("[Tanggal Rilis]", { size: 22, color: "BFBFBF" })],
           }),
         ],
       }),
@@ -231,9 +232,9 @@ function footer() {
           new InternalHyperlink({
             anchor: VALIDATION_BOOKMARK,
             children: [
-              new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 18, color: "7F7F7F" }),
-              run(" / ", { size: 18, color: "7F7F7F" }),
-              new TextRun({ children: [PageNumber.TOTAL_PAGES], font: "Times New Roman", size: 18, color: "7F7F7F" }),
+              new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 22, color: "7F7F7F" }),
+              run(" / ", { size: 22, color: "7F7F7F" }),
+              new TextRun({ children: [PageNumber.TOTAL_PAGES], font: "Times New Roman", size: 22, color: "7F7F7F" }),
             ],
           }),
         ],
@@ -242,12 +243,13 @@ function footer() {
   });
 }
 
-function recipientsText(recipients: Recipient[]) {
+function recipientsText(recipients: Recipient[], options: { dashSingle?: boolean } = {}) {
+  const useDash = options.dashSingle || recipients.length > 1;
   return recipients.flatMap((recipient) => {
     const name = recipient.name?.trim()
       ? [`  U.p. Yth. ${recipient.gender} ${recipient.name}`]
       : [];
-    return [`- ${recipient.position}`, ...name];
+    return [`${useDash ? "- " : ""}${recipient.position}`, ...name];
   });
 }
 
@@ -256,18 +258,18 @@ function developmentTable(rows: Extract<PreviewBlock, { type: "development-row" 
     new TableRow({
       tableHeader: true,
       children: [
-        cell([paragraph("No.", { bold: true, size: 18 })], 8, true),
-        cell([paragraph("Pengembangan", { bold: true, size: 18 })], 46, true),
-        cell([paragraph("Keterangan", { bold: true, size: 18 })], 46, true),
+        cell([paragraph("No.", { bold: true, size: 22 })], 8, true),
+        cell([paragraph("Pengembangan", { bold: true, size: 22 })], 46, true),
+        cell([paragraph("Keterangan", { bold: true, size: 22 })], 46, true),
       ],
     }),
     ...rows.map(
       (block) =>
         new TableRow({
           children: [
-            cell([paragraph(String(block.index + 1), { size: 18 })], 8),
-            cell(richTextToDocxParagraphs(block.row.item, { size: 19 }), 46),
-            cell(richTextToDocxParagraphs(block.row.description, { size: 19 }), 46),
+            cell([paragraph(String(block.index + 1), { size: 22 })], 8),
+            cell(richTextToDocxParagraphs(block.row.item, { size: 22 }), 46),
+            cell(richTextToDocxParagraphs(block.row.description, { size: 22 }), 46),
           ],
         }),
     ),
@@ -279,19 +281,19 @@ function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) 
     new TableRow({
       tableHeader: true,
       children: [
-        cell([paragraph("Aktivitas", { bold: true, size: 18 })], 56, true),
-        cell([paragraph("PIC", { bold: true, size: 18 })], 22, true),
-        cell([paragraph("Waktu", { bold: true, size: 18 })], 22, true),
+        cell([paragraph("Aktivitas", { bold: true, size: 22 })], 56, true),
+        cell([paragraph("PIC", { bold: true, size: 22 })], 22, true),
+        cell([paragraph("Waktu", { bold: true, size: 22 })], 22, true),
       ],
     }),
     ...rows.map(
       (block) =>
         new TableRow({
           children: [
-            cell(richTextToDocxParagraphs(block.row.activity, { size: 19 }), 56),
-            cell([paragraph(block.row.owner, { size: 18 })], 22),
+            cell(richTextToDocxParagraphs(block.row.activity, { size: 22 }), 56),
+            cell([paragraph(block.row.owner, { size: 22 })], 22),
             cell(
-              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 18 })],
+              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 22 })],
               22,
             ),
           ],
@@ -320,11 +322,11 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
         children: [
           cell([paragraph(`${block.index + 1}.`, { size: 17 })], 6),
           cell([
-            paragraph(block.row.section, { bold: true, size: 18 }),
-            ...richTextToDocxParagraphs(block.row.scenario, { size: 18 }),
+            paragraph(block.row.section, { bold: true, size: 22 }),
+            ...richTextToDocxParagraphs(block.row.scenario, { size: 22 }),
           ], 43),
-          cell(richTextToDocxParagraphs(block.row.expectedResult, { size: 18 }), 36),
-          cell([paragraph(block.row.pic, { size: 17 })], 15),
+          cell(richTextToDocxParagraphs(block.row.expectedResult, { size: 22 }), 36),
+          cell([paragraph(block.row.pic, { size: 22 })], 15),
         ],
       }),
     ];
@@ -368,30 +370,30 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
         table([
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Kepada", { size: 21 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 21 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map((item) => paragraph(item, { size: 21 })) }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Kepada", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map((item) => paragraph(item, { size: 22 })) }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, children: [paragraph("Dari", { size: 21 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 21 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 21 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph("Dari", { size: 22 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 22 })] }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, children: [paragraph("Jenis Informasi", { size: 21 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 21 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph("INTERNAL BCA", { size: 21 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph("Jenis Informasi", { size: 22 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph("INTERNAL BCA", { size: 22 })] }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, children: [paragraph("Perihal", { size: 21 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 21 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(draft.metadata.perihal, { bold: true, size: 21 })] }),
+              new TableCell({ borders: noBorder, children: [paragraph("Perihal", { size: 22, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 22, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, children: [paragraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
             ],
           }),
         ]),
@@ -401,8 +403,12 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
     case "introduction":
       return [
         previewSection("Pengantar", [
-          paragraph(`Sehubungan dengan akan dilakukannya ${draft.metadata.perihal}, berikut kami sampaikan informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.`, { size: 21 }),
+          paragraph(`Sehubungan dengan akan dilakukannya ${draft.metadata.perihal}, berikut kami sampaikan informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.`, { size: 22 }),
         ]),
+      ];
+    case "reference":
+      return [
+        previewSection("Referensi", richTextToDocxParagraphs(draft.reference, { size: 22 })),
       ];
     case "pilot-schedule":
       return [
@@ -410,9 +416,9 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
           new Paragraph({
             spacing: { after: 100, line: 260 },
             children: [
-              run(`${draft.metadata.perihal} akan dilaksanakan pada tanggal `, { size: 21 }),
-              run(formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate), { bold: true, size: 21 }),
-              run(".", { size: 21 }),
+              run(`${draft.metadata.perihal} akan dilaksanakan pada tanggal `, { size: 22 }),
+              run(formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate), { bold: true, size: 22 }),
+              run(".", { size: 22 }),
             ],
           }),
         ]),
@@ -420,44 +426,44 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
     case "access-link":
       return [
         previewSection(`Akses Link ${draft.metadata.perihal}`, [
-          paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 21 }),
-          paragraph(draft.metadata.accessLink || "-", { size: 21 }),
+          paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 22 }),
+          paragraph(draft.metadata.accessLink || "-", { size: 22 }),
         ]),
       ];
     case "contacts":
       return [
         previewSection("PIC yang Dapat Dihubungi", [
-          paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 21 }),
-          ...draft.contacts.map((contact) => paragraph(`- ${contact.name} - ${contact.email}`, { size: 21 })),
+          paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
+          ...draft.contacts.map((contact) => paragraph(`- ${contact.name} - ${contact.email}`, { size: 22 })),
         ]),
       ];
     case "signature":
       return [
-        paragraph("Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.", { size: 21 }),
+        paragraph("Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.", { size: 22 }),
         ...draft.signers.map((signer) =>
           new Paragraph({
             spacing: { after: 70, line: 260 },
             children: [
-              run(signer.name.toUpperCase(), { bold: true, size: 21 }),
-              run(` - ${signer.title}`, { size: 21 }),
+              run(signer.name.toUpperCase(), { bold: true, size: 22 }),
+              run(` - ${signer.title}`, { size: 22 }),
             ],
           }),
         ),
       ];
     case "cc":
       return [
-        paragraph("Tembusan:", { size: 21 }),
-        ...recipientsText(draft.ccRecipients).map((item) => paragraph(item)),
+        paragraph("Tembusan:", { size: 22 }),
+        ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) => paragraph(item, { size: 22 })),
       ];
     case "initials":
-      return [paragraph(initialsText(draft), { size: 18 })];
+      return [paragraph(initialsText(draft), { size: 20 })];
     case "validation":
       return [
         validationWatermark(watermarkData),
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { before: 520, after: 60 },
-          children: [run("INTERNAL BCA/RAHASIA/SANGAT RAHASIA", { size: 20 })],
+          children: [run("INTERNAL BCA/RAHASIA/SANGAT RAHASIA", { size: 18 })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -465,7 +471,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, watermarkData: Uin
           children: [
             new Bookmark({
               id: VALIDATION_BOOKMARK,
-              children: [run("Validasi Dokumen", { bold: true, size: 32, color: "1F4E79" })],
+              children: [run("Validasi Dokumen", { bold: true, size: 36, color: "1F4E79" })],
             }),
           ],
         }),
@@ -518,19 +524,32 @@ function pageChildren(draft: MemoDraft, page: PreviewPage, watermarkData: Uint8A
   const children: FileChild[] = [];
 
   if (page.continuationTitle) {
-    children.push(
-      new Paragraph({
-        spacing: { before: page.kind === "appendix" ? 360 : 220, after: 180 },
-        children: [run(page.continuationTitle, {
-          bold: true,
-          size: page.kind === "appendix" ? 22 : 23,
-        })],
-      }),
-    );
+    if (page.kind === "main") {
+      children.push(
+        new Paragraph({
+          spacing: { before: 220, after: 180 },
+          children: [
+            run("Perihal: ", { size: 22, font: "Arial" }),
+            run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
+            run(", Sambungan", { size: 22, font: "Arial" }),
+          ],
+        }),
+      );
+    } else {
+      children.push(
+        new Paragraph({
+          spacing: { before: 360, after: 180 },
+          children: [
+            run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 20 }),
+            run(", Sambungan", { size: 20 }),
+          ],
+        }),
+      );
+    }
   } else if (page.kind === "appendix") {
     children.push(new Paragraph({
       spacing: { before: 360, after: 180 },
-      children: [run(page.title, { bold: true, size: 22 })],
+      children: [run(page.title, { bold: true, size: 20 })],
     }));
   }
 
@@ -542,7 +561,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage, watermarkData: Uint8A
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "development-row");
       children.push(
         previewSection("Lingkup Pengembangan", [
-          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, { size: 21 }),
+          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, { size: 22 }),
           developmentTable(rows as Extract<PreviewBlock, { type: "development-row" }>[]),
         ]),
       );
@@ -554,7 +573,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage, watermarkData: Uint8A
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "activity-row");
       children.push(
         previewSection("Aktivitas Cabang dan Unit Kerja", [
-          paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, { size: 21 }),
+          paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, { size: 22 }),
           activityTable(rows as Extract<PreviewBlock, { type: "activity-row" }>[]),
         ]),
       );
@@ -574,7 +593,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage, watermarkData: Uint8A
   }
 
   if (page.continues && page.kind === "main") {
-    children.push(paragraph("Bersambung ke halaman berikut", { italics: true, align: AlignmentType.RIGHT }));
+    children.push(paragraph("Bersambung ke halaman berikut", { italics: true, align: AlignmentType.RIGHT, size: 20 }));
   }
 
   return children;

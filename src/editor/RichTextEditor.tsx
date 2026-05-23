@@ -1,6 +1,7 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
+import UnderlineExtension from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import { Bold, Italic, List, ListOrdered, Pilcrow, Underline } from "lucide-react";
 import { useEffect } from "react";
@@ -14,7 +15,7 @@ type RichTextEditorProps = {
 
 export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, UnderlineExtension],
     content: value,
     immediatelyRender: false,
     editorProps: {

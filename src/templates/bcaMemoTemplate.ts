@@ -97,6 +97,8 @@ export function createInitialMemoDraft(): MemoDraft {
     },
     recipients: [createRecipient()],
     introduction: emptyRichText(),
+    referenceEnabled: false,
+    reference: emptyRichText(),
     developmentRows: [createDevelopmentRow()],
     pilotSchedule: {
       startDate: "",
@@ -153,6 +155,8 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     },
     recipients: Array.isArray(input.recipients) ? input.recipients : base.recipients,
     introduction: input.introduction ?? base.introduction,
+    referenceEnabled: input.referenceEnabled ?? base.referenceEnabled,
+    reference: input.reference ?? base.reference,
     developmentRows: Array.isArray(input.developmentRows)
       ? input.developmentRows
       : base.developmentRows,
