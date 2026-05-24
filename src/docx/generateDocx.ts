@@ -5,6 +5,7 @@ import {
   Document,
   Footer,
   Header,
+  LineRuleType,
   Packer,
   PageBreak,
   PageNumber,
@@ -52,6 +53,10 @@ const sectionTopBorder = {
 
 const BODY_COLUMN_INDENT = 2100;
 const BODY_COLUMN_RIGHT_INDENT = 350;
+const CONTINUATION_RULE_INDENT = 1725;
+const WORD_LINE_MULTIPLE_108 = 259;
+
+type SectionRule = "full" | "content" | "none";
 
 function breakLongWords(text: string, chunkSize = 28) {
   return text.replace(/\S{29,}/g, (word) => {
@@ -62,6 +67,22 @@ function breakLongWords(text: string, chunkSize = 28) {
 
 function pct(value: number) {
   return value * 50;
+}
+
+function wordSpacing(
+  overrides: {
+    before?: number;
+    after?: number;
+    line?: number;
+    lineRule?: (typeof LineRuleType)[keyof typeof LineRuleType];
+  } = {},
+) {
+  return {
+    before: overrides.before ?? 0,
+    after: overrides.after ?? 0,
+    line: overrides.line ?? WORD_LINE_MULTIPLE_108,
+    lineRule: overrides.lineRule ?? LineRuleType.AUTO,
+  };
 }
 
 function scheduleTitle(draft: MemoDraft) {
@@ -120,12 +141,17 @@ function paragraph(
     indent?: { left?: number; right?: number; firstLine?: number; hanging?: number };
     spacingBefore?: number;
     spacingAfter?: number;
+    line?: number;
   } = {},
 ) {
   return new Paragraph({
     alignment: options.align,
     indent: options.indent,
-    spacing: { before: options.spacingBefore, after: options.spacingAfter ?? 100, line: 260 },
+    spacing: wordSpacing({
+      before: options.spacingBefore,
+      after: options.spacingAfter,
+      line: options.line,
+    }),
     children: multilineRuns(text, options),
   });
 }
@@ -143,8 +169,8 @@ function bodyColumnParagraph(
 function continuationRule() {
   return new Paragraph({
     includeIfEmpty: true,
-    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: { before: 160, after: 260 },
+    indent: { left: CONTINUATION_RULE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    spacing: wordSpacing({ before: 160, after: 260 }),
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
     },
@@ -152,13 +178,13 @@ function continuationRule() {
   });
 }
 
-function sectionCell(children: FileChild[], width: number) {
+function sectionCell(children: FileChild[], width: number, withTopBorder: boolean) {
   return new TableCell({
     verticalAlign: VerticalAlign.TOP,
     margins: { top: 140, bottom: 120, left: 0, right: 120 },
     width: { size: pct(width), type: WidthType.PERCENTAGE },
     borders: {
-      top: sectionTopBorder,
+      top: withTopBorder ? sectionTopBorder : noBorder.top,
       bottom: noBorder.bottom,
       left: noBorder.left,
       right: noBorder.right,
@@ -167,12 +193,15 @@ function sectionCell(children: FileChild[], width: number) {
   });
 }
 
-function previewSection(title: string, content: FileChild[]) {
+function previewSection(title: string, content: FileChild[], rule: SectionRule = "content") {
+  const titleHasRule = rule === "full";
+  const contentHasRule = rule !== "none";
+
   return table([
     new TableRow({
       children: [
-        sectionCell([paragraph(title, { bold: true, size: 20 })], 22),
-        sectionCell(content, 78),
+        sectionCell([paragraph(title, { bold: true, size: 20 })], 22, titleHasRule),
+        sectionCell(content, 78, contentHasRule),
       ],
     }),
   ], 100, [22, 78]);
@@ -189,17 +218,6 @@ function cell(children: Paragraph[], width?: number, shaded = false) {
   });
 }
 
-function spanningCell(children: Paragraph[], span: number, shaded = false) {
-  return new TableCell({
-    columnSpan: span,
-    verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 70, bottom: 70, left: 90, right: 90 },
-    shading: shaded ? { fill: "D9D9D9" } : undefined,
-    borders: { top: border, bottom: border, left: border, right: border },
-    children,
-  });
-}
-
 function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
   return new Table({
     width: { size: pct(width), type: WidthType.PERCENTAGE },
@@ -207,6 +225,54 @@ function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
     layout: TableLayoutType.FIXED,
     rows,
   });
+}
+
+function continuationNotice() {
+  return new Paragraph({
+    alignment: AlignmentType.RIGHT,
+    spacing: wordSpacing({ before: 140 }),
+    border: {
+      top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
+    },
+    children: [run("Bersambung ke halaman berikutnya", { italics: true, size: 20 })],
+  });
+}
+
+function compactCell(children: Paragraph[], width?: number, shaded = false) {
+  return new TableCell({
+    verticalAlign: VerticalAlign.TOP,
+    margins: { top: 35, bottom: 35, left: 55, right: 55 },
+    shading: shaded ? { fill: "F3F4F6" } : undefined,
+    width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
+    borders: { top: border, bottom: border, left: border, right: border },
+    children,
+  });
+}
+
+function compactSpanningCell(children: Paragraph[], span: number, shaded = false) {
+  return new TableCell({
+    columnSpan: span,
+    verticalAlign: VerticalAlign.CENTER,
+    margins: { top: 35, bottom: 35, left: 55, right: 55 },
+    shading: shaded ? { fill: "D9D9D9" } : undefined,
+    borders: { top: border, bottom: border, left: border, right: border },
+    children,
+  });
+}
+
+function appendixParagraph(
+  text: string,
+  options: Parameters<typeof paragraph>[1] = {},
+) {
+  return paragraph(text, {
+    ...options,
+    spacingAfter: options.spacingAfter ?? 0,
+    line: options.line ?? WORD_LINE_MULTIPLE_108,
+  });
+}
+
+function appendixRichParagraphs(doc: Parameters<typeof richTextToDocxParagraphs>[0]) {
+  return richTextToDocxParagraphs(doc, { size: 22, spacingBefore: 0, spacingAfter: 0, line: WORD_LINE_MULTIPLE_108 });
 }
 
 function mergeKey(value: string) {
@@ -217,6 +283,7 @@ function header() {
   return new Header({
     children: [
       new Paragraph({
+        spacing: wordSpacing(),
         children: [
           run("[No Memo]", { size: 22, color: "BFBFBF" }),
           new TextRun({ break: 1 }),
@@ -232,6 +299,7 @@ function footer() {
     children: [
       new Paragraph({
         alignment: AlignmentType.RIGHT,
+        spacing: wordSpacing(),
         children: [
           new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 22, color: "7F7F7F" }),
           run(" / ", { size: 22, color: "7F7F7F" }),
@@ -333,7 +401,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
         ? [
             new TableRow({
               cantSplit: true,
-              children: [spanningCell([paragraph(block.meta.dateLabel, { bold: true, size: 17 })], 4, true)],
+              children: [compactSpanningCell([appendixParagraph(block.meta.dateLabel, { bold: true, size: 17 })], 4, true)],
             }),
           ]
         : [];
@@ -343,15 +411,19 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             new TableRow({
               cantSplit: true,
               children: [
-                cell([paragraph(`${block.meta.sectionLetter}.`, { bold: true, size: 17, align: AlignmentType.CENTER })], 6, true),
+                compactCell(
+                  [appendixParagraph(`${block.meta.sectionLetter}.`, { bold: true, size: 17, align: AlignmentType.CENTER })],
+                  5,
+                  true,
+                ),
                 new TableCell({
                   columnSpan: 3,
                   verticalAlign: VerticalAlign.CENTER,
-                  margins: { top: 70, bottom: 70, left: 90, right: 90 },
+                  margins: { top: 35, bottom: 35, left: 55, right: 55 },
                   shading: { fill: "D9D9D9" },
-                  width: { size: pct(94), type: WidthType.PERCENTAGE },
+                  width: { size: pct(95), type: WidthType.PERCENTAGE },
                   borders: { top: border, bottom: border, left: border, right: border },
-                  children: [paragraph(block.meta.sectionTitle, { bold: true, size: 22 })],
+                  children: [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
                 }),
               ],
             }),
@@ -362,17 +434,17 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       ? new TableCell({
           verticalMerge: VerticalMergeType.CONTINUE,
           verticalAlign: VerticalAlign.CENTER,
-          margins: { top: 90, bottom: 90, left: 90, right: 90 },
+          margins: { top: 35, bottom: 35, left: 55, right: 55 },
           borders: { top: border, bottom: border, left: border, right: border },
-          children: [paragraph("", { size: 22 })],
+          children: [appendixParagraph("", { size: 22 })],
         })
       : new TableCell({
           verticalMerge: picMerge.restart ? VerticalMergeType.RESTART : undefined,
           verticalAlign: VerticalAlign.CENTER,
-          margins: { top: 90, bottom: 90, left: 90, right: 90 },
-          width: { size: pct(14), type: WidthType.PERCENTAGE },
+          margins: { top: 35, bottom: 35, left: 55, right: 55 },
+          width: { size: pct(11), type: WidthType.PERCENTAGE },
           borders: { top: border, bottom: border, left: border, right: border },
-          children: [paragraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })],
+          children: [appendixParagraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })],
         });
 
     return [
@@ -381,9 +453,9 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       new TableRow({
         cantSplit: true,
         children: [
-          cell([paragraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], 6),
-          cell(richTextToDocxParagraphs(block.row.scenario, { size: 22 }), 39),
-          cell(richTextToDocxParagraphs(block.row.expectedResult, { size: 22 }), 41),
+          compactCell([appendixParagraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], 5),
+          compactCell(appendixRichParagraphs(block.row.scenario), 42),
+          compactCell(appendixRichParagraphs(block.row.expectedResult), 42),
           picCell,
         ],
       }),
@@ -395,14 +467,14 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       cantSplit: true,
       tableHeader: true,
       children: [
-        cell([paragraph("No", { bold: true, size: 17 })], 6, true),
-        cell([paragraph("Aktivitas", { bold: true, size: 17, align: AlignmentType.CENTER })], 39, true),
-        cell([paragraph("Hasil/Keterangan", { bold: true, size: 17, align: AlignmentType.CENTER })], 41, true),
-        cell([paragraph("PIC", { bold: true, size: 17, align: AlignmentType.CENTER })], 14, true),
+        compactCell([appendixParagraph("No", { bold: true, size: 17, align: AlignmentType.CENTER })], 5, true),
+        compactCell([appendixParagraph("Aktivitas", { bold: true, size: 17, align: AlignmentType.CENTER })], 42, true),
+        compactCell([appendixParagraph("Hasil/Keterangan", { bold: true, size: 17, align: AlignmentType.CENTER })], 42, true),
+        compactCell([appendixParagraph("PIC", { bold: true, size: 17, align: AlignmentType.CENTER })], 11, true),
       ],
     }),
     ...bodyRows,
-  ], 100, [6, 39, 41, 14]);
+  ], 100, [5, 42, 42, 11]);
 }
 
 function consumeTableRows(
@@ -421,11 +493,21 @@ function consumeTableRows(
   return { rows, nextIndex: index };
 }
 
-function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
+function isSectionBlock(block: PreviewBlock) {
+  return (
+    block.type === "introduction" ||
+    block.type === "reference" ||
+    block.type === "pilot-schedule" ||
+    block.type === "access-link" ||
+    block.type === "contacts"
+  );
+}
+
+function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: SectionRule = "content"): FileChild[] {
   switch (block.type) {
     case "memo-heading":
       return [
-        new Paragraph({ spacing: { before: 560 } }),
+        new Paragraph({ spacing: wordSpacing({ before: 560 }) }),
         table([
           new TableRow({
             children: [
@@ -463,7 +545,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
       return [
         previewSection("Pengantar", [
           paragraph(`Sehubungan dengan akan dilakukannya ${draft.metadata.perihal}, berikut kami sampaikan informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.`, { size: 22 }),
-        ]),
+        ], sectionRule),
       ];
     case "reference":
       const items = referenceItems(draft);
@@ -471,34 +553,34 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
         previewSection("Referensi", [
           paragraph("Memorandum ini mengacu pada.", { size: 22 }),
           ...items.map((item) => paragraph(`\u2022 ${item}`, { size: 22 })),
-        ]),
+        ], sectionRule),
       ];
     case "pilot-schedule":
       return [
         previewSection(scheduleTitle(draft), [
           new Paragraph({
-            spacing: { after: 100, line: 260 },
+            spacing: wordSpacing(),
             children: [
               run(`${draft.metadata.perihal} akan dilaksanakan pada tanggal `, { size: 22 }),
               run(formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate), { bold: true, size: 22 }),
               run(".", { size: 22 }),
             ],
           }),
-        ]),
+        ], sectionRule),
       ];
     case "access-link":
       return [
         previewSection(`Akses Link ${draft.metadata.perihal}`, [
           paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 22 }),
           paragraph(draft.metadata.accessLink || "-", { size: 22 }),
-        ]),
+        ], sectionRule),
       ];
     case "contacts":
       return [
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) => paragraph(`- ${contact.name} - ${contact.email}`, { size: 22 })),
-        ]),
+        ], sectionRule),
       ];
     case "signature":
       return [
@@ -509,7 +591,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
         ...draft.signers.map((signer) =>
           new Paragraph({
             indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-            spacing: { after: 70, line: 260 },
+            spacing: wordSpacing({ after: 70 }),
             children: [
               run(signer.name.toUpperCase(), { bold: true, size: 22 }),
               run(` - ${signer.title}`, { size: 22 }),
@@ -533,12 +615,22 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
 
 function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
   const children: FileChild[] = [];
+  let sectionCount = 0;
+  const nextSectionRule = (): SectionRule => {
+    if (sectionCount === 0) {
+      sectionCount += 1;
+      return page.continuationTitle && page.kind === "main" ? "none" : "full";
+    }
+
+    sectionCount += 1;
+    return "content";
+  };
 
   if (page.continuationTitle) {
     if (page.kind === "main") {
       children.push(
         new Paragraph({
-          spacing: { before: 520, after: 80 },
+          spacing: wordSpacing({ before: 520, after: 80 }),
           children: [
             run("Perihal: ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
@@ -550,7 +642,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     } else {
       children.push(
         new Paragraph({
-          spacing: { before: 360, after: 180 },
+          spacing: wordSpacing({ before: 360, after: 180 }),
           children: [
             run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 20 }),
             run(", Sambungan", { size: 20 }),
@@ -560,7 +652,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     }
   } else if (page.kind === "appendix") {
     children.push(new Paragraph({
-      spacing: { before: 360, after: 180 },
+      spacing: wordSpacing({ before: 360, after: 180 }),
       children: [run(page.title, { bold: true, size: 20 })],
     }));
   }
@@ -575,7 +667,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
         previewSection("Lingkup Pengembangan", [
           paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, { size: 22 }),
           developmentTable(rows as Extract<PreviewBlock, { type: "development-row" }>[]),
-        ]),
+        ], nextSectionRule()),
       );
       index = nextIndex;
       continue;
@@ -587,7 +679,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
         previewSection("Aktivitas Cabang dan Unit Kerja", [
           paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, { size: 22 }),
           activityTable(rows as Extract<PreviewBlock, { type: "activity-row" }>[]),
-        ]),
+        ], nextSectionRule()),
       );
       index = nextIndex;
       continue;
@@ -600,12 +692,12 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
       continue;
     }
 
-    children.push(...blockChildren(draft, block));
+    children.push(...blockChildren(draft, block, isSectionBlock(block) ? nextSectionRule() : "content"));
     index += 1;
   }
 
   if (page.continues && page.kind === "main") {
-    children.push(paragraph("Bersambung ke halaman berikut", { italics: true, align: AlignmentType.RIGHT, size: 20 }));
+    children.push(continuationNotice());
   }
 
   return children;
@@ -636,7 +728,7 @@ function buildSection(draft: MemoDraft, pages: PreviewPage[]): ISectionOptions {
   const children = pages.flatMap((page, index) => {
     const pageContent = pageChildren(draft, page);
     return index < pages.length - 1
-      ? [...pageContent, new Paragraph({ children: [new PageBreak()] })]
+      ? [...pageContent, new Paragraph({ spacing: wordSpacing(), children: [new PageBreak()] })]
       : pageContent;
   });
 

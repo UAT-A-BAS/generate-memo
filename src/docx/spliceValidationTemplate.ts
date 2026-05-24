@@ -238,11 +238,14 @@ function normalizePctWidthAttributes(xml: string) {
 }
 
 function normalizeValidationColors(xml: string) {
-  return xml.replace(/<w:color\b[^>]*w:val="(?:0F243E|1F4E79|003B7A|5B9BD5)"[^>]*\/>/gi, (tag) =>
-    tag
-      .replace(/w:val="[^"]*"/, `w:val="${VALIDATION_BLUE}"`)
-      .replace(/\s+w:theme(?:Color|Tint|Shade)="[^"]*"/g, ""),
-  );
+  return xml.replace(/<w:color\b[^>]*\/>/gi, (tag) => {
+    const withoutTheme = tag.replace(/\s+w:theme(?:Color|Tint|Shade)="[^"]*"/g, "");
+    if (!/w:val="(?:0F243E|1F4E79|003B7A|5B9BD5|1F497D)"/i.test(withoutTheme)) {
+      return withoutTheme;
+    }
+
+    return withoutTheme.replace(/w:val="[^"]*"/, `w:val="${VALIDATION_BLUE}"`);
+  });
 }
 
 function styleDefinitions(stylesXml: string) {
@@ -339,13 +342,16 @@ export async function spliceValidationTemplate(
   const { content, sectPr } = extractTrailingSectPr(outputBody);
   const mergedBody = `${content}${sectionBreakParagraph(sectPr)}${templateBody}`;
 
-  outputDocumentXml = mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml);
+  outputDocumentXml = normalizeValidationColors(
+    mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml),
+  );
   outputRelsXml = appendRelationships(outputRelsXml, newRelationships);
 
   outputZip.file("word/document.xml", normalizePctWidthAttributes(outputDocumentXml));
   outputZip.file("word/_rels/document.xml.rels", outputRelsXml);
   if (outputStyles && templateStylesXml) {
     outputStylesXml = appendMissingStyles(outputStylesXml, normalizeValidationColors(templateStylesXml));
+    outputStylesXml = normalizeValidationColors(outputStylesXml);
     outputZip.file("word/styles.xml", outputStylesXml);
   }
   outputZip.file("[Content_Types].xml", contentTypesXml);

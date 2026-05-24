@@ -9,10 +9,12 @@ import { PageContainer } from "./PageContainer";
 
 const VALIDATION_BLUE = "#1F497D";
 
+type SectionRule = "full" | "content" | "none";
+
 function RichTextView({ html }: { html: string }) {
   return (
     <div
-      className="preview-rich-text text-[14.67px] leading-[1.45]"
+      className="preview-rich-text text-[14.67px] leading-[1.08]"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -37,15 +39,21 @@ function referenceItems(draft: MemoDraft) {
 function PreviewSection({
   title,
   children,
+  rule = "content",
 }: {
   title: string;
   children: React.ReactNode;
+  rule?: SectionRule;
 }) {
+  const sectionRuleClass = rule === "full" ? "border-t border-slate-800 pt-3" : "";
+  const titleRuleClass = rule === "content" ? "pt-3" : "";
+  const contentRuleClass = rule === "content" ? "border-t border-slate-800 pt-3" : "";
+
   return (
-    <section className="mt-4 border-t border-slate-800 pt-3">
-      <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.3]">
-        <h3 className="text-[13.33px] font-bold leading-[1.25]">{title}</h3>
-        <div>{children}</div>
+    <section className={`mt-4 ${sectionRuleClass}`}>
+      <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.08]">
+        <h3 className={`${titleRuleClass} text-[13.33px] font-bold leading-[1.08]`}>{title}</h3>
+        <div className={contentRuleClass}>{children}</div>
       </div>
     </section>
   );
@@ -136,11 +144,11 @@ function appendixPicSpan(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]
   return { hidden: false, span };
 }
 
-function renderBlock(draft: MemoDraft, block: PreviewBlock) {
+function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: SectionRule = "content") {
   switch (block.type) {
     case "memo-heading":
       return (
-        <div className="mt-14 text-[14.67px] leading-[1.45]">
+        <div className="mt-14 text-[14.67px] leading-[1.08]">
           <div className="grid grid-cols-[92px_14px_1fr] gap-x-2">
             <span>Kepada</span>
             <span>:</span>
@@ -163,7 +171,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       return null;
     case "introduction":
       return (
-        <PreviewSection title="Pengantar">
+        <PreviewSection title="Pengantar" rule={sectionRule}>
           <p>
             Sehubungan dengan akan dilakukannya {draft.metadata.perihal}, berikut kami sampaikan
             informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.
@@ -173,7 +181,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
     case "reference":
       const items = referenceItems(draft);
       return (
-        <PreviewSection title="Referensi">
+        <PreviewSection title="Referensi" rule={sectionRule}>
           <p>Memorandum ini mengacu pada.</p>
           {items.length ? (
             <ul className="mt-1 list-disc pl-5">
@@ -186,7 +194,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "pilot-schedule":
       return (
-        <PreviewSection title={scheduleTitle(draft)}>
+        <PreviewSection title={scheduleTitle(draft)} rule={sectionRule}>
           <p>
             {draft.metadata.perihal} akan dilaksanakan pada tanggal{" "}
             <strong>{formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate)}</strong>.
@@ -195,14 +203,14 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "access-link":
       return (
-        <PreviewSection title={`Akses Link ${draft.metadata.perihal}`}>
+        <PreviewSection title={`Akses Link ${draft.metadata.perihal}`} rule={sectionRule}>
           <p>{draft.metadata.perihal} dapat diakses melalui link berikut:</p>
           <p className="break-all underline">{draft.metadata.accessLink || "-"}</p>
         </PreviewSection>
       );
     case "contacts":
       return (
-        <PreviewSection title="PIC yang Dapat Dihubungi">
+        <PreviewSection title="PIC yang Dapat Dihubungi" rule={sectionRule}>
           <p>PIC yang dapat dihubungi sehubungan dengan {draft.metadata.perihal} adalah:</p>
           <ul className="mt-1">
             {draft.contacts.map((contact) => (
@@ -213,7 +221,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "signature":
       return (
-        <div className="ml-[140px] mt-7 max-w-[575px] text-[14.67px] leading-[1.45]">
+        <div className="ml-[140px] mt-7 max-w-[575px] text-[14.67px] leading-[1.08]">
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
             {draft.signers.map((signer) => (
@@ -226,7 +234,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "cc":
       return (
-        <div className="ml-[140px] mt-6 max-w-[575px] text-[14.67px] leading-[1.35]">
+        <div className="ml-[140px] mt-6 max-w-[575px] text-[14.67px] leading-[1.08]">
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
             {draft.ccRecipients.map((recipient) => (
@@ -290,9 +298,33 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
   }
 }
 
-function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
+function isPreviewSectionBlock(block: PreviewBlock) {
+  return (
+    block.type === "introduction" ||
+    block.type === "reference" ||
+    block.type === "pilot-schedule" ||
+    block.type === "access-link" ||
+    block.type === "contacts"
+  );
+}
+
+function renderGroupedBlocks(
+  draft: MemoDraft,
+  blocks: PreviewBlock[],
+  suppressFirstSectionRule = false,
+) {
   const rendered: React.ReactNode[] = [];
   let index = 0;
+  let sectionCount = 0;
+  const nextSectionRule = (): SectionRule => {
+    if (sectionCount === 0) {
+      sectionCount += 1;
+      return suppressFirstSectionRule ? "none" : "full";
+    }
+
+    sectionCount += 1;
+    return "content";
+  };
 
   while (index < blocks.length) {
     const block = blocks[index];
@@ -300,7 +332,7 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
     if (block.type === "development-row") {
       const { rows, nextIndex } = consumeRows(blocks, index, "development-row");
       rendered.push(
-        <PreviewSection title="Lingkup Pengembangan" key={`development-${index}`}>
+        <PreviewSection title="Lingkup Pengembangan" rule={nextSectionRule()} key={`development-${index}`}>
           <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.perihal}:</p>
           <MemoTable headers={["No.", "Pengembangan", "Keterangan"]} columnWidths={["10%", "42%", "48%"]}>
             {(rows as Extract<PreviewBlock, { type: "development-row" }>[]).map((item) => (
@@ -324,7 +356,7 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
     if (block.type === "activity-row") {
       const { rows, nextIndex } = consumeRows(blocks, index, "activity-row");
       rendered.push(
-        <PreviewSection title="Aktivitas Cabang dan Unit Kerja" key={`activity-${index}`}>
+        <PreviewSection title="Aktivitas Cabang dan Unit Kerja" rule={nextSectionRule()} key={`activity-${index}`}>
           <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
           <MemoTable headers={["Aktivitas", "PIC", "Waktu"]} columnWidths={["66%", "16%", "18%"]}>
             {(rows as Extract<PreviewBlock, { type: "activity-row" }>[]).map((item) => (
@@ -395,7 +427,11 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
       continue;
     }
 
-    rendered.push(<div key={block.id}>{renderBlock(draft, block)}</div>);
+    rendered.push(
+      <div key={block.id}>
+        {renderBlock(draft, block, isPreviewSectionBlock(block) ? nextSectionRule() : "content")}
+      </div>,
+    );
     index += 1;
   }
 
@@ -424,15 +460,17 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
               <strong className="font-[Arial] text-[16px]">{draft.metadata.perihal}</strong>
               <span className="font-[Arial] text-[14.67px]">, Sambungan</span>
             </h2>
-            <div className="ml-[140px] mt-5 h-px w-[540px] bg-slate-800" />
+            <div className="ml-[120px] mt-5 h-px w-[560px] bg-slate-800" />
           </div>
         )
       ) : page.kind === "appendix" ? (
         <h2 className="mb-5 text-[13.33px] font-bold">{page.title}</h2>
       ) : null}
-      {renderGroupedBlocks(draft, page.blocks)}
+      {renderGroupedBlocks(draft, page.blocks, Boolean(page.continuationTitle && page.kind === "main"))}
       {page.continues && page.kind === "main" ? (
-        <p className="mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic">Bersambung ke halaman berikut</p>
+        <p className="mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
+          Bersambung ke halaman berikutnya
+        </p>
       ) : null}
     </div>
   );

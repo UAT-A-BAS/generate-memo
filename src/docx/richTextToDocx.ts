@@ -1,4 +1,5 @@
 import {
+  LineRuleType,
   Paragraph,
   TextRun,
   UnderlineType,
@@ -10,7 +11,11 @@ type RichTextDocxOptions = {
   size?: number;
   bold?: boolean;
   spacingAfter?: number;
+  spacingBefore?: number;
+  line?: number;
 };
+
+const WORD_LINE_MULTIPLE_108 = 259;
 
 function hasMark(marks: RichTextMark[] | undefined, type: string) {
   return Boolean(marks?.some((mark) => mark.type === type));
@@ -55,7 +60,12 @@ function paragraphFromNode(
   const runs = textRunsFromNode(node, options);
 
   return new Paragraph({
-    spacing: { after: options.spacingAfter ?? 90, line: 260 },
+    spacing: {
+      before: options.spacingBefore ?? 0,
+      after: options.spacingAfter ?? 0,
+      line: options.line ?? WORD_LINE_MULTIPLE_108,
+      lineRule: LineRuleType.AUTO,
+    },
     children: [
       ...(prefix ? [new TextRun({ text: prefix, font: "Times New Roman", size: options.size ?? 22 })] : []),
       ...(runs.length
@@ -67,7 +77,7 @@ function paragraphFromNode(
 
 function listItemParagraphs(node: RichTextNode, options: RichTextDocxOptions) {
   return (node.content ?? []).map((item, index) =>
-    paragraphFromNode(item, options, node.type === "orderedList" ? `${index + 1}. ` : "• "),
+    paragraphFromNode(item, options, node.type === "orderedList" ? `${index + 1}. ` : "\u2022 "),
   );
 }
 
@@ -78,7 +88,12 @@ export function richTextToDocxParagraphs(
   if (!doc?.content?.length) {
     return [
       new Paragraph({
-        spacing: { after: options.spacingAfter ?? 90 },
+        spacing: {
+          before: options.spacingBefore ?? 0,
+          after: options.spacingAfter ?? 0,
+          line: options.line ?? WORD_LINE_MULTIPLE_108,
+          lineRule: LineRuleType.AUTO,
+        },
         children: [new TextRun({ text: "", font: "Times New Roman", size: options.size ?? 22 })],
       }),
     ];
