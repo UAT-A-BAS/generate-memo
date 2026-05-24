@@ -30,6 +30,7 @@ export type ActivityRow = {
 
 export type ScenarioRow = {
   id: string;
+  dateGroupId?: string;
   startDate: string;
   endDate: string;
   section: string;

@@ -13,9 +13,11 @@ import {
   SectionType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   UnderlineType,
+  VerticalMergeType,
   VerticalAlign,
   WidthType,
   type FileChild,
@@ -90,6 +92,18 @@ function run(
   });
 }
 
+function multilineRuns(
+  text: string,
+  options: { bold?: boolean; size?: number; allCaps?: boolean; italics?: boolean; color?: string; underline?: boolean; font?: string } = {},
+) {
+  return text.split(/\r?\n/).flatMap((line, index) => {
+    const children: TextRun[] = [];
+    if (index > 0) children.push(new TextRun({ break: 1 }));
+    children.push(run(line, options));
+    return children;
+  });
+}
+
 function paragraph(
   text: string,
   options: {
@@ -105,7 +119,7 @@ function paragraph(
   return new Paragraph({
     alignment: options.align,
     spacing: { after: 100, line: 260 },
-    children: [run(text, options)],
+    children: multilineRuns(text, options),
   });
 }
 
@@ -160,8 +174,13 @@ function spanningCell(children: Paragraph[], span: number, shaded = false) {
 function table(rows: TableRow[], width = 100) {
   return new Table({
     width: { size: pct(width), type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows,
   });
+}
+
+function mergeKey(value: string) {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function header() {
@@ -253,11 +272,37 @@ function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) 
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
-  const bodyRows = rows.flatMap((block) => {
+  function picMergeState(index: number) {
+    const current = rows[index];
+    const currentPic = mergeKey(current.row.pic);
+    if (!currentPic) return { hidden: false, restart: false };
+    if (
+      index > 0 &&
+      !current.meta.showDate &&
+      !current.meta.showSection &&
+      mergeKey(rows[index - 1].row.pic) === currentPic
+    ) {
+      return { hidden: true, restart: false };
+    }
+
+    let restart = false;
+    for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
+      const next = rows[cursor];
+      if (next.meta.showDate || next.meta.showSection) break;
+      if (mergeKey(next.row.pic) === currentPic) {
+        restart = true;
+        break;
+      }
+    }
+    return { hidden: false, restart };
+  }
+
+  const bodyRows = rows.flatMap((block, index) => {
     const dateRows =
       block.meta.showDate
         ? [
             new TableRow({
+              cantSplit: true,
               children: [spanningCell([paragraph(block.meta.dateLabel, { bold: true, size: 17 })], 4, true)],
             }),
           ]
@@ -266,6 +311,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       block.meta.showSection
         ? [
             new TableRow({
+              cantSplit: true,
               children: [
                 cell([paragraph(`${block.meta.sectionLetter}.`, { bold: true, size: 17, align: AlignmentType.CENTER })], 6, true),
                 new TableCell({
@@ -281,16 +327,34 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             }),
           ]
         : [];
+    const picMerge = picMergeState(index);
+    const picCell = picMerge.hidden
+      ? new TableCell({
+          verticalMerge: VerticalMergeType.CONTINUE,
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 90, bottom: 90, left: 90, right: 90 },
+          borders: { top: border, bottom: border, left: border, right: border },
+          children: [paragraph("", { size: 22 })],
+        })
+      : new TableCell({
+          verticalMerge: picMerge.restart ? VerticalMergeType.RESTART : undefined,
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 90, bottom: 90, left: 90, right: 90 },
+          width: { size: pct(14), type: WidthType.PERCENTAGE },
+          borders: { top: border, bottom: border, left: border, right: border },
+          children: [paragraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })],
+        });
 
     return [
       ...dateRows,
       ...sectionRows,
       new TableRow({
+        cantSplit: true,
         children: [
           cell([paragraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], 6),
           cell(richTextToDocxParagraphs(block.row.scenario, { size: 22 }), 39),
           cell(richTextToDocxParagraphs(block.row.expectedResult, { size: 22 }), 41),
-          cell([paragraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })], 14),
+          picCell,
         ],
       }),
     ];
@@ -298,6 +362,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
 
   return table([
     new TableRow({
+      cantSplit: true,
       tableHeader: true,
       children: [
         cell([paragraph("No", { bold: true, size: 17 })], 6, true),
@@ -341,23 +406,23 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, children: [paragraph("Dari", { size: 22 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Dari", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 22 })] }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, children: [paragraph("Jenis Informasi", { size: 22 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, children: [paragraph("INTERNAL BCA", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Jenis Informasi", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph("INTERNAL BCA", { size: 22 })] }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, children: [paragraph("Perihal", { size: 22, font: "Arial" })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(":", { size: 22, font: "Arial" })] }),
-              new TableCell({ borders: noBorder, children: [paragraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Perihal", { size: 22, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
             ],
           }),
         ]),
@@ -565,7 +630,7 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
   });
 
   const generatedDocx = await Packer.toBlob(doc);
-  return spliceValidationTemplate(generatedDocx, validationTemplateBuffer, draft, pages.length);
+  return spliceValidationTemplate(generatedDocx, validationTemplateBuffer);
 }
 
 export function memoDocxFileName(draft: MemoDraft) {
@@ -574,5 +639,10 @@ export function memoDocxFileName(draft: MemoDraft) {
     .replace(/\s+/g, " ")
     .trim();
 
-  return `Memo ${safeProject || "Draft"}.docx`;
+  const prefix =
+    draft.metadata.memoType === "Pilot"
+      ? "Memo Pilot Implementasi"
+      : "Memo Implementasi";
+
+  return `${prefix} (${safeProject || "Draft"}).docx`;
 }

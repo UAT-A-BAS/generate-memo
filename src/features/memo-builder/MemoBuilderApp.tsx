@@ -45,6 +45,7 @@ import { useMemoDraftStore } from "@/store/useMemoDraftStore";
 import { generateMomJsonToMemoDraft } from "@/utils/generateMomJsonToMemoDraft";
 import { MemoPreview } from "@/preview/MemoPreview";
 import { useMemoCollaboration } from "@/collaboration/useMemoCollaboration";
+import { createId } from "@/utils/ids";
 
 const memoTypes: MemoType[] = [
   "Pilot",
@@ -62,6 +63,19 @@ function scheduleTitle(type: MemoType) {
   return type === "Pilot" ? "Jadwal Pilot Implementasi" : "Jadwal Implementasi";
 }
 
+function alphaIndex(index: number) {
+  let value = index + 1;
+  let result = "";
+
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
+  }
+
+  return result;
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -74,13 +88,18 @@ function downloadBlob(blob: Blob, fileName: string) {
 function FieldLabel({
   label,
   children,
+  required = false,
 }: {
   label: string;
   children: React.ReactNode;
+  required?: boolean;
 }) {
   return (
     <label className="grid content-start gap-1 text-[13px] font-semibold text-slate-700">
-      {label}
+      <span>
+        {label}
+        {required ? <span className="text-red-600"> *</span> : null}
+      </span>
       {children}
     </label>
   );
@@ -313,7 +332,7 @@ function MetadataPanel({
       <SectionTitle title="Metadata" />
       <div className="mt-5 grid gap-5">
         <div className="grid gap-3 md:grid-cols-2">
-          <FieldLabel label="Jenis Implementasi">
+          <FieldLabel label="Jenis Implementasi" required>
             <select
               {...registerField("memoType")}
               className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
@@ -323,7 +342,7 @@ function MetadataPanel({
               ))}
             </select>
           </FieldLabel>
-          <FieldLabel label="Bureau UAT">
+          <FieldLabel label="Bureau UAT" required>
             <select
               {...registerField("bureau")}
               className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
@@ -334,7 +353,7 @@ function MetadataPanel({
             </select>
           </FieldLabel>
         </div>
-        <FieldLabel label="Nama Project">
+        <FieldLabel label="Nama Project" required>
           <input
             {...registerField("projectName")}
             className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
@@ -354,10 +373,12 @@ function MetadataPanel({
               {metadata.perihal}
             </div>
           ) : (
-            <input
-              {...registerField("perihal")}
-              className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-            />
+            <FieldLabel label="Perihal" required>
+              <input
+                {...registerField("perihal")}
+                className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              />
+            </FieldLabel>
           )}
         </div>
       </div>
@@ -378,15 +399,7 @@ function DevelopmentPanel({
 
   return (
     <Panel>
-      <SectionTitle
-        title="Lingkup Pengembangan"
-        action={
-          <IconButton onClick={() => setRows([...rows, createDevelopmentRow()])}>
-            <Plus size={16} />
-            Row
-          </IconButton>
-        }
-      />
+      <SectionTitle title="Lingkup Pengembangan" />
       <div className="mt-4">
         <DragDropList
           items={rows}
@@ -409,7 +422,7 @@ function DevelopmentPanel({
                 </button>
               </div>
               <div className="grid items-start gap-3 xl:grid-cols-2">
-                <FieldLabel label="Item">
+                <FieldLabel label="Item" required>
                   <RichTextEditor
                     value={row.item}
                     minHeight={92}
@@ -418,7 +431,7 @@ function DevelopmentPanel({
                     }
                   />
                 </FieldLabel>
-                <FieldLabel label="Keterangan">
+                <FieldLabel label="Keterangan" required>
                   <RichTextEditor
                     value={row.description}
                     minHeight={92}
@@ -435,6 +448,12 @@ function DevelopmentPanel({
             </div>
           )}
         />
+      </div>
+      <div className="mt-3 flex justify-end">
+        <IconButton onClick={() => setRows([...rows, createDevelopmentRow()])}>
+          <Plus size={16} />
+          Row
+        </IconButton>
       </div>
     </Panel>
   );
@@ -453,15 +472,7 @@ function ActivitiesPanel({
 
   return (
     <Panel>
-      <SectionTitle
-        title="Aktivitas Cabang dan Unit Kerja"
-        action={
-          <IconButton onClick={() => setRows([...rows, createActivityRow()])}>
-            <Plus size={16} />
-            Aktivitas
-          </IconButton>
-        }
-      />
+      <SectionTitle title="Aktivitas Cabang dan Unit Kerja" />
       <div className="mt-4">
         <DragDropList
           items={rows}
@@ -470,15 +481,17 @@ function ActivitiesPanel({
           renderItem={(row) => (
             <div className="grid gap-3">
               <div className="grid items-end gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_38px]">
-                <DateRangePicker
-                  compact
-                  startDate={row.startDate}
-                  endDate={row.endDate}
-                  onChange={(value) =>
-                    setRows(rows.map((item) => (item.id === row.id ? { ...item, ...value } : item)))
-                  }
-                />
-                <FieldLabel label="PIC">
+                <FieldLabel label="Tanggal" required>
+                  <DateRangePicker
+                    compact
+                    startDate={row.startDate}
+                    endDate={row.endDate}
+                    onChange={(value) =>
+                      setRows(rows.map((item) => (item.id === row.id ? { ...item, ...value } : item)))
+                    }
+                  />
+                </FieldLabel>
+                <FieldLabel label="PIC" required>
                   <input
                     value={row.owner}
                     onChange={(event) =>
@@ -500,7 +513,7 @@ function ActivitiesPanel({
                   <Trash2 size={15} />
                 </button>
               </div>
-              <FieldLabel label="Aktivitas">
+              <FieldLabel label="Aktivitas" required>
                 <RichTextEditor
                   value={row.activity}
                   minHeight={92}
@@ -512,6 +525,12 @@ function ActivitiesPanel({
             </div>
           )}
         />
+      </div>
+      <div className="mt-3 flex justify-end">
+        <IconButton onClick={() => setRows([...rows, createActivityRow()])}>
+          <Plus size={16} />
+          Aktivitas
+        </IconButton>
       </div>
     </Panel>
   );
@@ -546,7 +565,7 @@ function ReferencePanel({
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
               Memorandum ini mengacu pada.
             </div>
-            <FieldLabel label="Daftar Referensi">
+            <FieldLabel label="Daftar Referensi" required>
               <textarea
                 value={richTextToPlainText(draft.reference)}
                 onChange={(event) =>
@@ -579,22 +598,7 @@ function ContactsPanel({
 
   return (
     <Panel>
-      <SectionTitle
-        title="PIC yang Dapat Dihubungi"
-        action={
-          <IconButton
-            onClick={() =>
-              updateDraft((current) => ({
-                ...current,
-                contacts: [...current.contacts, createContactRow()],
-              }))
-            }
-          >
-            <Plus size={16} />
-            PIC
-          </IconButton>
-        }
-      />
+      <SectionTitle title="PIC yang Dapat Dihubungi" />
       <div className="mt-4">
         <DragDropList
           items={draft.contacts}
@@ -602,7 +606,7 @@ function ContactsPanel({
           itemLabel={(contact, index) => contact.name || `PIC ${index + 1}`}
           renderItem={(contact) => (
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_40px]">
-              <FieldLabel label="Nama">
+              <FieldLabel label="Nama" required>
                 <input
                   value={contact.name}
                   onChange={(event) =>
@@ -615,7 +619,7 @@ function ContactsPanel({
                   className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
-              <FieldLabel label="Email">
+              <FieldLabel label="Email" required>
                 <input
                   value={contact.email}
                   onChange={(event) =>
@@ -640,8 +644,71 @@ function ContactsPanel({
           )}
         />
       </div>
+      <div className="mt-3 flex justify-end">
+        <IconButton
+          onClick={() =>
+            updateDraft((current) => ({
+              ...current,
+              contacts: [...current.contacts, createContactRow()],
+            }))
+          }
+        >
+          <Plus size={16} />
+          PIC
+        </IconButton>
+      </div>
     </Panel>
   );
+}
+
+type ScenarioDateGroup = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  rows: ScenarioRow[];
+};
+
+function sectionMarkerForRows(groupRows: ScenarioRow[], row: ScenarioRow) {
+  const seen = new Map<string, number>();
+
+  for (const item of groupRows) {
+    const key = item.section.trim() || item.id;
+    if (!seen.has(key)) seen.set(key, seen.size);
+    if (item.id === row.id) return alphaIndex(seen.get(key) ?? 0);
+  }
+
+  return "A";
+}
+
+function scenarioDateKey(row: ScenarioRow) {
+  return row.startDate || row.endDate
+    ? `date:${row.startDate}:${row.endDate}`
+    : `group:${row.dateGroupId ?? row.id}`;
+}
+
+function scenarioDateGroups(rows: ScenarioRow[]) {
+  const groups: ScenarioDateGroup[] = [];
+  const indexByKey = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const key = scenarioDateKey(row);
+    const existingIndex = indexByKey.get(key);
+
+    if (existingIndex !== undefined) {
+      groups[existingIndex].rows.push(row);
+      return;
+    }
+
+    indexByKey.set(key, groups.length);
+    groups.push({
+      id: row.dateGroupId ?? createId("scenario-date"),
+      startDate: row.startDate,
+      endDate: row.endDate,
+      rows: [row],
+    });
+  });
+
+  return groups;
 }
 
 function AppendixPanel({
@@ -659,107 +726,160 @@ function AppendixPanel({
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }));
   }
 
+  const groups = scenarioDateGroups(rows);
+
+  function updateGroupDates(group: ScenarioDateGroup, value: { startDate: string; endDate: string }) {
+    const ids = new Set(group.rows.map((row) => row.id));
+    setRows(
+      rows.map((row) =>
+        ids.has(row.id)
+          ? { ...row, dateGroupId: group.id, startDate: value.startDate, endDate: value.endDate }
+          : row,
+      ),
+    );
+  }
+
+  function replaceGroupRows(group: ScenarioDateGroup, nextGroupRows: ScenarioRow[]) {
+    const ids = new Set(group.rows.map((row) => row.id));
+    let inserted = false;
+    const nextRows = rows.flatMap((row) => {
+      if (!ids.has(row.id)) return [row];
+      if (inserted) return [];
+      inserted = true;
+      return nextGroupRows;
+    });
+
+    setRows(nextRows.length ? nextRows : [createScenarioRow()]);
+  }
+
+  function addScenarioToGroup(group: ScenarioDateGroup) {
+    const ids = new Set(group.rows.map((row) => row.id));
+    let lastIndex = -1;
+    rows.forEach((row, index) => {
+      if (ids.has(row.id)) lastIndex = index;
+    });
+
+    const nextRow = createScenarioRow({
+      dateGroupId: group.id,
+      startDate: group.startDate,
+      endDate: group.endDate,
+    });
+
+    setRows([
+      ...rows.slice(0, lastIndex + 1),
+      nextRow,
+      ...rows.slice(lastIndex + 1),
+    ]);
+  }
+
   return (
     <Panel>
-      <SectionTitle
-        title="Lampiran Skenario"
-        action={
-          <IconButton onClick={() => setRows([...rows, createScenarioRow()])}>
-            <Plus size={16} />
-            Skenario
-          </IconButton>
-        }
-      />
-      <div className="mt-4">
-        <DragDropList
-          items={rows}
-          onReorder={setRows}
-          itemLabel={(row, index) => row.section || `skenario ${index + 1}`}
-          renderItem={(row) => (
-            <div className="grid gap-3">
-              <div className="grid items-end gap-3 xl:grid-cols-[minmax(180px,0.8fr)_minmax(180px,1fr)_minmax(160px,0.8fr)_38px]">
-                <FieldLabel label="Tanggal">
-                  <DateRangePicker
-                    compact
-                    startDate={row.startDate}
-                    endDate={row.endDate}
-                    onChange={(value) =>
-                      setRows(rows.map((item) => (item.id === row.id ? { ...item, ...value } : item)))
-                    }
-                  />
-                </FieldLabel>
-                <FieldLabel label="Bagian">
-                  <input
-                    value={row.section}
-                    onChange={(event) =>
-                      setRows(
-                        rows.map((item) =>
-                          item.id === row.id ? { ...item, section: event.target.value } : item,
-                        ),
-                      )
-                    }
-                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                  />
-                </FieldLabel>
-                <FieldLabel label="PIC">
-                  <input
-                    value={row.pic}
-                    onChange={(event) =>
-                      setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
-                    }
-                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                  />
-                </FieldLabel>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextRows = rows.filter((item) => item.id !== row.id);
-                    setRows(nextRows.length ? nextRows : [createScenarioRow()]);
-                  }}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                  aria-label="Hapus skenario"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-              <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-                <FieldLabel label="Skenario">
-                  <RichTextEditor
-                    value={row.scenario}
-                    minHeight={92}
-                    onChange={(value) =>
-                      setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
-                    }
-                  />
-                </FieldLabel>
-                <FieldLabel label="Expected Result">
-                  <RichTextEditor
-                    value={row.expectedResult}
-                    minHeight={92}
-                    onChange={(value) =>
-                      setRows(
-                        rows.map((item) =>
-                          item.id === row.id ? { ...item, expectedResult: value } : item,
-                        ),
-                      )
-                    }
-                  />
-                </FieldLabel>
-                <FieldLabel label="Catatan">
-                  <RichTextEditor
-                    value={row.notes}
-                    minHeight={92}
-                    onChange={(value) =>
-                      setRows(rows.map((item) => (item.id === row.id ? { ...item, notes: value } : item)))
-                    }
-                  />
-                </FieldLabel>
-              </div>
+      <SectionTitle title="Lampiran Skenario" />
+      <div className="mt-4 grid gap-4">
+        {groups.map((group, groupIndex) => (
+          <section key={group.id} className="rounded-md border border-slate-300 bg-slate-50 p-3">
+            <div className="mb-3 grid items-end gap-3 md:grid-cols-[minmax(220px,0.9fr)_1fr]">
+              <FieldLabel label={`Tanggal ${groupIndex + 1}`} required>
+                <DateRangePicker
+                  compact
+                  startDate={group.startDate}
+                  endDate={group.endDate}
+                  onChange={(value) => updateGroupDates(group, value)}
+                />
+              </FieldLabel>
+              <p className="pb-2 text-xs font-medium text-slate-500">
+                Tanggal yang sama akan otomatis digabung dalam satu sesi.
+              </p>
             </div>
-          )}
-        />
+            <DragDropList
+              items={group.rows}
+              onReorder={(nextGroupRows) => replaceGroupRows(group, nextGroupRows)}
+              itemLabel={(row, index) => row.section || `skenario ${index + 1}`}
+              renderItem={(row) => (
+                <div className="grid gap-3">
+                  <div className="grid items-start gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(160px,0.75fr)_38px]">
+                    <FieldLabel label="Bagian" required>
+                      <div className="grid grid-cols-[42px_1fr] overflow-hidden rounded-md border border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
+                        <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
+                          {sectionMarkerForRows(group.rows, row)}
+                        </span>
+                        <textarea
+                          value={row.section}
+                          rows={2}
+                          onChange={(event) =>
+                            setRows(
+                              rows.map((item) =>
+                                item.id === row.id ? { ...item, section: event.target.value } : item,
+                              ),
+                            )
+                          }
+                          className="min-h-10 resize-y border-0 px-3 py-2 text-[15px] font-medium outline-none"
+                        />
+                      </div>
+                    </FieldLabel>
+                    <FieldLabel label="PIC" required>
+                      <textarea
+                        value={row.pic}
+                        rows={2}
+                        onChange={(event) =>
+                          setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
+                        }
+                        className="min-h-10 resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                      />
+                    </FieldLabel>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextRows = rows.filter((item) => item.id !== row.id);
+                        setRows(nextRows.length ? nextRows : [createScenarioRow()]);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                      aria-label="Hapus skenario"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <FieldLabel label="Skenario" required>
+                      <RichTextEditor
+                        value={row.scenario}
+                        minHeight={92}
+                        onChange={(value) =>
+                          setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
+                        }
+                      />
+                    </FieldLabel>
+                    <FieldLabel label="Expected Result" required>
+                      <RichTextEditor
+                        value={row.expectedResult}
+                        minHeight={92}
+                        onChange={(value) =>
+                          setRows(
+                            rows.map((item) =>
+                              item.id === row.id ? { ...item, expectedResult: value } : item,
+                            ),
+                          )
+                        }
+                      />
+                    </FieldLabel>
+                  </div>
+                </div>
+              )}
+            />
+            <div className="mt-3 flex justify-end">
+              <IconButton onClick={() => addScenarioToGroup(group)}>
+                <Plus size={16} />
+                Skenario
+              </IconButton>
+            </div>
+          </section>
+        ))}
       </div>
-      <div className="mt-5 flex justify-end border-t border-slate-200 pt-4">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4">
+        <IconButton onClick={() => setRows([...rows, createScenarioRow({ dateGroupId: createId("scenario-date") })])}>
+          <Plus size={16} />
+          Tanggal
+        </IconButton>
         <IconButton onClick={onGenerateDocx} disabled={isExporting} variant="word">
           <Download size={16} />
           Generate Docx
@@ -919,13 +1039,15 @@ export function MemoBuilderApp() {
           <Panel>
             <SectionTitle title={scheduleTitle(draft.metadata.memoType)} />
             <div className="mt-6">
-              <DateRangePicker
-                startDate={draft.pilotSchedule.startDate}
-                endDate={draft.pilotSchedule.endDate}
-                onChange={(pilotSchedule) =>
-                  updateDraft((current) => ({ ...current, pilotSchedule }))
-                }
-              />
+              <FieldLabel label="Tanggal" required>
+                <DateRangePicker
+                  startDate={draft.pilotSchedule.startDate}
+                  endDate={draft.pilotSchedule.endDate}
+                  onChange={(pilotSchedule) =>
+                    updateDraft((current) => ({ ...current, pilotSchedule }))
+                  }
+                />
+              </FieldLabel>
             </div>
           </Panel>
 
@@ -956,38 +1078,25 @@ export function MemoBuilderApp() {
                   ))}
                 </div>
               </fieldset>
-              <input
-                value={draft.metadata.accessLink}
-                disabled={!draft.metadata.accessLinkEnabled}
-                onChange={(event) => updateMetadata({ accessLink: event.target.value })}
-                className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-100 disabled:text-slate-400"
-              />
+              <FieldLabel label="URL Akses" required={draft.metadata.accessLinkEnabled}>
+                <input
+                  value={draft.metadata.accessLink}
+                  disabled={!draft.metadata.accessLinkEnabled}
+                  onChange={(event) => updateMetadata({ accessLink: event.target.value })}
+                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </FieldLabel>
             </div>
           </Panel>
 
           <ContactsPanel draft={draft} updateDraft={updateDraft} />
 
           <Panel>
-            <SectionTitle
-              title="Signature"
-              action={
-                <IconButton
-                  onClick={() =>
-                    updateDraft((current) => ({
-                      ...current,
-                      signers: [...current.signers, createSignerRow()],
-                    }))
-                  }
-                >
-                  <Plus size={16} />
-                  Signer
-                </IconButton>
-              }
-            />
+            <SectionTitle title="Signature" />
             <div className="mt-6 grid gap-3">
               {draft.signers.map((signer) => (
                 <div key={signer.id} className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_1fr_40px]">
-                  <FieldLabel label="Nama">
+                  <FieldLabel label="Nama" required>
                     <input
                       value={signer.name}
                       onChange={(event) =>
@@ -1001,7 +1110,7 @@ export function MemoBuilderApp() {
                       className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                     />
                   </FieldLabel>
-                  <FieldLabel label="Jabatan">
+                  <FieldLabel label="Jabatan" required>
                     <input
                       value={signer.title}
                       onChange={(event) =>
@@ -1031,6 +1140,19 @@ export function MemoBuilderApp() {
                 </div>
               ))}
             </div>
+            <div className="mt-3 flex justify-end">
+              <IconButton
+                onClick={() =>
+                  updateDraft((current) => ({
+                    ...current,
+                    signers: [...current.signers, createSignerRow()],
+                  }))
+                }
+              >
+                <Plus size={16} />
+                Signer
+              </IconButton>
+            </div>
           </Panel>
 
           <Panel>
@@ -1041,6 +1163,7 @@ export function MemoBuilderApp() {
                 onChange={(ccRecipients) =>
                   updateDraft((current) => ({ ...current, ccRecipients }))
                 }
+                required={false}
               />
             </div>
           </Panel>
@@ -1048,7 +1171,7 @@ export function MemoBuilderApp() {
           <Panel>
             <SectionTitle title="Inisial" />
             <div className="mt-6 grid items-end gap-3 md:grid-cols-[1fr_140px]">
-              <FieldLabel label="Inisial">
+              <FieldLabel label="Inisial" required>
                 <input
                   value={draft.initials}
                   onChange={(event) =>
@@ -1057,7 +1180,7 @@ export function MemoBuilderApp() {
                   className="h-10 w-full rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
-              <FieldLabel label="UAT">
+              <FieldLabel label="UAT" required>
                 <select
                   value={draft.initialsBureau}
                   onChange={(event) =>

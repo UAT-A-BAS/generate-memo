@@ -106,6 +106,34 @@ function consumeRows(
   return { rows, nextIndex: index };
 }
 
+function mergeKey(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function appendixPicSpan(rows: Extract<PreviewBlock, { type: "appendix-row" }>[], index: number) {
+  const current = rows[index];
+  const pic = mergeKey(current.row.pic);
+  if (!pic) return { hidden: false, span: 1 };
+
+  if (
+    index > 0 &&
+    !current.meta.showDate &&
+    !current.meta.showSection &&
+    mergeKey(rows[index - 1].row.pic) === pic
+  ) {
+    return { hidden: true, span: 0 };
+  }
+
+  let span = 1;
+  for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
+    const next = rows[cursor];
+    if (next.meta.showDate || next.meta.showSection || mergeKey(next.row.pic) !== pic) break;
+    span += 1;
+  }
+
+  return { hidden: false, span };
+}
+
 function renderBlock(draft: MemoDraft, block: PreviewBlock) {
   switch (block.type) {
     case "memo-heading":
@@ -323,7 +351,8 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
           headers={["No", "Aktivitas", "Hasil/Keterangan", "PIC"]}
           columnWidths={["6%", "39%", "41%", "14%"]}
         >
-          {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item) => {
+          {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item, rowIndex, appendixRows) => {
+            const picSpan = appendixPicSpan(appendixRows, rowIndex);
             return (
               <Fragment key={item.id}>
                 {item.meta.showDate ? (
@@ -336,7 +365,7 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
                     <td className="border border-slate-900 px-2 py-0.5 text-center align-top">
                       {item.meta.sectionLetter}.
                     </td>
-                    <td className="border border-slate-900 px-2 py-0.5 align-top" colSpan={3}>
+                    <td className="preserve-lines border border-slate-900 px-2 py-0.5 align-top" colSpan={3}>
                       {item.meta.sectionTitle}
                     </td>
                   </tr>
@@ -349,7 +378,11 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
                   <td className="border border-slate-900 px-2 py-1 align-top">
                     <RichTextView html={richTextToHtml(item.row.expectedResult)} />
                   </td>
-                  <td className="border border-slate-900 px-2 py-1 text-center align-top">{item.row.pic}</td>
+                  {picSpan.hidden ? null : (
+                    <td className="preserve-lines border border-slate-900 px-2 py-1 text-center align-middle" rowSpan={picSpan.span}>
+                      {item.row.pic}
+                    </td>
+                  )}
                 </tr>
               </Fragment>
             );

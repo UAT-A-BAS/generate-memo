@@ -9,11 +9,16 @@ type RecipientListProps = {
   recipients: Recipient[];
   onChange: (recipients: Recipient[]) => void;
   minRows?: number;
+  required?: boolean;
 };
 
 const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
 
-export function RecipientList({ recipients, onChange, minRows = 1 }: RecipientListProps) {
+function RequiredMark() {
+  return <span className="text-red-600">*</span>;
+}
+
+export function RecipientList({ recipients, onChange, minRows = 1, required = true }: RecipientListProps) {
   function updateRecipient(id: string, patch: Partial<Recipient>) {
     onChange(recipients.map((recipient) => (recipient.id === id ? { ...recipient, ...patch } : recipient)));
   }
@@ -33,7 +38,7 @@ export function RecipientList({ recipients, onChange, minRows = 1 }: RecipientLi
           <div className="grid gap-3">
             <div className="grid items-end gap-3 md:grid-cols-[minmax(220px,1.1fr)_110px_minmax(220px,1fr)_40px]">
               <label className="grid gap-1 text-xs font-medium text-slate-600">
-                Jabatan / Unit
+                <span>Jabatan / Unit {required ? <RequiredMark /> : null}</span>
                 <input
                   value={recipient.position}
                   onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
@@ -41,7 +46,7 @@ export function RecipientList({ recipients, onChange, minRows = 1 }: RecipientLi
                 />
               </label>
               <label className="grid gap-1 text-xs font-medium text-slate-600">
-                Sapaan
+                <span>Sapaan {required ? <RequiredMark /> : null}</span>
                 <select
                   value={recipient.gender}
                   onChange={(event) =>

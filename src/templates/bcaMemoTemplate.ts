@@ -64,6 +64,7 @@ export function createSignerRow(seed: Partial<SignerRow> = {}): SignerRow {
 export function createScenarioRow(seed: Partial<ScenarioRow> = {}): ScenarioRow {
   return {
     id: createId("scenario"),
+    dateGroupId: seed.dateGroupId ?? createId("scenario-date"),
     startDate: "",
     endDate: "",
     section: "",
@@ -138,6 +139,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
         return {
           ...row,
+          dateGroupId: row.dateGroupId ?? createId("scenario-date"),
           startDate: row.startDate ?? legacyDate,
           endDate: row.endDate ?? row.startDate ?? legacyDate,
         };

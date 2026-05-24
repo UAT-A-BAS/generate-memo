@@ -9,12 +9,13 @@ test("updates generated perihal from metadata", async ({ page }) => {
 
 test("exports DOCX from current draft", async ({ page }) => {
   await page.goto("http://localhost:3002");
+  await page.getByLabel("Nama Project").fill("BDS Web Gen 2 versi 4.3.0");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Generate Docx" }).click();
   const download = await downloadPromise;
 
-  expect(download.suggestedFilename()).toMatch(/^Memo .+\.docx$/);
+  expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4.3.0).docx");
 });
 
 test("empty rich text fields start in plain text mode", async ({ page }) => {
@@ -51,6 +52,19 @@ test("enter after bold starts plain text", async ({ page }) => {
   const html = await editor.evaluate((node) => node.innerHTML);
   expect(html).toContain("<strong>");
   expect(html).toContain("<p>Normal</p>");
+});
+
+test("double click does not enable bold typing", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const editor = page.locator(".ProseMirror").first();
+  await editor.click();
+  await page.keyboard.type("Plain");
+  await editor.dblclick();
+  await page.keyboard.type("Still plain");
+
+  const html = await editor.evaluate((node) => node.innerHTML);
+  expect(html).not.toContain("<strong>");
 });
 
 test("collaboration syncs between two browser pages", async ({ browser }) => {

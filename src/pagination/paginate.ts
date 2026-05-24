@@ -50,11 +50,19 @@ export type PreviewPage = {
 
 const PAGE_LIMITS: Record<PreviewOrientation, number> = {
   portrait: 735,
-  landscape: 480,
+  landscape: 520,
 };
 
+function visualLineCount(value: string, charsPerLine: number) {
+  const lines = value.split(/\r?\n/);
+  return lines.reduce((total, line) => {
+    const normalized = line.trim();
+    return total + Math.max(1, Math.ceil(normalized.length / charsPerLine));
+  }, 0);
+}
+
 function textHeight(value: string, base = 40, charsPerLine = 76) {
-  return base + Math.max(1, Math.ceil(value.length / charsPerLine)) * 17;
+  return base + Math.max(1, visualLineCount(value, charsPerLine)) * 17;
 }
 
 function nodeCount(node?: RichTextNode): number {
@@ -64,9 +72,24 @@ function nodeCount(node?: RichTextNode): number {
 
 function richBlockHeight(doc: RichTextDoc, base = 42, charsPerLine = 56) {
   const text = richTextToPlainText(doc);
-  const textLines = Math.max(1, Math.ceil(text.length / charsPerLine));
+  const textLines = Math.max(1, visualLineCount(text, charsPerLine));
   const structuralLines = doc.content.reduce((total, node) => total + nodeCount(node), 0);
   return base + Math.max(textLines, structuralLines) * 22;
+}
+
+function richVisualBlockHeight(doc: RichTextDoc, base = 0, charsPerLine = 56) {
+  const text = richTextToPlainText(doc);
+  const paragraphCount = Math.max(1, doc.content.length);
+  const textLines = Math.max(1, visualLineCount(text, charsPerLine));
+  return base + Math.max(textLines, paragraphCount) * 22 + Math.max(0, paragraphCount - 1) * 4;
+}
+
+function appendixRowContentHeight(row: ScenarioRow) {
+  const scenarioHeight = richVisualBlockHeight(row.scenario, 0, 42);
+  const expectedHeight = richVisualBlockHeight(row.expectedResult, 0, 44);
+  const picHeight = textHeight(row.pic, 0, 16);
+
+  return 34 + Math.max(58, scenarioHeight, expectedHeight, picHeight);
 }
 
 function splitText(value: string, maxChars: number) {
@@ -138,20 +161,21 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
 }
 
 function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
-  if (block.type !== "appendix-row" || block.estimatedHeight <= 310) return [block];
+  if (block.type !== "appendix-row" || block.estimatedHeight <= 360) return [block];
 
-  const scenarioParts = splitDoc(block.row.scenario, 620);
-  const expectedParts = splitDoc(block.row.expectedResult, 560);
+  const scenarioParts = splitDoc(block.row.scenario, 420);
+  const expectedParts = splitDoc(block.row.expectedResult, 420);
   const total = Math.max(scenarioParts.length, expectedParts.length);
 
   return Array.from({ length: total }, (_, part) => {
     const scenario = scenarioParts[part] ?? paragraphRichText("");
     const expectedResult = expectedParts[part] ?? paragraphRichText("");
+    const row = { ...block.row, scenario, expectedResult };
     return {
       ...block,
       id: `${block.id}-part-${part + 1}`,
-      row: { ...block.row, scenario, expectedResult },
-      estimatedHeight: 120 + richBlockHeight(scenario, 0, 68) + richBlockHeight(expectedResult, 0, 64),
+      row,
+      estimatedHeight: appendixRowContentHeight(row),
     };
   });
 }
@@ -255,19 +279,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     },
     estimatedHeight: Math.max(
       54,
-      textHeight(
-        [
-          row.section,
-          row.startDate,
-          row.endDate,
-          richTextToPlainText(row.scenario),
-          richTextToPlainText(row.expectedResult),
-          row.pic,
-          richTextToPlainText(row.notes),
-        ].join(" "),
-        20,
-        120,
-      ),
+      appendixRowContentHeight(row),
     ),
   })).flatMap(expandLargeAppendixBlock) as Extract<PreviewBlock, { type: "appendix-row" }>[];
 
@@ -302,7 +314,10 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
         number: currentNumber,
         isSplitContinuation,
       },
-      estimatedHeight: block.estimatedHeight + (showDate ? 24 : 0) + (showSection ? 26 : 0),
+      estimatedHeight:
+        block.estimatedHeight +
+        (showDate ? 30 : 0) +
+        (showSection ? Math.max(30, textHeight(sectionTitle, 2, 68)) : 0),
     };
   });
 }

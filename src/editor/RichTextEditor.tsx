@@ -2,6 +2,7 @@
 
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Extension, type Editor } from "@tiptap/core";
+import { Plugin } from "@tiptap/pm/state";
 import BoldExtension from "@tiptap/extension-bold";
 import UnderlineExtension from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
@@ -40,6 +41,39 @@ const EnterWithoutMarks = Extension.create({
   },
 });
 
+const PlainSelection = Extension.create({
+  name: "plainSelection",
+  priority: 1200,
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleDoubleClick: () => {
+            removeStoredBoldMark(this.editor);
+            return false;
+          },
+          handleClick: () => {
+            removeStoredBoldMark(this.editor);
+            return false;
+          },
+        },
+      }),
+    ];
+  },
+});
+
+function clearStoredBoldMark(currentEditor: Editor) {
+  currentEditor.commands.unsetBold();
+  removeStoredBoldMark(currentEditor);
+}
+
+function removeStoredBoldMark(currentEditor: Editor) {
+  const boldMark = currentEditor.schema.marks.bold;
+  if (boldMark) {
+    currentEditor.view.dispatch(currentEditor.state.tr.removeStoredMark(boldMark));
+  }
+}
+
 export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
   const manualBoldRef = useRef(false);
   const ctrlBoldShortcut = useMemo(
@@ -67,21 +101,14 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
     [],
   );
 
-  function clearStoredBoldMark(currentEditor: Editor) {
-    currentEditor.commands.unsetBold();
-    const boldMark = currentEditor.schema.marks.bold;
-    if (boldMark) {
-      currentEditor.view.dispatch(currentEditor.state.tr.removeStoredMark(boldMark));
-    }
-  }
-
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ bold: false }),
+      StarterKit.configure({ bold: false, underline: false }),
       ManualBold,
       UnderlineExtension,
       ctrlBoldShortcut,
       EnterWithoutMarks,
+      PlainSelection,
     ],
     content: value,
     immediatelyRender: false,
@@ -130,11 +157,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
           type="button"
           className={`${buttonClass} ${editor.isActive("bold") ? activeClass : ""}`}
           onClick={() => {
-            const willEnableBold = !editor.isActive("bold");
-            editor.chain().focus().toggleBold().run();
-            manualBoldRef.current = willEnableBold;
+            editor.chain().focus().run();
+            clearStoredBoldMark(editor);
+            manualBoldRef.current = false;
           }}
           aria-label="Bold"
+          title="Bold hanya lewat Ctrl+B"
         >
           <Bold size={15} />
         </button>

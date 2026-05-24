@@ -77,6 +77,10 @@ textarea {
   white-space: normal;
 }
 
+.memo-preview-table td.preserve-lines {
+  white-space: pre-line;
+}
+
 .preview-rich-text .rt-underline {
   text-decoration: underline;
 }

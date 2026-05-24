@@ -1,56 +1,66 @@
 import JSZip from "jszip";
-import type { MemoDraft, Recipient } from "@/types/memo";
 
-const ALT_CHUNK_CONTENT_TYPE =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const ALT_CHUNK_REL_TYPE =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk";
-const ALT_CHUNK_TARGET = "embeddings/validation-template.docx";
-const ALT_CHUNK_PART = `/word/${ALT_CHUNK_TARGET}`;
-
-type ValidationValues = {
-  noMemo: string;
-  releaseDate: string;
-  totalPages: string;
-  title: string;
-  recipients: string;
-  division: string;
-  ccRecipients: string;
-  creatorUnit: string;
+const CONTENT_TYPES: Record<string, string> = {
+  footer: "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml",
+  header: "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml",
 };
 
-function escapeXml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
+const REL_TYPES = {
+  footer: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer",
+  header: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+  hyperlink: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+  image: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+};
+
+type Relationship = {
+  raw: string;
+  id: string;
+  type: string;
+  target: string;
+  targetMode?: string;
+};
 
 function getAttr(xml: string, name: string) {
   const match = xml.match(new RegExp(`\\s${name}="([^"]*)"`));
   return match?.[1] ?? "";
 }
 
+function setAttr(xml: string, name: string, value: string) {
+  if (new RegExp(`\\s${name}="[^"]*"`).test(xml)) {
+    return xml.replace(new RegExp(`\\s${name}="[^"]*"`), ` ${name}="${value}"`);
+  }
+
+  return xml.replace(/\/>$/, ` ${name}="${value}"/>`);
+}
+
+function parseRelationships(xml: string) {
+  return [...xml.matchAll(/<Relationship\b[^>]*\/>/g)].map((match) => {
+    const raw = match[0];
+    return {
+      raw,
+      id: getAttr(raw, "Id"),
+      type: getAttr(raw, "Type"),
+      target: getAttr(raw, "Target"),
+      targetMode: getAttr(raw, "TargetMode") || undefined,
+    };
+  });
+}
+
 function maxRelationshipId(relsXml: string) {
-  return [...relsXml.matchAll(/<Relationship\b[^>]*\/>/g)].reduce((max, match) => {
-    const id = getAttr(match[0], "Id");
-    const value = Number(id.replace(/^rId/, ""));
+  return parseRelationships(relsXml).reduce((max, rel) => {
+    const value = Number(rel.id.replace(/^rId/, ""));
     return Number.isFinite(value) ? Math.max(max, value) : max;
   }, 0);
 }
 
-function appendRelationship(relsXml: string, id: string) {
-  const relationship = `<Relationship Id="${id}" Type="${ALT_CHUNK_REL_TYPE}" Target="${ALT_CHUNK_TARGET}"/>`;
-  return relsXml.replace("</Relationships>", `${relationship}</Relationships>`);
+function createRelationship(rel: Relationship, id: string, target: string) {
+  const mode = rel.targetMode ? ` TargetMode="${rel.targetMode}"` : "";
+  return `<Relationship Id="${id}" Type="${rel.type}" Target="${target}"${mode}/>`;
 }
 
-function addAltChunkContentType(contentTypesXml: string) {
-  if (contentTypesXml.includes(`PartName="${ALT_CHUNK_PART}"`)) return contentTypesXml;
-
-  const override = `<Override PartName="${ALT_CHUNK_PART}" ContentType="${ALT_CHUNK_CONTENT_TYPE}"/>`;
-  return contentTypesXml.replace("</Types>", `${override}</Types>`);
+function appendRelationships(relsXml: string, relationships: string[]) {
+  if (!relationships.length) return relsXml;
+  return relsXml.replace("</Relationships>", `${relationships.join("")}</Relationships>`);
 }
 
 function bodyInner(documentXml: string) {
@@ -63,6 +73,29 @@ function replaceBodyInner(documentXml: string, inner: string) {
     /(<w:body\b[^>]*>)[\s\S]*(<\/w:body>)/,
     (_match, start: string, end: string) => `${start}${inner}${end}`,
   );
+}
+
+function rootTag(xml: string) {
+  const start = xml.indexOf("<w:document");
+  if (start < 0) return "";
+  const end = xml.indexOf(">", start);
+  return end < 0 ? "" : xml.slice(start, end + 1);
+}
+
+function mergeDocumentNamespaces(outputXml: string, templateXml: string) {
+  const outputRoot = rootTag(outputXml);
+  const templateRoot = rootTag(templateXml);
+  if (!outputRoot || !templateRoot) return outputXml;
+
+  const missingAttributes = [...templateRoot.matchAll(/\sxmlns:[\w\d]+="[^"]+"/g)]
+    .map((match) => match[0])
+    .filter((attribute) => {
+      const name = attribute.trim().split("=")[0];
+      return !outputRoot.includes(`${name}=`);
+    });
+
+  if (!missingAttributes.length) return outputXml;
+  return outputXml.replace(outputRoot, outputRoot.replace(/>$/, `${missingAttributes.join("")}>`));
 }
 
 function extractTrailingSectPr(bodyXml: string) {
@@ -128,170 +161,178 @@ function normalizeValidationBody(bodyXml: string) {
   return `${content}${validationSectPr || sectPr}`;
 }
 
-function replaceLiteralText(xml: string, replacements: Record<string, string>) {
-  return Object.entries(replacements).reduce(
-    (current, [source, replacement]) => current.replaceAll(escapeXml(source), escapeXml(replacement)),
-    xml,
-  );
+function sectionBreakParagraph(sectPr: string) {
+  if (!sectPr) {
+    return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+  }
+
+  const normalizedSectPr = /<w:type\b/.test(sectPr)
+    ? sectPr.replace(/<w:type\b[^>]*\/>/, '<w:type w:val="nextPage"/>')
+    : sectPr.replace(/(<w:pgSz\b)/, '<w:type w:val="nextPage"/>$1');
+
+  return `<w:p><w:pPr>${normalizedSectPr}</w:pPr></w:p>`;
 }
 
-function replaceSdtContentByAlias(xml: string, alias: string, value: string) {
-  return xml.replace(/<w:sdt>[\s\S]*?<\/w:sdt>/g, (sdtXml) => {
-    if (!sdtXml.includes(`<w:alias w:val="${alias}"`)) return sdtXml;
-
-    let hasInsertedValue = false;
-    return sdtXml
-      .replace(/<w:showingPlcHdr\/>/g, "")
-      .replace(/<w:dataBinding\b[^>]*\/>/g, "")
-      .replace(
-        /<w:sdtContent>[\s\S]*?<\/w:sdtContent>/,
-        (contentXml) =>
-          contentXml.replace(/<w:t\b([^>]*)>[\s\S]*?<\/w:t>/g, (_textXml, attributes: string) => {
-            if (hasInsertedValue) return `<w:t${attributes}></w:t>`;
-            hasInsertedValue = true;
-            const spacing = /^\s|\s$/.test(value) && !attributes.includes("xml:space")
-              ? `${attributes} xml:space="preserve"`
-              : attributes;
-            return `<w:t${spacing}>${escapeXml(value)}</w:t>`;
-          }),
-      );
-  });
+function prefixedTarget(target: string) {
+  if (target.startsWith("../")) return target;
+  const parts = target.split("/");
+  const fileName = parts.pop() ?? target;
+  const folder = parts.length ? `${parts.join("/")}/` : "";
+  return `${folder}validation-${fileName}`;
 }
 
-function addDefaultRunSize(xml: string) {
-  return xml.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/g, (runProperties, inner) => {
-    if (inner.includes("<w:sz")) return runProperties;
-    return `<w:rPr>${inner}<w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>`;
-  });
+function packagePathFromWordTarget(target: string) {
+  if (target.startsWith("../")) return target.replace(/^\.\.\//, "");
+  return `word/${target}`;
 }
 
-function flattenSdtContent(xml: string) {
-  return xml.replace(
-    /<w:sdt>[\s\S]*?<w:sdtContent>([\s\S]*?)<\/w:sdtContent>[\s\S]*?<\/w:sdt>/g,
-    "$1",
-  );
+async function copyPart(
+  sourceZip: JSZip,
+  outputZip: JSZip,
+  sourcePath: string,
+  targetPath: string,
+) {
+  const source = sourceZip.file(sourcePath);
+  if (!source) return;
+  outputZip.file(targetPath, await source.async("uint8array"));
 }
 
-function recipientSummary(recipients: Recipient[]) {
-  const values = recipients
-    .map((recipient) => recipient.position || recipient.name || recipient.bureau || "")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return values.length ? values.join("; ") : "[Kepada]";
+async function copyRelatedRels(
+  sourceZip: JSZip,
+  outputZip: JSZip,
+  sourcePartPath: string,
+  targetPartPath: string,
+) {
+  const sourceRelsPath = sourcePartPath.replace(/^word\//, "word/_rels/") + ".rels";
+  const sourceRels = sourceZip.file(sourceRelsPath);
+  if (!sourceRels) return;
+
+  let relsXml = await sourceRels.async("text");
+  const relationships = parseRelationships(relsXml);
+
+  for (const rel of relationships) {
+    if (rel.targetMode === "External") continue;
+    const sourceTargetPath = packagePathFromWordTarget(rel.target);
+    const nextTarget = prefixedTarget(rel.target);
+    const nextTargetPath = packagePathFromWordTarget(nextTarget);
+    await copyPart(sourceZip, outputZip, sourceTargetPath, nextTargetPath);
+    relsXml = relsXml.replace(rel.raw, setAttr(rel.raw, "Target", nextTarget));
+  }
+
+  const targetRelsPath = targetPartPath.replace(/^word\//, "word/_rels/") + ".rels";
+  outputZip.file(targetRelsPath, relsXml);
 }
 
-function divisionSummary(recipients: Recipient[]) {
-  const values = recipients
-    .map((recipient) => recipient.bureau || recipient.position || "")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return values.length ? [...new Set(values)].join("; ") : "[Divisi]";
+function addContentType(contentTypesXml: string, partName: string, contentType: string) {
+  if (contentTypesXml.includes(`PartName="${partName}"`)) return contentTypesXml;
+  const override = `<Override PartName="${partName}" ContentType="${contentType}"/>`;
+  return contentTypesXml.replace("</Types>", `${override}</Types>`);
 }
 
-function validationValues(draft: MemoDraft, totalPages: number): ValidationValues {
-  return {
-    noMemo: draft.metadata.noMemo || "[No Memo]",
-    releaseDate: draft.metadata.releaseDate || "[Tanggal Rilis]",
-    totalPages: String(totalPages),
-    title: draft.metadata.perihal || "[Judul Request]",
-    recipients: recipientSummary(draft.recipients),
-    division: divisionSummary(draft.recipients),
-    ccRecipients: recipientSummary(draft.ccRecipients).replace("[Kepada]", "[Tembusan]"),
-    creatorUnit: `POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`,
-  };
+function styleDefinitions(stylesXml: string) {
+  return [...stylesXml.matchAll(/<w:style\b[\s\S]*?<\/w:style>/g)].map((match) => ({
+    xml: match[0],
+    id: getAttr(match[0], "w:styleId"),
+  }));
 }
 
-function applyValidationValues(xml: string, values: ValidationValues) {
-  const unboundXml = xml.replace(/<w:dataBinding\b[^>]*\/>/g, "");
-  const replacedXml = replaceLiteralText(unboundXml, {
-    "[No Memo]": values.noMemo,
-    "[Tanggal Rilis]": values.releaseDate,
-    "[Total Lembar]": values.totalPages,
-    "[Judul Request]": values.title,
-    "[Kepada]": values.recipients,
-    "[Divisi]": values.division,
-    "[Tembusan]": values.ccRecipients,
-    "[Unit Pembuat]": values.creatorUnit,
-  });
+function appendMissingStyles(outputStylesXml: string, templateStylesXml: string) {
+  const outputIds = new Set(styleDefinitions(outputStylesXml).map((style) => style.id).filter(Boolean));
+  const missingStyles = styleDefinitions(templateStylesXml)
+    .filter((style) => style.id && !outputIds.has(style.id))
+    .map((style) => style.xml);
 
-  const boundValues: Record<string, string> = {
-    Nomor: values.noMemo,
-    TanggalRelease: values.releaseDate,
-    TotalHalaman: values.totalPages,
-    Judul: values.title,
-    Requester: "[Request Log]",
-    Approval: "[Approval Log]",
-    Release: "[Release Log]",
-    Kepada: values.recipients,
-    Divisi: values.division,
-    Tembusan: values.ccRecipients,
-    BiroPembuat: values.creatorUnit,
-  };
-
-  const withBoundValues = Object.entries(boundValues).reduce(
-    (current, [alias, value]) => replaceSdtContentByAlias(current, alias, value),
-    replacedXml,
-  );
-
-  return addDefaultRunSize(flattenSdtContent(withBoundValues));
-}
-
-function altChunkBlock(relationshipId: string) {
-  return `<w:p><w:r><w:br w:type="page"/></w:r></w:p><w:altChunk r:id="${relationshipId}"/>`;
-}
-
-async function buildValidationChunk(validationTemplate: ArrayBuffer, values: ValidationValues) {
-  const templateZip = await JSZip.loadAsync(validationTemplate);
-  const templateDocument = templateZip.file("word/document.xml");
-  if (!templateDocument) return new Uint8Array(validationTemplate);
-
-  const templateDocumentXml = await templateDocument.async("text");
-  const validationBody = normalizeValidationBody(bodyInner(templateDocumentXml));
-  templateZip.file("word/document.xml", applyValidationValues(replaceBodyInner(templateDocumentXml, validationBody), values));
-
-  const partNames = Object.keys(templateZip.files).filter((name) =>
-    /^word\/(header|footer)\d+\.xml$/.test(name),
-  );
-
-  await Promise.all(
-    partNames.map(async (partName) => {
-      const part = templateZip.file(partName);
-      if (!part) return;
-      templateZip.file(partName, applyValidationValues(await part.async("text"), values));
-    }),
-  );
-
-  return templateZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  if (!missingStyles.length) return outputStylesXml;
+  return outputStylesXml.replace("</w:styles>", `${missingStyles.join("")}</w:styles>`);
 }
 
 export async function spliceValidationTemplate(
   generatedDocx: Blob,
   validationTemplate: ArrayBuffer,
-  draft: MemoDraft,
-  totalPages: number,
 ) {
-  const outputZip = await JSZip.loadAsync(generatedDocx);
+  const [outputZip, templateZip] = await Promise.all([
+    JSZip.loadAsync(generatedDocx),
+    JSZip.loadAsync(validationTemplate),
+  ]);
+
   const outputDocument = outputZip.file("word/document.xml");
   const outputRels = outputZip.file("word/_rels/document.xml.rels");
+  const templateDocument = templateZip.file("word/document.xml");
+  const templateRels = templateZip.file("word/_rels/document.xml.rels");
+  const outputStyles = outputZip.file("word/styles.xml");
+  const templateStyles = templateZip.file("word/styles.xml");
   const contentTypes = outputZip.file("[Content_Types].xml");
 
-  if (!outputDocument || !outputRels || !contentTypes) {
+  if (!outputDocument || !outputRels || !templateDocument || !templateRels || !contentTypes) {
     return generatedDocx;
   }
 
-  const values = validationValues(draft, totalPages);
-  const validationChunk = await buildValidationChunk(validationTemplate, values);
-  const relationshipId = `rId${maxRelationshipId(await outputRels.async("text")) + 1}`;
+  let outputDocumentXml = await outputDocument.async("text");
+  let outputRelsXml = await outputRels.async("text");
+  let contentTypesXml = await contentTypes.async("text");
+  let outputStylesXml = outputStyles ? await outputStyles.async("text") : "";
+  const templateDocumentXml = await templateDocument.async("text");
+  const templateStylesXml = templateStyles ? await templateStyles.async("text") : "";
+  let templateBody = normalizeValidationBody(bodyInner(templateDocumentXml));
+  const templateRelsXml = await templateRels.async("text");
 
-  const outputDocumentXml = await outputDocument.async("text");
+  const idMap = new Map<string, string>();
+  const newRelationships: string[] = [];
+  let nextRelId = maxRelationshipId(outputRelsXml) + 1;
+
+  for (const rel of parseRelationships(templateRelsXml)) {
+    const shouldCopy =
+      rel.type === REL_TYPES.header ||
+      rel.type === REL_TYPES.footer ||
+      rel.type === REL_TYPES.hyperlink ||
+      rel.type === REL_TYPES.image;
+
+    if (!shouldCopy || !templateBody.includes(`r:id="${rel.id}"`)) continue;
+
+    const nextId = `rId${nextRelId}`;
+    nextRelId += 1;
+    idMap.set(rel.id, nextId);
+
+    const target = rel.targetMode === "External"
+      ? rel.target
+      : prefixedTarget(rel.target);
+
+    newRelationships.push(createRelationship(rel, nextId, target));
+
+    if (rel.targetMode !== "External") {
+      const sourcePath = packagePathFromWordTarget(rel.target);
+      const targetPath = packagePathFromWordTarget(target);
+      await copyPart(templateZip, outputZip, sourcePath, targetPath);
+      await copyRelatedRels(templateZip, outputZip, sourcePath, targetPath);
+
+      if (rel.type === REL_TYPES.header) {
+        contentTypesXml = addContentType(contentTypesXml, `/${targetPath}`, CONTENT_TYPES.header);
+      }
+
+      if (rel.type === REL_TYPES.footer) {
+        contentTypesXml = addContentType(contentTypesXml, `/${targetPath}`, CONTENT_TYPES.footer);
+      }
+    }
+  }
+
+  for (const [previousId, nextId] of idMap) {
+    templateBody = templateBody.replaceAll(`r:id="${previousId}"`, `r:id="${nextId}"`);
+  }
+
   const outputBody = bodyInner(outputDocumentXml);
   const { content, sectPr } = extractTrailingSectPr(outputBody);
-  const mergedBody = `${content}${altChunkBlock(relationshipId)}${sectPr}`;
+  const mergedBody = `${content}${sectionBreakParagraph(sectPr)}${templateBody}`;
 
-  outputZip.file("word/document.xml", replaceBodyInner(outputDocumentXml, mergedBody));
-  outputZip.file("word/_rels/document.xml.rels", appendRelationship(await outputRels.async("text"), relationshipId));
-  outputZip.file("[Content_Types].xml", addAltChunkContentType(await contentTypes.async("text")));
-  outputZip.file(`word/${ALT_CHUNK_TARGET}`, validationChunk);
+  outputDocumentXml = mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml);
+  outputRelsXml = appendRelationships(outputRelsXml, newRelationships);
+
+  outputZip.file("word/document.xml", outputDocumentXml);
+  outputZip.file("word/_rels/document.xml.rels", outputRelsXml);
+  if (outputStyles && templateStylesXml) {
+    outputStylesXml = appendMissingStyles(outputStylesXml, templateStylesXml);
+    outputZip.file("word/styles.xml", outputStylesXml);
+  }
+  outputZip.file("[Content_Types].xml", contentTypesXml);
 
   return outputZip.generateAsync({
     type: "blob",
