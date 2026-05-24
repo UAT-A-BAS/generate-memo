@@ -1439,6 +1439,25 @@ export function MemoBuilderApp() {
           </div>
         </aside>
       </div>
+      <div
+        className="fixed bottom-4 right-4 z-40 rounded-lg border border-[#c6d3e1] bg-white/95 p-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur"
+        data-floating-generate
+      >
+        <div className="mb-1 flex items-center justify-between gap-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-[#0f2d4a]">
+          <span>Docx</span>
+          <span className="font-bold normal-case tracking-normal text-slate-500">{pages.length} pages</span>
+        </div>
+        <button
+          type="button"
+          onClick={exportDocx}
+          disabled={isExporting}
+          aria-label="Buat dokumen Word cepat"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#185abd] bg-[#185abd] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#124078] focus:outline-none focus:ring-2 focus:ring-[#185abd]/25 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download size={16} />
+          Generate Docx
+        </button>
+      </div>
     </main>
   );
 }

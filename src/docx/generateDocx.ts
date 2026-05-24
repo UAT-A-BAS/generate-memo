@@ -55,6 +55,8 @@ const BODY_COLUMN_INDENT = 2100;
 const BODY_COLUMN_RIGHT_INDENT = 350;
 const CONTINUATION_RULE_INDENT = 1725;
 const WORD_LINE_MULTIPLE_108 = 259;
+const WORD_LINE_MULTIPLE_115 = 276;
+const WORD_INDENT_002_CM = 11;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -166,6 +168,16 @@ function bodyColumnParagraph(
   });
 }
 
+function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph>[1] = {}) {
+  return paragraph(text, {
+    ...options,
+    indent: { left: WORD_INDENT_002_CM, ...options.indent },
+    spacingBefore: options.spacingBefore ?? 80,
+    spacingAfter: options.spacingAfter ?? 0,
+    line: options.line ?? WORD_LINE_MULTIPLE_115,
+  });
+}
+
 function continuationRule() {
   return new Paragraph({
     includeIfEmpty: true,
@@ -230,6 +242,7 @@ function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
 function continuationNotice() {
   return new Paragraph({
     alignment: AlignmentType.RIGHT,
+    indent: { left: CONTINUATION_RULE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
     spacing: wordSpacing({ before: 140 }),
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
@@ -242,7 +255,7 @@ function compactCell(children: Paragraph[], width?: number, shaded = false) {
   return new TableCell({
     verticalAlign: VerticalAlign.TOP,
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
-    shading: shaded ? { fill: "F3F4F6" } : undefined,
+    shading: shaded ? { fill: "D9D9D9" } : undefined,
     width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
     borders: { top: border, bottom: border, left: border, right: border },
     children,
@@ -273,6 +286,17 @@ function appendixParagraph(
 
 function appendixRichParagraphs(doc: Parameters<typeof richTextToDocxParagraphs>[0]) {
   return richTextToDocxParagraphs(doc, { size: 22, spacingBefore: 0, spacingAfter: 0, line: WORD_LINE_MULTIPLE_108 });
+}
+
+function closingParagraph(text: string) {
+  return new Paragraph({
+    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    spacing: wordSpacing({ before: 140 }),
+    border: {
+      top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
+    },
+    children: multilineRuns(text, { size: 22 }),
+  });
 }
 
 function mergeKey(value: string) {
@@ -511,30 +535,30 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
         table([
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Kepada", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map((item) => paragraph(item, { size: 22 })) }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Kepada", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map((item) => memoHeadingParagraph(item, { size: 22 })) }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Dari", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Dari", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 22 })] }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Jenis Informasi", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph("INTERNAL BCA", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Jenis Informasi", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("INTERNAL BCA", { size: 22 })] }),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [paragraph("Perihal", { size: 22, font: "Arial" })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [paragraph(":", { size: 22, font: "Arial" })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Perihal", { size: 22, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22, font: "Arial" })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
             ],
           }),
         ], 100, [18, 3, 79]),
@@ -584,10 +608,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
       ];
     case "signature":
       return [
-        bodyColumnParagraph(
-          "Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.",
-          { size: 22, spacingAfter: 260 },
-        ),
+        closingParagraph("Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih."),
         ...draft.signers.map((signer) =>
           new Paragraph({
             indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
@@ -630,7 +651,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     if (page.kind === "main") {
       children.push(
         new Paragraph({
-          spacing: wordSpacing({ before: 520, after: 80 }),
+          spacing: wordSpacing({ before: 700, after: 80 }),
           children: [
             run("Perihal: ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),

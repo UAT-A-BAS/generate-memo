@@ -248,6 +248,10 @@ function normalizeValidationColors(xml: string) {
   });
 }
 
+function validationTopSpacerParagraph() {
+  return '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="259" w:lineRule="auto"/></w:pPr></w:p>';
+}
+
 function styleDefinitions(stylesXml: string) {
   return [...stylesXml.matchAll(/<w:style\b[\s\S]*?<\/w:style>/g)].map((match) => ({
     xml: match[0],
@@ -292,7 +296,9 @@ export async function spliceValidationTemplate(
   let outputStylesXml = outputStyles ? await outputStyles.async("text") : "";
   const templateDocumentXml = await templateDocument.async("text");
   const templateStylesXml = templateStyles ? await templateStyles.async("text") : "";
-  let templateBody = normalizeValidationColors(normalizeValidationBody(bodyInner(templateDocumentXml)));
+  let templateBody = `${validationTopSpacerParagraph()}${normalizeValidationColors(
+    normalizeValidationBody(bodyInner(templateDocumentXml)),
+  )}`;
   const templateRelsXml = await templateRels.async("text");
 
   const idMap = new Map<string, string>();

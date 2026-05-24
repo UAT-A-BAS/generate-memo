@@ -148,7 +148,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: Section
   switch (block.type) {
     case "memo-heading":
       return (
-        <div className="mt-14 text-[14.67px] leading-[1.08]">
+        <div className="mt-14 text-[14.67px] leading-[1.15]">
           <div className="grid grid-cols-[92px_14px_1fr] gap-x-2">
             <span>Kepada</span>
             <span>:</span>
@@ -221,7 +221,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: Section
       );
     case "signature":
       return (
-        <div className="ml-[140px] mt-7 max-w-[575px] text-[14.67px] leading-[1.08]">
+        <div className="ml-[140px] mt-7 max-w-[575px] border-t border-slate-800 pt-3 text-[14.67px] leading-[1.08]">
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
             {draft.signers.map((signer) => (
@@ -259,7 +259,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: Section
             className="pointer-events-none absolute bottom-[-12px] right-[-22px] object-cover object-bottom opacity-95"
             style={{ width: 700, height: 990 }}
           />
-          <div className="relative mx-auto w-[605px]">
+          <div className="relative mx-auto mt-5 w-[605px]">
             <p className="text-center tracking-[0.16em]">INTERNAL BCA/RAHASIA/SANGAT RAHASIA</p>
             <h2 className="mt-4 text-center text-[24px] font-bold" style={{ color: VALIDATION_BLUE }}>Validasi Dokumen</h2>
             <p className="text-center tracking-[0.08em]">Dibuat oleh Document Approval</p>
@@ -440,7 +440,7 @@ function renderGroupedBlocks(
 
 function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
   const isAppendix = page.kind === "appendix";
-  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 122) : (isAppendix ? 88 : 64);
+  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 142) : (isAppendix ? 88 : 64);
 
   return (
     <div
@@ -468,7 +468,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
       ) : null}
       {renderGroupedBlocks(draft, page.blocks, Boolean(page.continuationTitle && page.kind === "main"))}
       {page.continues && page.kind === "main" ? (
-        <p className="mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
+        <p className="ml-[140px] mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
           Bersambung ke halaman berikutnya
         </p>
       ) : null}
