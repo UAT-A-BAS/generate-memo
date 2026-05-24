@@ -134,14 +134,28 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
         endDate: row.endDate ?? row.startDate ?? "",
       }))
     : base.activities;
+  let previousScenarioStartDate = "";
+  let previousScenarioEndDate = "";
+  let previousScenarioSection = "";
   const appendixScenarios = Array.isArray(input.appendixScenarios)
     ? input.appendixScenarios.map((row) => {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
+        const startDate = row.startDate ?? legacyDate;
+        const endDate = row.endDate ?? row.startDate ?? legacyDate;
+        const section = row.section?.trim() ? row.section : previousScenarioSection;
+        const normalizedStartDate = startDate || previousScenarioStartDate;
+        const normalizedEndDate = endDate || previousScenarioEndDate || normalizedStartDate;
+
+        if (normalizedStartDate) previousScenarioStartDate = normalizedStartDate;
+        if (normalizedEndDate) previousScenarioEndDate = normalizedEndDate;
+        if (section?.trim()) previousScenarioSection = section;
+
         return {
           ...row,
           dateGroupId: row.dateGroupId ?? createId("scenario-date"),
-          startDate: row.startDate ?? legacyDate,
-          endDate: row.endDate ?? row.startDate ?? legacyDate,
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate,
+          section,
         };
       })
     : base.appendixScenarios;

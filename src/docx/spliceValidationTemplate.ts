@@ -229,6 +229,12 @@ function addContentType(contentTypesXml: string, partName: string, contentType: 
   return contentTypesXml.replace("</Types>", `${override}</Types>`);
 }
 
+function normalizePctWidthAttributes(xml: string) {
+  return xml
+    .replace(/(w:type="pct"\s+w:w=")(\d+)%"/g, "$1$2\"")
+    .replace(/(w:w=")(\d+)(%"\s+w:type="pct")/g, "$1$2\" w:type=\"pct\"");
+}
+
 function styleDefinitions(stylesXml: string) {
   return [...stylesXml.matchAll(/<w:style\b[\s\S]*?<\/w:style>/g)].map((match) => ({
     xml: match[0],
@@ -326,7 +332,7 @@ export async function spliceValidationTemplate(
   outputDocumentXml = mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml);
   outputRelsXml = appendRelationships(outputRelsXml, newRelationships);
 
-  outputZip.file("word/document.xml", outputDocumentXml);
+  outputZip.file("word/document.xml", normalizePctWidthAttributes(outputDocumentXml));
   outputZip.file("word/_rels/document.xml.rels", outputRelsXml);
   if (outputStyles && templateStylesXml) {
     outputStylesXml = appendMissingStyles(outputStylesXml, templateStylesXml);

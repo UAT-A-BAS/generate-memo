@@ -146,7 +146,7 @@ function previewSection(title: string, content: FileChild[]) {
         sectionCell(content, 78),
       ],
     }),
-  ]);
+  ], 100, [22, 78]);
 }
 
 function cell(children: Paragraph[], width?: number, shaded = false) {
@@ -171,9 +171,10 @@ function spanningCell(children: Paragraph[], span: number, shaded = false) {
   });
 }
 
-function table(rows: TableRow[], width = 100) {
+function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
   return new Table({
     width: { size: pct(width), type: WidthType.PERCENTAGE },
+    columnWidths: columnWidths?.map((columnWidth) => columnWidth * 100),
     layout: TableLayoutType.FIXED,
     rows,
   });
@@ -242,7 +243,7 @@ function developmentTable(rows: Extract<PreviewBlock, { type: "development-row" 
           ],
         }),
     ),
-  ]);
+  ], 100, [8, 46, 46]);
 }
 
 function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) {
@@ -268,7 +269,7 @@ function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) 
           ],
         }),
     ),
-  ]);
+  ], 100, [56, 22, 22]);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -372,7 +373,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       ],
     }),
     ...bodyRows,
-  ]);
+  ], 100, [6, 39, 41, 14]);
 }
 
 function consumeTableRows(
@@ -425,7 +426,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
               new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [paragraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
             ],
           }),
-        ]),
+        ], 100, [18, 3, 79]),
       ];
     case "recipients":
       return [];

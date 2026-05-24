@@ -1,4 +1,56 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+function richText(text: string) {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: text ? [{ type: "text", text }] : [],
+      },
+    ],
+  };
+}
+
+function completeDraft() {
+  return {
+    metadata: {
+      memoType: "Pilot",
+      projectName: "BDS Web Gen 2 versi 4.3.0",
+      bureau: "A",
+      autoPerihal: true,
+      accessLinkEnabled: false,
+      accessLink: "",
+    },
+    recipients: [{ id: "recipient-test", gender: "Ibu", name: "Agustina", position: "Kepala Operasi Cabang Pluit" }],
+    developmentRows: [{ id: "development-test", item: richText("Pengembangan"), description: richText("Keterangan") }],
+    pilotSchedule: { startDate: "2026-05-07", endDate: "2026-05-21" },
+    activities: [{ id: "activity-test", startDate: "2026-05-07", endDate: "2026-05-21", owner: "Tim APV", activity: richText("Aktivitas") }],
+    contacts: [{ id: "contact-test", name: "Nama PIC", email: "pic@example.com" }],
+    signers: [{ id: "signer-test", name: "Signer", title: "Jabatan" }],
+    initials: "abc",
+    initialsBureau: "A",
+    appendixScenarios: [{
+      id: "scenario-test",
+      dateGroupId: "scenario-date-test",
+      startDate: "2026-05-07",
+      endDate: "2026-05-21",
+      section: "Verifikasi Landing Page Pemol Giro Badan (SEEDS)",
+      scenario: richText("Verifikasi pencarian data"),
+      expectedResult: richText("Berhasil melakukan filter data"),
+      pic: "Tim APV",
+      notes: richText(""),
+    }],
+  };
+}
+
+async function importDraft(page: Page, payload: unknown) {
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "draft.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(payload)),
+  });
+}
 
 test("updates generated perihal from metadata", async ({ page }) => {
   await page.goto("http://localhost:3002");
@@ -9,13 +61,23 @@ test("updates generated perihal from metadata", async ({ page }) => {
 
 test("exports DOCX from current draft", async ({ page }) => {
   await page.goto("http://localhost:3002");
-  await page.getByLabel("Nama Project").fill("BDS Web Gen 2 versi 4.3.0");
+  await importDraft(page, completeDraft());
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Generate Docx" }).click();
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4.3.0).docx");
+});
+
+test("blocks DOCX export when mandatory fields are empty", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1000 }).catch(() => null);
+  await page.getByRole("button", { name: "Generate Docx" }).click();
+
+  await expect(page.getByText("Generate Docx ditahan")).toBeVisible();
+  expect(await downloadPromise).toBeNull();
 });
 
 test("empty rich text fields start in plain text mode", async ({ page }) => {

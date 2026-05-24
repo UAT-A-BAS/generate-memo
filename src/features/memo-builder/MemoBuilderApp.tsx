@@ -105,6 +105,82 @@ function FieldLabel({
   );
 }
 
+type ValidationIssue = {
+  id: string;
+  label: string;
+};
+
+function hasText(value?: string) {
+  return Boolean(value?.trim());
+}
+
+function hasRichText(value: Parameters<typeof richTextToPlainText>[0]) {
+  return hasText(richTextToPlainText(value));
+}
+
+function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const add = (id: string, label: string) => issues.push({ id, label });
+
+  if (!hasText(draft.metadata.memoType)) add("memoType", "Jenis Implementasi");
+  if (!hasText(draft.metadata.bureau)) add("bureau", "Bureau UAT");
+  if (!hasText(draft.metadata.projectName)) add("projectName", "Nama Project");
+  if (!hasText(draft.metadata.perihal)) add("perihal", "Perihal");
+
+  draft.recipients.forEach((recipient, index) => {
+    if (!hasText(recipient.position)) add(`recipient-${recipient.id}`, `Kepada ${index + 1}: Jabatan / Unit`);
+    if (!hasText(recipient.gender)) add(`recipient-gender-${recipient.id}`, `Kepada ${index + 1}: Sapaan`);
+  });
+
+  if (draft.metadata.memoType === "Nasional" && draft.referenceEnabled && !hasRichText(draft.reference)) {
+    add("reference", "Daftar Referensi");
+  }
+
+  draft.developmentRows.forEach((row, index) => {
+    if (!hasRichText(row.item)) add(`development-item-${row.id}`, `Lingkup Pengembangan ${index + 1}: Item`);
+    if (!hasRichText(row.description)) add(`development-description-${row.id}`, `Lingkup Pengembangan ${index + 1}: Keterangan`);
+  });
+
+  if (!hasText(draft.pilotSchedule.startDate) || !hasText(draft.pilotSchedule.endDate)) {
+    add("schedule", `${scheduleTitle(draft.metadata.memoType)}: Tanggal`);
+  }
+
+  draft.activities.forEach((row, index) => {
+    if (!hasText(row.startDate) || !hasText(row.endDate)) add(`activity-date-${row.id}`, `Aktivitas ${index + 1}: Tanggal`);
+    if (!hasText(row.owner)) add(`activity-owner-${row.id}`, `Aktivitas ${index + 1}: PIC`);
+    if (!hasRichText(row.activity)) add(`activity-text-${row.id}`, `Aktivitas ${index + 1}: Aktivitas`);
+  });
+
+  if (draft.metadata.accessLinkEnabled && !hasText(draft.metadata.accessLink)) {
+    add("accessLink", "URL Akses");
+  }
+
+  draft.contacts.forEach((contact, index) => {
+    if (!hasText(contact.name)) add(`contact-name-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Nama`);
+    if (!hasText(contact.email)) add(`contact-email-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Email`);
+  });
+
+  draft.signers.forEach((signer, index) => {
+    if (!hasText(signer.name)) add(`signer-name-${signer.id}`, `Signature ${index + 1}: Nama`);
+    if (!hasText(signer.title)) add(`signer-title-${signer.id}`, `Signature ${index + 1}: Jabatan`);
+  });
+
+  if (!hasText(draft.initials)) add("initials", "Inisial");
+  if (!hasText(draft.initialsBureau)) add("initialsBureau", "UAT");
+
+  let effectiveSection = "";
+  draft.appendixScenarios.forEach((row, index) => {
+    if (hasText(row.section)) effectiveSection = row.section;
+    if (!hasText(row.startDate) || !hasText(row.endDate)) add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal`);
+    if (!hasText(effectiveSection)) add(`scenario-section-${row.id}`, `Lampiran Skenario ${index + 1}: Bagian`);
+    if (!hasText(row.pic)) add(`scenario-pic-${row.id}`, `Lampiran Skenario ${index + 1}: PIC`);
+    if (!hasRichText(row.scenario)) add(`scenario-text-${row.id}`, `Lampiran Skenario ${index + 1}: Skenario`);
+    if (!hasRichText(row.expectedResult)) add(`scenario-expected-${row.id}`, `Lampiran Skenario ${index + 1}: Expected Result`);
+  });
+
+  return issues;
+}
+
 function Panel({
   children,
   className = "",
@@ -716,11 +792,13 @@ function AppendixPanel({
   updateDraft,
   onGenerateDocx,
   isExporting,
+  validationIssues,
 }: {
   rows: ScenarioRow[];
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
   onGenerateDocx: () => void;
   isExporting: boolean;
+  validationIssues: ValidationIssue[];
 }) {
   function setRows(nextRows: ScenarioRow[]) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }));
@@ -885,6 +963,24 @@ function AppendixPanel({
           Generate Docx
         </IconButton>
       </div>
+      {validationIssues.length ? (
+        <div
+          className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+          role="alert"
+          aria-live="polite"
+          data-validation-panel
+        >
+          <p className="font-bold">Generate Docx ditahan. Field mandatory berikut masih kosong:</p>
+          <ul className="mt-2 grid gap-1">
+            {validationIssues.slice(0, 8).map((issue) => (
+              <li key={issue.id}>- {issue.label}</li>
+            ))}
+          </ul>
+          {validationIssues.length > 8 ? (
+            <p className="mt-2 font-semibold">+ {validationIssues.length - 8} field lain.</p>
+          ) : null}
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -892,6 +988,7 @@ function AppendixPanel({
 export function MemoBuilderApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [collaborationOpen, setCollaborationOpen] = useState(false);
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
@@ -931,6 +1028,7 @@ export function MemoBuilderApp() {
       return;
     }
     resetDraft();
+    setValidationIssues([]);
   }
 
   async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
@@ -943,14 +1041,28 @@ export function MemoBuilderApp() {
       payload.appendixScenarios || payload.metadata ? payload : generateMomJsonToMemoDraft(payload);
 
     importDraft(mapped);
+    setValidationIssues([]);
     event.target.value = "";
   }
 
   async function exportDocx() {
+    const issues = validateMemoDraft(draft);
+    setValidationIssues(issues);
+    if (issues.length) {
+      window.requestAnimationFrame(() => {
+        document.querySelector("[data-validation-panel]")?.scrollIntoView({
+          block: "center",
+          behavior: "smooth",
+        });
+      });
+      return;
+    }
+
     setIsExporting(true);
     try {
       const blob = await generateMemoDocxBlob(draft);
       downloadBlob(blob, memoDocxFileName(draft));
+      setValidationIssues([]);
     } finally {
       setIsExporting(false);
     }
@@ -1204,6 +1316,7 @@ export function MemoBuilderApp() {
             updateDraft={updateDraft}
             onGenerateDocx={exportDocx}
             isExporting={isExporting}
+            validationIssues={validationIssues}
           />
         </div>
 
