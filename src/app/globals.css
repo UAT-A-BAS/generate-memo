@@ -75,8 +75,8 @@ textarea {
 .memo-preview-table td,
 .memo-preview-table th {
   line-height: 1.08;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
   white-space: normal;
 }
 

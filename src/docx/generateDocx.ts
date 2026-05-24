@@ -26,6 +26,16 @@ import {
 } from "docx";
 import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination/paginate";
+import {
+  APPENDIX_COLUMN_WIDTHS,
+  APPENDIX_HEADER_FILL,
+  BODY_COLUMN_INDENT,
+  BODY_COLUMN_RIGHT_INDENT,
+  CONTINUATION_RULE_INDENT,
+  WORD_INDENT_002_CM,
+  WORD_LINE_MULTIPLE_108,
+  WORD_LINE_MULTIPLE_115,
+} from "@/documentLayout";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToPlainText } from "@/utils/richText";
@@ -50,13 +60,6 @@ const sectionTopBorder = {
   size: 6,
   color: "1F2937",
 };
-
-const BODY_COLUMN_INDENT = 2100;
-const BODY_COLUMN_RIGHT_INDENT = 350;
-const CONTINUATION_RULE_INDENT = 1725;
-const WORD_LINE_MULTIPLE_108 = 259;
-const WORD_LINE_MULTIPLE_115 = 276;
-const WORD_INDENT_002_CM = 11;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -255,7 +258,7 @@ function compactCell(children: Paragraph[], width?: number, shaded = false) {
   return new TableCell({
     verticalAlign: VerticalAlign.TOP,
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
-    shading: shaded ? { fill: "D9D9D9" } : undefined,
+    shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
     borders: { top: border, bottom: border, left: border, right: border },
     children,
@@ -267,7 +270,7 @@ function compactSpanningCell(children: Paragraph[], span: number, shaded = false
     columnSpan: span,
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
-    shading: shaded ? { fill: "D9D9D9" } : undefined,
+    shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
@@ -437,14 +440,14 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
               children: [
                 compactCell(
                   [appendixParagraph(`${block.meta.sectionLetter}.`, { bold: true, size: 17, align: AlignmentType.CENTER })],
-                  5,
+                  APPENDIX_COLUMN_WIDTHS[0],
                   true,
                 ),
                 new TableCell({
                   columnSpan: 3,
                   verticalAlign: VerticalAlign.CENTER,
                   margins: { top: 35, bottom: 35, left: 55, right: 55 },
-                  shading: { fill: "D9D9D9" },
+                  shading: { fill: APPENDIX_HEADER_FILL },
                   width: { size: pct(95), type: WidthType.PERCENTAGE },
                   borders: { top: border, bottom: border, left: border, right: border },
                   children: [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
@@ -466,7 +469,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
           verticalMerge: picMerge.restart ? VerticalMergeType.RESTART : undefined,
           verticalAlign: VerticalAlign.CENTER,
           margins: { top: 35, bottom: 35, left: 55, right: 55 },
-          width: { size: pct(11), type: WidthType.PERCENTAGE },
+          width: { size: pct(APPENDIX_COLUMN_WIDTHS[3]), type: WidthType.PERCENTAGE },
           borders: { top: border, bottom: border, left: border, right: border },
           children: [appendixParagraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })],
         });
@@ -477,9 +480,9 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       new TableRow({
         cantSplit: true,
         children: [
-          compactCell([appendixParagraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], 5),
-          compactCell(appendixRichParagraphs(block.row.scenario), 42),
-          compactCell(appendixRichParagraphs(block.row.expectedResult), 42),
+          compactCell([appendixParagraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0]),
+          compactCell(appendixRichParagraphs(block.row.scenario), APPENDIX_COLUMN_WIDTHS[1]),
+          compactCell(appendixRichParagraphs(block.row.expectedResult), APPENDIX_COLUMN_WIDTHS[2]),
           picCell,
         ],
       }),
@@ -491,14 +494,14 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       cantSplit: true,
       tableHeader: true,
       children: [
-        compactCell([appendixParagraph("No", { bold: true, size: 17, align: AlignmentType.CENTER })], 5, true),
-        compactCell([appendixParagraph("Aktivitas", { bold: true, size: 17, align: AlignmentType.CENTER })], 42, true),
-        compactCell([appendixParagraph("Hasil/Keterangan", { bold: true, size: 17, align: AlignmentType.CENTER })], 42, true),
-        compactCell([appendixParagraph("PIC", { bold: true, size: 17, align: AlignmentType.CENTER })], 11, true),
+        compactCell([appendixParagraph("No", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0], true),
+        compactCell([appendixParagraph("Aktivitas", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[1], true),
+        compactCell([appendixParagraph("Hasil/Keterangan", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[2], true),
+        compactCell([appendixParagraph("PIC", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[3], true),
       ],
     }),
     ...bodyRows,
-  ], 100, [5, 42, 42, 11]);
+  ], 100, Array.from(APPENDIX_COLUMN_WIDTHS));
 }
 
 function consumeTableRows(

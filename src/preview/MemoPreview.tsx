@@ -4,10 +4,13 @@ import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
+import { APPENDIX_COLUMN_WIDTHS, APPENDIX_HEADER_FILL } from "@/documentLayout";
 import { HeaderFooterRenderer } from "./HeaderFooterRenderer";
 import { PageContainer } from "./PageContainer";
 
 const VALIDATION_BLUE = "#1F497D";
+const APPENDIX_COLUMN_WIDTH_PERCENTAGES = APPENDIX_COLUMN_WIDTHS.map((width) => `${width}%`);
+const APPENDIX_HEADER_BACKGROUND = `#${APPENDIX_HEADER_FILL}`;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -63,7 +66,7 @@ function recipientLine(recipient: Recipient, index: number, total: number) {
   const name = recipient.name?.trim() ? `U.p. Yth. ${recipient.gender} ${recipient.name}` : "";
   const prefix = total > 1 ? "- " : "";
   return (
-    <div className="grid gap-1" key={recipient.id}>
+    <div className="grid gap-[5px]" key={recipient.id}>
       <p>{prefix}{recipient.position}</p>
       {name ? <p className="pl-5">{name}</p> : null}
     </div>
@@ -74,13 +77,15 @@ function MemoTable({
   headers,
   columnWidths,
   children,
+  compact = false,
 }: {
   headers: string[];
   columnWidths?: string[];
   children: React.ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <table className="memo-preview-table w-full table-fixed border-collapse text-[14.67px] leading-[1.15]">
+    <table className={`memo-preview-table w-full table-fixed border-collapse text-[14.67px] ${compact ? "leading-[1.08]" : "leading-[1.15]"}`}>
       {columnWidths ? (
         <colgroup>
           {columnWidths.map((width, index) => (
@@ -89,9 +94,13 @@ function MemoTable({
         </colgroup>
       ) : null}
       <thead>
-        <tr className="bg-[#d9d9d9]">
+        <tr style={{ backgroundColor: compact ? APPENDIX_HEADER_BACKGROUND : "#d9d9d9" }}>
           {headers.map((header) => (
-            <th key={header} className="border border-slate-900 px-1.5 py-1 text-center font-bold">
+            <th
+              key={header}
+              className={`border border-slate-900 text-center font-bold ${compact ? "px-1 py-0.5" : "px-1.5 py-1"}`}
+              style={{ backgroundColor: compact ? APPENDIX_HEADER_BACKGROUND : "#d9d9d9" }}
+            >
               {header}
             </th>
           ))}
@@ -149,15 +158,15 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: Section
     case "memo-heading":
       return (
         <div className="mt-14 text-[14.67px] leading-[1.15]">
-          <div className="grid grid-cols-[92px_14px_1fr] gap-x-2">
+          <div className="grid grid-cols-[92px_14px_1fr] gap-x-2 gap-y-[5px]">
             <span>Kepada</span>
             <span>:</span>
-            <div className="grid gap-1">
+            <div className="grid gap-[5px]">
               {draft.recipients.map((recipient, index) => recipientLine(recipient, index, draft.recipients.length))}
             </div>
-            <span className="mt-2">Dari</span>
-            <span className="mt-2">:</span>
-            <span className="mt-2">POL Application &amp; User Acceptance Test Bureau {draft.metadata.bureau}</span>
+            <span>Dari</span>
+            <span>:</span>
+            <span>POL Application &amp; User Acceptance Test Bureau {draft.metadata.bureau}</span>
             <span>Jenis Informasi</span>
             <span>:</span>
             <span>INTERNAL BCA</span>
@@ -383,37 +392,38 @@ function renderGroupedBlocks(
         <MemoTable
           key={`appendix-${index}`}
           headers={["No", "Aktivitas", "Hasil/Keterangan", "PIC"]}
-          columnWidths={["6%", "39%", "41%", "14%"]}
+          columnWidths={APPENDIX_COLUMN_WIDTH_PERCENTAGES}
+          compact
         >
           {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item, rowIndex, appendixRows) => {
             const picSpan = appendixPicSpan(appendixRows, rowIndex);
             return (
               <Fragment key={item.id}>
                 {item.meta.showDate ? (
-                  <tr className="bg-[#d9d9d9] font-bold">
-                    <td className="border border-slate-900 px-2 py-1" colSpan={4}>{item.meta.dateLabel}</td>
+                  <tr className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                    <td className="border border-slate-900 px-1 py-0.5" colSpan={4} style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>{item.meta.dateLabel}</td>
                   </tr>
                 ) : null}
                 {item.meta.showSection ? (
-                  <tr className="bg-[#d9d9d9] font-bold">
-                    <td className="border border-slate-900 px-2 py-0.5 text-center align-top">
+                  <tr className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                    <td className="border border-slate-900 px-1 py-0.5 text-center align-top" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                       {item.meta.sectionLetter}.
                     </td>
-                    <td className="preserve-lines border border-slate-900 px-2 py-0.5 align-top" colSpan={3}>
+                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 align-top" colSpan={3} style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                       {item.meta.sectionTitle}
                     </td>
                   </tr>
                 ) : null}
                 <tr>
-                  <td className="w-10 border border-slate-900 px-2 py-1 text-center align-top">{item.meta.number}.</td>
-                  <td className="border border-slate-900 px-2 py-1 align-top">
+                  <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-top">{item.meta.number}.</td>
+                  <td className="border border-slate-900 px-1 py-0.5 align-top">
                     <RichTextView html={richTextToHtml(item.row.scenario)} />
                   </td>
-                  <td className="border border-slate-900 px-2 py-1 align-top">
+                  <td className="border border-slate-900 px-1 py-0.5 align-top">
                     <RichTextView html={richTextToHtml(item.row.expectedResult)} />
                   </td>
                   {picSpan.hidden ? null : (
-                    <td className="preserve-lines border border-slate-900 px-2 py-1 text-center align-middle" rowSpan={picSpan.span}>
+                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 text-center align-middle" rowSpan={picSpan.span}>
                       {item.row.pic}
                     </td>
                   )}
@@ -468,7 +478,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
       ) : null}
       {renderGroupedBlocks(draft, page.blocks, Boolean(page.continuationTitle && page.kind === "main"))}
       {page.continues && page.kind === "main" ? (
-        <p className="ml-[140px] mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
+        <p className="ml-[120px] mt-3 w-[560px] border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
           Bersambung ke halaman berikutnya
         </p>
       ) : null}
