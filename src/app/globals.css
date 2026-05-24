@@ -81,6 +81,13 @@ textarea {
   white-space: pre-line;
 }
 
+.validation-jump-highlight {
+  border-radius: 8px;
+  outline: 3px solid #dc2626;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgb(220 38 38 / 0.12);
+}
+
 .preview-rich-text .rt-underline {
   text-decoration: underline;
 }

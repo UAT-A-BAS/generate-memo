@@ -77,6 +77,7 @@ test("blocks DOCX export when mandatory fields are empty", async ({ page }) => {
   await page.getByRole("button", { name: "Generate Docx" }).click();
 
   await expect(page.getByText("Generate Docx ditahan")).toBeVisible();
+  await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/validation-jump-highlight/);
   expect(await downloadPromise).toBeNull();
 });
 
@@ -153,9 +154,31 @@ test("appendix scenario uses section header numbering", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await page.getByLabel("Nama Project").fill("BDS Web Gen 2 versi 4.3.0");
-  await page.getByLabel("Bagian").fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
+  await page.getByLabel("Bagian").first().fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
 
   const appendixTable = page.locator("aside table").last();
   await expect(appendixTable).toContainText("A.Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
   await expect(appendixTable).toContainText("1.");
+});
+
+test("appendix hierarchy adds date, section, and scenario in place", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const appendixPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+
+  await expect(appendixPanel.getByLabel("Bagian")).toHaveCount(1);
+  await appendixPanel.getByRole("button", { name: "Bagian" }).click();
+  await expect(appendixPanel.getByLabel("Bagian")).toHaveCount(2);
+
+  await expect(appendixPanel.getByRole("button", { name: "Skenario", exact: true })).toHaveCount(2);
+  await appendixPanel.getByRole("button", { name: "Skenario", exact: true }).first().click();
+  await expect(appendixPanel.getByText("Skenario 2")).toBeVisible();
+
+  await expect(appendixPanel.getByRole("button", { name: "Tanggal", exact: true })).toHaveCount(1);
+  await appendixPanel.getByRole("button", { name: "Tanggal", exact: true }).click();
+  await expect(appendixPanel.getByRole("button", { name: "Tanggal", exact: true })).toHaveCount(2);
 });

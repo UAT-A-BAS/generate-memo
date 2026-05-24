@@ -65,6 +65,7 @@ export function createScenarioRow(seed: Partial<ScenarioRow> = {}): ScenarioRow 
   return {
     id: createId("scenario"),
     dateGroupId: seed.dateGroupId ?? createId("scenario-date"),
+    sectionGroupId: seed.sectionGroupId ?? createId("scenario-section"),
     startDate: "",
     endDate: "",
     section: "",
@@ -153,6 +154,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
         return {
           ...row,
           dateGroupId: row.dateGroupId ?? createId("scenario-date"),
+          sectionGroupId: row.sectionGroupId ?? createId("scenario-section"),
           startDate: normalizedStartDate,
           endDate: normalizedEndDate,
           section,

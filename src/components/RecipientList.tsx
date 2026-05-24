@@ -40,6 +40,7 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
               <label className="grid gap-1 text-xs font-medium text-slate-600">
                 <span>Jabatan / Unit {required ? <RequiredMark /> : null}</span>
                 <input
+                  data-field-id={`recipient-${recipient.id}`}
                   value={recipient.position}
                   onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
                   className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
@@ -48,6 +49,7 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
               <label className="grid gap-1 text-xs font-medium text-slate-600">
                 <span>Sapaan {required ? <RequiredMark /> : null}</span>
                 <select
+                  data-field-id={`recipient-gender-${recipient.id}`}
                   value={recipient.gender}
                   onChange={(event) =>
                     updateRecipient(recipient.id, {
