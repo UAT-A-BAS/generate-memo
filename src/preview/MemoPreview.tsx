@@ -4,13 +4,20 @@ import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
-import { APPENDIX_COLUMN_WIDTHS, APPENDIX_HEADER_FILL } from "@/documentLayout";
+import {
+  APPENDIX_COLUMN_WIDTHS,
+  APPENDIX_HEADER_FILL,
+  DEVELOPMENT_COLUMN_WIDTHS,
+  TABLE_HEADER_FILL,
+} from "@/documentLayout";
 import { HeaderFooterRenderer } from "./HeaderFooterRenderer";
 import { PageContainer } from "./PageContainer";
 
 const VALIDATION_BLUE = "#1F497D";
 const APPENDIX_COLUMN_WIDTH_PERCENTAGES = APPENDIX_COLUMN_WIDTHS.map((width) => `${width}%`);
 const APPENDIX_HEADER_BACKGROUND = `#${APPENDIX_HEADER_FILL}`;
+const DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES = DEVELOPMENT_COLUMN_WIDTHS.map((width) => `${width}%`);
+const TABLE_HEADER_BACKGROUND = `#${TABLE_HEADER_FILL}`;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -29,6 +36,7 @@ function scheduleTitle(draft: MemoDraft) {
 
 function initialsText(draft: MemoDraft) {
   const suffix = `/uat-${draft.initialsBureau.toLowerCase()}`;
+  if (draft.initials.toLowerCase().includes("/uat-")) return draft.initials;
   return draft.initials ? `${draft.initials}${suffix}` : suffix;
 }
 
@@ -51,9 +59,10 @@ function PreviewSection({
   const sectionRuleClass = rule === "full" ? "border-t border-slate-800 pt-3" : "";
   const titleRuleClass = rule === "content" ? "pt-3" : "";
   const contentRuleClass = rule === "content" ? "border-t border-slate-800 pt-3" : "";
+  const sectionMarginClass = rule === "full" ? "mt-5" : "mt-4";
 
   return (
-    <section className={`mt-4 ${sectionRuleClass}`}>
+    <section className={`${sectionMarginClass} ${sectionRuleClass}`}>
       <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.08]">
         <h3 className={`${titleRuleClass} text-[13.33px] font-bold leading-[1.08]`}>{title}</h3>
         <div className={contentRuleClass}>{children}</div>
@@ -94,12 +103,12 @@ function MemoTable({
         </colgroup>
       ) : null}
       <thead>
-        <tr style={{ backgroundColor: compact ? APPENDIX_HEADER_BACKGROUND : "#d9d9d9" }}>
+        <tr style={{ backgroundColor: compact ? APPENDIX_HEADER_BACKGROUND : TABLE_HEADER_BACKGROUND }}>
           {headers.map((header) => (
             <th
               key={header}
               className={`border border-slate-900 text-center font-bold ${compact ? "px-1 py-0.5" : "px-1.5 py-1"}`}
-              style={{ backgroundColor: compact ? APPENDIX_HEADER_BACKGROUND : "#d9d9d9" }}
+              style={{ backgroundColor: compact ? APPENDIX_HEADER_BACKGROUND : TABLE_HEADER_BACKGROUND }}
             >
               {header}
             </th>
@@ -153,11 +162,16 @@ function appendixPicSpan(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]
   return { hidden: false, span };
 }
 
-function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: SectionRule = "content") {
+function renderBlock(
+  draft: MemoDraft,
+  block: PreviewBlock,
+  sectionRule: SectionRule = "content",
+  options: { continuationMainPage?: boolean } = {},
+) {
   switch (block.type) {
     case "memo-heading":
       return (
-        <div className="mt-14 text-[14.67px] leading-[1.15]">
+        <div className="mt-10 text-[14.67px] leading-[1.15]">
           <div className="grid grid-cols-[92px_14px_1fr] gap-x-2 gap-y-[5px]">
             <span>Kepada</span>
             <span>:</span>
@@ -230,7 +244,11 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock, sectionRule: Section
       );
     case "signature":
       return (
-        <div className="ml-[140px] mt-7 max-w-[575px] border-t border-slate-800 pt-3 text-[14.67px] leading-[1.08]">
+        <div
+          className={`ml-[140px] max-w-[575px] text-[14.67px] leading-[1.08] ${
+            options.continuationMainPage ? "mt-0" : "mt-7 border-t border-slate-800 pt-5"
+          }`}
+        >
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
             {draft.signers.map((signer) => (
@@ -321,6 +339,7 @@ function renderGroupedBlocks(
   draft: MemoDraft,
   blocks: PreviewBlock[],
   suppressFirstSectionRule = false,
+  continuationMainPage = false,
 ) {
   const rendered: React.ReactNode[] = [];
   let index = 0;
@@ -343,14 +362,14 @@ function renderGroupedBlocks(
       rendered.push(
         <PreviewSection title="Lingkup Pengembangan" rule={nextSectionRule()} key={`development-${index}`}>
           <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.perihal}:</p>
-          <MemoTable headers={["No.", "Pengembangan", "Keterangan"]} columnWidths={["10%", "42%", "48%"]}>
+          <MemoTable headers={["No.", "Pengembangan", "Keterangan"]} columnWidths={DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES}>
             {(rows as Extract<PreviewBlock, { type: "development-row" }>[]).map((item) => (
               <tr key={item.id}>
-                <td className="w-12 border border-slate-900 px-2 py-1 align-top">{item.index + 1}</td>
-                <td className="border border-slate-900 px-2 py-1 align-top">
+                <td className="w-12 border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
+                <td className="border border-slate-900 px-2 py-1 align-middle">
                   <RichTextView html={richTextToHtml(item.row.item)} />
                 </td>
-                <td className="border border-slate-900 px-2 py-1 align-top">
+                <td className="border border-slate-900 px-2 py-1 align-middle">
                   <RichTextView html={richTextToHtml(item.row.description)} />
                 </td>
               </tr>
@@ -370,11 +389,11 @@ function renderGroupedBlocks(
           <MemoTable headers={["Aktivitas", "PIC", "Waktu"]} columnWidths={["66%", "16%", "18%"]}>
             {(rows as Extract<PreviewBlock, { type: "activity-row" }>[]).map((item) => (
               <tr key={item.id}>
-                <td className="border border-slate-900 px-2 py-1 align-top">
+                <td className="border border-slate-900 px-2 py-1 align-middle">
                   <RichTextView html={richTextToHtml(item.row.activity)} />
                 </td>
-                <td className="border border-slate-900 px-2 py-1 align-top">{item.row.owner}</td>
-                <td className="border border-slate-900 px-2 py-1 align-top">
+                <td className="border border-slate-900 px-2 py-1 text-center align-middle">{item.row.owner}</td>
+                <td className="border border-slate-900 px-2 py-1 text-center align-middle">
                   {formatDateRangeID(item.row.startDate, item.row.endDate)}
                 </td>
               </tr>
@@ -439,7 +458,9 @@ function renderGroupedBlocks(
 
     rendered.push(
       <div key={block.id}>
-        {renderBlock(draft, block, isPreviewSectionBlock(block) ? nextSectionRule() : "content")}
+        {renderBlock(draft, block, isPreviewSectionBlock(block) ? nextSectionRule() : "content", {
+          continuationMainPage,
+        })}
       </div>,
     );
     index += 1;
@@ -450,7 +471,7 @@ function renderGroupedBlocks(
 
 function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
   const isAppendix = page.kind === "appendix";
-  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 142) : (isAppendix ? 88 : 64);
+  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 108) : (isAppendix ? 88 : 64);
 
   return (
     <div
@@ -476,7 +497,12 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
       ) : page.kind === "appendix" ? (
         <h2 className="mb-5 text-[13.33px] font-bold">{page.title}</h2>
       ) : null}
-      {renderGroupedBlocks(draft, page.blocks, Boolean(page.continuationTitle && page.kind === "main"))}
+      {renderGroupedBlocks(
+        draft,
+        page.blocks,
+        Boolean(page.continuationTitle && page.kind === "main"),
+        Boolean(page.continuationTitle && page.kind === "main"),
+      )}
       {page.continues && page.kind === "main" ? (
         <p className="ml-[120px] mt-3 w-[560px] border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
           Bersambung ke halaman berikutnya

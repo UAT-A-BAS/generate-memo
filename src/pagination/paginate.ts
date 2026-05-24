@@ -49,8 +49,8 @@ export type PreviewPage = {
 };
 
 const PAGE_LIMITS: Record<PreviewOrientation, number> = {
-  portrait: 890,
-  landscape: 520,
+  portrait: 1040,
+  landscape: 620,
 };
 
 function visualLineCount(value: string, charsPerLine: number) {
@@ -92,42 +92,29 @@ function appendixRowContentHeight(row: ScenarioRow) {
   return 34 + Math.max(58, scenarioHeight, expectedHeight, picHeight);
 }
 
-function splitText(value: string, maxChars: number) {
-  const normalized = value.trim();
-  if (!normalized) return [""];
+function splitDoc(doc: RichTextDoc, maxChars: number) {
+  const chunks: RichTextNode[][] = [];
+  let current: RichTextNode[] = [];
+  let currentLength = 0;
 
-  const chunks: string[] = [];
-  let current = "";
+  for (const node of doc.content) {
+    const nodeText = richTextToPlainText({ type: "doc", content: [node] });
+    const nodeLength = Math.max(1, nodeText.length);
 
-  for (const line of normalized.split(/\n+/)) {
-    const next = current ? `${current}\n${line}` : line;
-    if (next.length <= maxChars) {
-      current = next;
-      continue;
+    if (current.length && currentLength + nodeLength > maxChars) {
+      chunks.push(current);
+      current = [];
+      currentLength = 0;
     }
 
-    if (current) chunks.push(current);
-
-    if (line.length <= maxChars) {
-      current = line;
-      continue;
-    }
-
-    let cursor = line;
-    while (cursor.length > maxChars) {
-      const splitAt = Math.max(cursor.lastIndexOf(" ", maxChars), Math.floor(maxChars * 0.7));
-      chunks.push(cursor.slice(0, splitAt).trim());
-      cursor = cursor.slice(splitAt).trim();
-    }
-    current = cursor;
+    current.push(JSON.parse(JSON.stringify(node)) as RichTextNode);
+    currentLength += nodeLength;
   }
 
-  if (current) chunks.push(current);
-  return chunks.length ? chunks : [""];
-}
+  if (current.length) chunks.push(current);
 
-function splitDoc(doc: RichTextDoc, maxChars: number) {
-  return splitText(richTextToPlainText(doc), maxChars).map((chunk) => paragraphRichText(chunk));
+  if (!chunks.length) return [paragraphRichText("")];
+  return chunks.map((content) => ({ type: "doc" as const, content }));
 }
 
 function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
@@ -136,25 +123,8 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
       ...block,
       id: `${block.id}-part-${part + 1}`,
       row: { ...block.row, activity },
-      estimatedHeight: 180 + richBlockHeight(activity, 0, 46),
+      estimatedHeight: 110 + richVisualBlockHeight(activity, 0, 50),
     }));
-  }
-
-  if (block.type === "development-row" && block.estimatedHeight > 620) {
-    const itemParts = splitDoc(block.row.item, 520);
-    const descriptionParts = splitDoc(block.row.description, 980);
-    const total = Math.max(itemParts.length, descriptionParts.length);
-
-    return Array.from({ length: total }, (_, part) => {
-      const item = itemParts[part] ?? paragraphRichText("");
-      const description = descriptionParts[part] ?? paragraphRichText("");
-      return {
-        ...block,
-        id: `${block.id}-part-${part + 1}`,
-        row: { ...block.row, item, description },
-        estimatedHeight: 150 + richBlockHeight(item, 0, 32) + richBlockHeight(description, 0, 42),
-      };
-    });
   }
 
   return [block];
@@ -223,9 +193,11 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       row,
       index,
       estimatedHeight:
-        104 +
-        richBlockHeight(row.item, 0, 32) +
-        richBlockHeight(row.description, 0, 42),
+        112 +
+        Math.max(
+          richVisualBlockHeight(row.item, 0, 30),
+          richVisualBlockHeight(row.description, 0, 62),
+        ),
     })),
     { id: "pilot-schedule", type: "pilot-schedule", estimatedHeight: 96 },
     ...draft.activities.map((row, index) => ({
@@ -233,7 +205,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       type: "activity-row" as const,
       row,
       index,
-      estimatedHeight: 118 + richBlockHeight(row.activity, 0, 46),
+      estimatedHeight: 104 + richVisualBlockHeight(row.activity, 0, 54),
     })),
     ...(draft.metadata.accessLinkEnabled
       ? [{ id: "access-link", type: "access-link" as const, estimatedHeight: 72 }]
@@ -344,10 +316,14 @@ function packPages(
   const limit = PAGE_LIMITS[options.orientation];
 
   for (const block of blocks) {
-    const wouldOverflow = used + block.estimatedHeight > limit;
+    const isClosingBlock = block.type === "signature" || block.type === "cc" || block.type === "initials";
+    const currentHasClosing = current.blocks.some((item) => item.type === "signature");
     const hasContent = current.blocks.length > 0;
+    const shouldStartClosingPage = block.type === "signature" && hasContent;
+    const wouldOverflow = used + block.estimatedHeight > limit;
+    const shouldBreakForOverflow = wouldOverflow && hasContent && !(isClosingBlock && currentHasClosing);
 
-    if (wouldOverflow && hasContent) {
+    if (shouldStartClosingPage || shouldBreakForOverflow) {
       pages.push(current);
       current = {
         id: `${options.kind}-${pages.length + 1}`,

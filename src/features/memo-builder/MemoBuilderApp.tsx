@@ -958,9 +958,6 @@ function AppendixPanel({
                   onChange={(value) => updateGroupDates(group, value)}
                 />
               </FieldLabel>
-              <p className="pb-2 text-xs font-medium text-slate-500">
-                Tanggal yang sama akan otomatis digabung dalam satu sesi.
-              </p>
             </div>
             <div className="grid gap-3">
               {scenarioSectionGroups(group.rows).map((section) => (
@@ -1031,7 +1028,7 @@ function AppendixPanel({
                                 onChange={(event) =>
                                   setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
                                 }
-                                className="min-h-[132px] resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                                className="min-h-[132px] resize-y rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                               />
                             </FieldLabel>
                           </div>

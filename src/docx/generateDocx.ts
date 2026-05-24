@@ -32,6 +32,8 @@ import {
   BODY_COLUMN_INDENT,
   BODY_COLUMN_RIGHT_INDENT,
   CONTINUATION_RULE_INDENT,
+  DEVELOPMENT_COLUMN_WIDTHS,
+  TABLE_HEADER_FILL,
   WORD_INDENT_002_CM,
   WORD_LINE_MULTIPLE_108,
   WORD_LINE_MULTIPLE_115,
@@ -96,6 +98,7 @@ function scheduleTitle(draft: MemoDraft) {
 
 function initialsText(draft: MemoDraft) {
   const suffix = `/uat-${draft.initialsBureau.toLowerCase()}`;
+  if (draft.initials.toLowerCase().includes("/uat-")) return draft.initials;
   return draft.initials ? `${draft.initials}${suffix}` : suffix;
 }
 
@@ -226,7 +229,7 @@ function cell(children: Paragraph[], width?: number, shaded = false) {
   return new TableCell({
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 90, bottom: 90, left: 90, right: 90 },
-    shading: shaded ? { fill: "F3F4F6" } : undefined,
+    shading: shaded ? { fill: TABLE_HEADER_FILL } : undefined,
     width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
     borders: { top: border, bottom: border, left: border, right: border },
     children,
@@ -291,13 +294,15 @@ function appendixRichParagraphs(doc: Parameters<typeof richTextToDocxParagraphs>
   return richTextToDocxParagraphs(doc, { size: 22, spacingBefore: 0, spacingAfter: 0, line: WORD_LINE_MULTIPLE_108 });
 }
 
-function closingParagraph(text: string) {
+function closingParagraph(text: string, withTopBorder = true) {
   return new Paragraph({
     indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: wordSpacing({ before: 140 }),
-    border: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
-    },
+    spacing: wordSpacing({ before: withTopBorder ? 140 : 0 }),
+    border: withTopBorder
+      ? {
+          top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 8 },
+        }
+      : undefined,
     children: multilineRuns(text, { size: 22 }),
   });
 }
@@ -352,22 +357,22 @@ function developmentTable(rows: Extract<PreviewBlock, { type: "development-row" 
     new TableRow({
       tableHeader: true,
       children: [
-        cell([paragraph("No.", { bold: true, size: 22 })], 8, true),
-        cell([paragraph("Pengembangan", { bold: true, size: 22 })], 46, true),
-        cell([paragraph("Keterangan", { bold: true, size: 22 })], 46, true),
+        cell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true),
+        cell([paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[1], true),
+        cell([paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[2], true),
       ],
     }),
     ...rows.map(
       (block) =>
         new TableRow({
           children: [
-            cell([paragraph(String(block.index + 1), { size: 22 })], 8),
-            cell(richTextToDocxParagraphs(block.row.item, { size: 22 }), 46),
-            cell(richTextToDocxParagraphs(block.row.description, { size: 22 }), 46),
+            cell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0]),
+            cell(richTextToDocxParagraphs(block.row.item, { size: 22 }), DEVELOPMENT_COLUMN_WIDTHS[1]),
+            cell(richTextToDocxParagraphs(block.row.description, { size: 22 }), DEVELOPMENT_COLUMN_WIDTHS[2]),
           ],
         }),
     ),
-  ], 100, [8, 46, 46]);
+  ], 100, Array.from(DEVELOPMENT_COLUMN_WIDTHS));
 }
 
 function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) {
@@ -375,9 +380,9 @@ function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) 
     new TableRow({
       tableHeader: true,
       children: [
-        cell([paragraph("Aktivitas", { bold: true, size: 22 })], 56, true),
-        cell([paragraph("PIC", { bold: true, size: 22 })], 22, true),
-        cell([paragraph("Waktu", { bold: true, size: 22 })], 22, true),
+        cell([paragraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })], 56, true),
+        cell([paragraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })], 22, true),
+        cell([paragraph("Waktu", { bold: true, size: 22, align: AlignmentType.CENTER })], 22, true),
       ],
     }),
     ...rows.map(
@@ -385,9 +390,9 @@ function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) 
         new TableRow({
           children: [
             cell(richTextToDocxParagraphs(block.row.activity, { size: 22 }), 56),
-            cell([paragraph(block.row.owner, { size: 22 })], 22),
+            cell([paragraph(block.row.owner, { size: 22, align: AlignmentType.CENTER })], 22),
             cell(
-              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 22 })],
+              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 22, align: AlignmentType.CENTER })],
               22,
             ),
           ],
@@ -530,11 +535,27 @@ function isSectionBlock(block: PreviewBlock) {
   );
 }
 
-function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: SectionRule = "content"): FileChild[] {
+function leadingSectionSpacer(sectionRule: SectionRule): FileChild[] {
+  if (sectionRule !== "full") return [];
+
+  return [
+    new Paragraph({
+      spacing: wordSpacing({ before: 80, after: 0 }),
+      children: [new TextRun({ text: "" })],
+    }),
+  ];
+}
+
+function blockChildren(
+  draft: MemoDraft,
+  block: PreviewBlock,
+  sectionRule: SectionRule = "content",
+  options: { continuationMainPage?: boolean } = {},
+): FileChild[] {
   switch (block.type) {
     case "memo-heading":
       return [
-        new Paragraph({ spacing: wordSpacing({ before: 560 }) }),
+        new Paragraph({ spacing: wordSpacing({ before: 320 }) }),
         table([
           new TableRow({
             children: [
@@ -570,6 +591,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
       return [];
     case "introduction":
       return [
+        ...leadingSectionSpacer(sectionRule),
         previewSection("Pengantar", [
           paragraph(`Sehubungan dengan akan dilakukannya ${draft.metadata.perihal}, berikut kami sampaikan informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.`, { size: 22 }),
         ], sectionRule),
@@ -577,6 +599,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
     case "reference":
       const items = referenceItems(draft);
       return [
+        ...leadingSectionSpacer(sectionRule),
         previewSection("Referensi", [
           paragraph("Memorandum ini mengacu pada.", { size: 22 }),
           ...items.map((item) => paragraph(`\u2022 ${item}`, { size: 22 })),
@@ -584,6 +607,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
       ];
     case "pilot-schedule":
       return [
+        ...leadingSectionSpacer(sectionRule),
         previewSection(scheduleTitle(draft), [
           new Paragraph({
             spacing: wordSpacing(),
@@ -597,6 +621,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
       ];
     case "access-link":
       return [
+        ...leadingSectionSpacer(sectionRule),
         previewSection(`Akses Link ${draft.metadata.perihal}`, [
           paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 22 }),
           paragraph(draft.metadata.accessLink || "-", { size: 22 }),
@@ -604,6 +629,7 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
       ];
     case "contacts":
       return [
+        ...leadingSectionSpacer(sectionRule),
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) => paragraph(`- ${contact.name} - ${contact.email}`, { size: 22 })),
@@ -611,7 +637,10 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock, sectionRule: Secti
       ];
     case "signature":
       return [
-        closingParagraph("Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih."),
+        closingParagraph(
+          "Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.",
+          !options.continuationMainPage,
+        ),
         ...draft.signers.map((signer) =>
           new Paragraph({
             indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
@@ -654,7 +683,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     if (page.kind === "main") {
       children.push(
         new Paragraph({
-          spacing: wordSpacing({ before: 700, after: 80 }),
+          spacing: wordSpacing({ before: 360, after: 80 }),
           children: [
             run("Perihal: ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
@@ -687,11 +716,13 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
 
     if (block.type === "development-row") {
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "development-row");
+      const sectionRule = nextSectionRule();
       children.push(
+        ...leadingSectionSpacer(sectionRule),
         previewSection("Lingkup Pengembangan", [
           paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, { size: 22 }),
           developmentTable(rows as Extract<PreviewBlock, { type: "development-row" }>[]),
-        ], nextSectionRule()),
+        ], sectionRule),
       );
       index = nextIndex;
       continue;
@@ -699,11 +730,13 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
 
     if (block.type === "activity-row") {
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "activity-row");
+      const sectionRule = nextSectionRule();
       children.push(
+        ...leadingSectionSpacer(sectionRule),
         previewSection("Aktivitas Cabang dan Unit Kerja", [
           paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, { size: 22 }),
           activityTable(rows as Extract<PreviewBlock, { type: "activity-row" }>[]),
-        ], nextSectionRule()),
+        ], sectionRule),
       );
       index = nextIndex;
       continue;
@@ -716,7 +749,11 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
       continue;
     }
 
-    children.push(...blockChildren(draft, block, isSectionBlock(block) ? nextSectionRule() : "content"));
+    children.push(
+      ...blockChildren(draft, block, isSectionBlock(block) ? nextSectionRule() : "content", {
+        continuationMainPage: Boolean(page.continuationTitle && page.kind === "main"),
+      }),
+    );
     index += 1;
   }
 
