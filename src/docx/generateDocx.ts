@@ -50,6 +50,9 @@ const sectionTopBorder = {
   color: "1F2937",
 };
 
+const BODY_COLUMN_INDENT = 2100;
+const BODY_COLUMN_RIGHT_INDENT = 350;
+
 function breakLongWords(text: string, chunkSize = 28) {
   return text.replace(/\S{29,}/g, (word) => {
     const parts = word.match(new RegExp(`.{1,${chunkSize}}`, "g"));
@@ -114,12 +117,38 @@ function paragraph(
     color?: string;
     underline?: boolean;
     font?: string;
+    indent?: { left?: number; right?: number; firstLine?: number; hanging?: number };
+    spacingBefore?: number;
+    spacingAfter?: number;
   } = {},
 ) {
   return new Paragraph({
     alignment: options.align,
-    spacing: { after: 100, line: 260 },
+    indent: options.indent,
+    spacing: { before: options.spacingBefore, after: options.spacingAfter ?? 100, line: 260 },
     children: multilineRuns(text, options),
+  });
+}
+
+function bodyColumnParagraph(
+  text: string,
+  options: Parameters<typeof paragraph>[1] = {},
+) {
+  return paragraph(text, {
+    ...options,
+    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT, ...options.indent },
+  });
+}
+
+function continuationRule() {
+  return new Paragraph({
+    includeIfEmpty: true,
+    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    spacing: { before: 160, after: 260 },
+    border: {
+      top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
+    },
+    children: [new TextRun({ text: "" })],
   });
 }
 
@@ -473,9 +502,13 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
       ];
     case "signature":
       return [
-        paragraph("Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.", { size: 22 }),
+        bodyColumnParagraph(
+          "Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.",
+          { size: 22, spacingAfter: 260 },
+        ),
         ...draft.signers.map((signer) =>
           new Paragraph({
+            indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
             spacing: { after: 70, line: 260 },
             children: [
               run(signer.name.toUpperCase(), { bold: true, size: 22 }),
@@ -486,11 +519,13 @@ function blockChildren(draft: MemoDraft, block: PreviewBlock): FileChild[] {
       ];
     case "cc":
       return [
-        paragraph("Tembusan:", { size: 22 }),
-        ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) => paragraph(item, { size: 22 })),
+        bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
+        ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) =>
+          bodyColumnParagraph(item, { size: 22, spacingAfter: 70 }),
+        ),
       ];
     case "initials":
-      return [paragraph(initialsText(draft), { size: 20 })];
+      return [bodyColumnParagraph(initialsText(draft), { size: 20, spacingBefore: 260 })];
     default:
       return [];
   }
@@ -503,13 +538,14 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     if (page.kind === "main") {
       children.push(
         new Paragraph({
-          spacing: { before: 220, after: 180 },
+          spacing: { before: 520, after: 80 },
           children: [
             run("Perihal: ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
             run(", Sambungan", { size: 22, font: "Arial" }),
           ],
         }),
+        continuationRule(),
       );
     } else {
       children.push(

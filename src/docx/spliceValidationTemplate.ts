@@ -12,6 +12,8 @@ const REL_TYPES = {
   image: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
 };
 
+const VALIDATION_BLUE = "1F497D";
+
 type Relationship = {
   raw: string;
   id: string;
@@ -235,6 +237,14 @@ function normalizePctWidthAttributes(xml: string) {
     .replace(/(w:w=")(\d+)(%"\s+w:type="pct")/g, "$1$2\" w:type=\"pct\"");
 }
 
+function normalizeValidationColors(xml: string) {
+  return xml.replace(/<w:color\b[^>]*w:val="(?:0F243E|1F4E79|003B7A|5B9BD5)"[^>]*\/>/gi, (tag) =>
+    tag
+      .replace(/w:val="[^"]*"/, `w:val="${VALIDATION_BLUE}"`)
+      .replace(/\s+w:theme(?:Color|Tint|Shade)="[^"]*"/g, ""),
+  );
+}
+
 function styleDefinitions(stylesXml: string) {
   return [...stylesXml.matchAll(/<w:style\b[\s\S]*?<\/w:style>/g)].map((match) => ({
     xml: match[0],
@@ -279,7 +289,7 @@ export async function spliceValidationTemplate(
   let outputStylesXml = outputStyles ? await outputStyles.async("text") : "";
   const templateDocumentXml = await templateDocument.async("text");
   const templateStylesXml = templateStyles ? await templateStyles.async("text") : "";
-  let templateBody = normalizeValidationBody(bodyInner(templateDocumentXml));
+  let templateBody = normalizeValidationColors(normalizeValidationBody(bodyInner(templateDocumentXml)));
   const templateRelsXml = await templateRels.async("text");
 
   const idMap = new Map<string, string>();
@@ -335,7 +345,7 @@ export async function spliceValidationTemplate(
   outputZip.file("word/document.xml", normalizePctWidthAttributes(outputDocumentXml));
   outputZip.file("word/_rels/document.xml.rels", outputRelsXml);
   if (outputStyles && templateStylesXml) {
-    outputStylesXml = appendMissingStyles(outputStylesXml, templateStylesXml);
+    outputStylesXml = appendMissingStyles(outputStylesXml, normalizeValidationColors(templateStylesXml));
     outputZip.file("word/styles.xml", outputStylesXml);
   }
   outputZip.file("[Content_Types].xml", contentTypesXml);

@@ -49,7 +49,7 @@ export type PreviewPage = {
 };
 
 const PAGE_LIMITS: Record<PreviewOrientation, number> = {
-  portrait: 735,
+  portrait: 890,
   landscape: 520,
 };
 
@@ -131,18 +131,18 @@ function splitDoc(doc: RichTextDoc, maxChars: number) {
 }
 
 function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
-  if (block.type === "activity-row" && block.estimatedHeight > 390) {
-    return splitDoc(block.row.activity, 520).map((activity, part) => ({
+  if (block.type === "activity-row" && block.estimatedHeight > 620) {
+    return splitDoc(block.row.activity, 880).map((activity, part) => ({
       ...block,
       id: `${block.id}-part-${part + 1}`,
       row: { ...block.row, activity },
-      estimatedHeight: 210 + richBlockHeight(activity, 0, 46),
+      estimatedHeight: 180 + richBlockHeight(activity, 0, 46),
     }));
   }
 
-  if (block.type === "development-row" && block.estimatedHeight > 390) {
-    const itemParts = splitDoc(block.row.item, 320);
-    const descriptionParts = splitDoc(block.row.description, 520);
+  if (block.type === "development-row" && block.estimatedHeight > 620) {
+    const itemParts = splitDoc(block.row.item, 520);
+    const descriptionParts = splitDoc(block.row.description, 980);
     const total = Math.max(itemParts.length, descriptionParts.length);
 
     return Array.from({ length: total }, (_, part) => {

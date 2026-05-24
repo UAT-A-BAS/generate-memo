@@ -7,6 +7,8 @@ import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
 import { HeaderFooterRenderer } from "./HeaderFooterRenderer";
 import { PageContainer } from "./PageContainer";
 
+const VALIDATION_BLUE = "#1F497D";
+
 function RichTextView({ html }: { html: string }) {
   return (
     <div
@@ -211,20 +213,20 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
       );
     case "signature":
       return (
-        <div className="mt-5 text-[14.67px] leading-[1.45]">
+        <div className="ml-[140px] mt-7 max-w-[575px] text-[14.67px] leading-[1.45]">
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
-          {draft.signers.map((signer) => (
-            <div key={signer.id}>
-              <p><strong>{signer.name.toUpperCase()}</strong> - {signer.title}</p>
-            </div>
-          ))}
+            {draft.signers.map((signer) => (
+              <div key={signer.id}>
+                <p><strong>{signer.name.toUpperCase()}</strong> - {signer.title}</p>
+              </div>
+            ))}
           </div>
         </div>
       );
     case "cc":
       return (
-        <div className="mt-5 text-[14.67px] leading-[1.35]">
+        <div className="ml-[140px] mt-6 max-w-[575px] text-[14.67px] leading-[1.35]">
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
             {draft.ccRecipients.map((recipient) => (
@@ -237,7 +239,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
         </div>
       );
     case "initials":
-      return <p className="mt-5 text-[13.33px]">{initialsText(draft)}</p>;
+      return <p className="ml-[140px] mt-6 text-[13.33px]">{initialsText(draft)}</p>;
     case "validation":
       return (
         <div className="relative h-full overflow-hidden px-2 pt-12 text-[12px] text-[#333]">
@@ -251,9 +253,9 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
           />
           <div className="relative mx-auto w-[605px]">
             <p className="text-center tracking-[0.16em]">INTERNAL BCA/RAHASIA/SANGAT RAHASIA</p>
-            <h2 className="mt-4 text-center text-[24px] font-bold text-[#1f4e79]">Validasi Dokumen</h2>
+            <h2 className="mt-4 text-center text-[24px] font-bold" style={{ color: VALIDATION_BLUE }}>Validasi Dokumen</h2>
             <p className="text-center tracking-[0.08em]">Dibuat oleh Document Approval</p>
-            <div className="mt-5 grid grid-cols-[160px_12px_1fr] bg-[#f0f0f0] px-2 py-2 text-[#003b7a]">
+            <div className="mt-5 grid grid-cols-[160px_12px_1fr] bg-[#f0f0f0] px-2 py-2" style={{ color: VALIDATION_BLUE }}>
               <span>Nomor Dokumen</span><span>:</span><span>[No Memo]</span>
               <span>Tanggal Rilis Dokumen</span><span>:</span><span>[Tanggal Rilis]</span>
               <span>Jumlah Lembar Dokumen</span><span>:</span><span>[Total Lembar]</span>
@@ -271,7 +273,7 @@ function renderBlock(draft: MemoDraft, block: PreviewBlock) {
               yang dapat diverifikasi pada link berikut:
             </p>
             <p className="text-[#0563c1] underline">https://verifikasi.bca.co.id/document/view/</p>
-            <div className="mt-8 border-t border-[#1f4e79] pt-3">
+            <div className="mt-8 border-t pt-3" style={{ borderColor: VALIDATION_BLUE }}>
               <p className="text-[15px] tracking-[0.08em]">Document Details</p>
               <div className="mt-4 grid grid-cols-[155px_10px_1fr]">
                 <span>Ditujukan Kepada</span><span>:</span><span>[Kepada]</span>
@@ -402,27 +404,29 @@ function renderGroupedBlocks(draft: MemoDraft, blocks: PreviewBlock[]) {
 
 function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
   const isAppendix = page.kind === "appendix";
+  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 122) : (isAppendix ? 88 : 64);
 
   return (
     <div
       className={`absolute bottom-16 ${isAppendix ? "left-10 right-14" : "left-24 right-20"}`}
-      style={{ top: page.continuationTitle || isAppendix ? 88 : 64 }}
+      style={{ top: contentTop }}
     >
       {page.continuationTitle ? (
-        <h2 className={isAppendix ? "mb-4" : "mb-5 border-b border-slate-800 pb-3"}>
-          {isAppendix ? (
-            <>
-              <strong className="text-[13.33px]">{page.continuationTitle.replace(", Sambungan", "")}</strong>
-              <span className="text-[13.33px]">, Sambungan</span>
-            </>
-          ) : (
-            <>
+        isAppendix ? (
+          <h2 className="mb-4">
+            <strong className="text-[13.33px]">{page.continuationTitle.replace(", Sambungan", "")}</strong>
+            <span className="text-[13.33px]">, Sambungan</span>
+          </h2>
+        ) : (
+          <div className="mb-7">
+            <h2>
               <span className="font-[Arial] text-[14.67px]">Perihal: </span>
               <strong className="font-[Arial] text-[16px]">{draft.metadata.perihal}</strong>
               <span className="font-[Arial] text-[14.67px]">, Sambungan</span>
-            </>
-          )}
-        </h2>
+            </h2>
+            <div className="ml-[140px] mt-5 h-px w-[540px] bg-slate-800" />
+          </div>
+        )
       ) : page.kind === "appendix" ? (
         <h2 className="mb-5 text-[13.33px] font-bold">{page.title}</h2>
       ) : null}
