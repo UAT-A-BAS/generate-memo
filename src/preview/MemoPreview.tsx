@@ -72,6 +72,26 @@ function PreviewSection({
   );
 }
 
+function DashTabLine({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="grid grid-cols-[auto_2rem_minmax(0,1fr)]">
+      <span>-</span>
+      <span aria-hidden="true"> </span>
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function TabAlignedLine({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="grid grid-cols-[auto_2rem_minmax(0,1fr)]">
+      <span />
+      <span />
+      <span>{children}</span>
+    </p>
+  );
+}
+
 function recipientLine(recipient: Recipient, index: number, total: number) {
   const name = recipient.name?.trim() ? `U.p. Yth. ${recipient.gender} ${recipient.name}` : "";
   const prefix = total > 1 ? "- " : "";
@@ -236,22 +256,24 @@ function renderBlock(
       return (
         <PreviewSection title="Lampiran" rule={sectionRule}>
           <p>Bersama dengan memo ini dilampirkan:</p>
-          <ul className="mt-1 pl-8">
+          <div className="mt-1 grid gap-0.5">
             {memoAttachmentItems(draft.attachments).map((item, index) => (
-              <li key={`${item}-${index}`}>- {item}</li>
+              <DashTabLine key={`${item}-${index}`}>{item}</DashTabLine>
             ))}
-          </ul>
+          </div>
         </PreviewSection>
       );
     case "contacts":
       return (
         <PreviewSection title="PIC yang Dapat Dihubungi" rule={sectionRule}>
           <p>PIC yang dapat dihubungi sehubungan dengan {draft.metadata.perihal} adalah:</p>
-          <ul className="mt-1 pl-8">
+          <div className="mt-1 grid gap-0.5">
             {draft.contacts.map((contact) => (
-              <li key={contact.id}>- {contact.name} - {contact.email}</li>
+              <DashTabLine key={contact.id}>
+                {contact.name} - {contact.email}
+              </DashTabLine>
             ))}
-          </ul>
+          </div>
         </PreviewSection>
       );
     case "signature":
@@ -275,11 +297,13 @@ function renderBlock(
       return (
         <div className="ml-[140px] mt-6 max-w-[575px] text-[14.67px] leading-[1.08]">
           <p>Tembusan:</p>
-          <div className="grid gap-0.5 pl-8">
+          <div className="grid gap-0.5">
             {draft.ccRecipients.map((recipient) => (
               <div key={recipient.id}>
-                <p>- {recipient.position}</p>
-                {recipient.name ? <p className="pl-5">U.p. Yth. {recipient.gender} {recipient.name}</p> : null}
+                <DashTabLine>{recipient.position}</DashTabLine>
+                {recipient.name ? (
+                  <TabAlignedLine>U.p. Yth. {recipient.gender} {recipient.name}</TabAlignedLine>
+                ) : null}
               </div>
             ))}
           </div>

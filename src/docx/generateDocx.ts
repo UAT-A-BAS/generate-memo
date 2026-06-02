@@ -16,6 +16,7 @@ import {
   TableCell,
   TableLayoutType,
   TableRow,
+  Tab,
   TextRun,
   UnderlineType,
   VerticalMergeType,
@@ -65,7 +66,7 @@ const sectionTopBorder = {
 };
 const APPENDIX_TITLE_SPACING_BEFORE = 520;
 const CONTINUATION_TITLE_SPACING_BEFORE = 520;
-const LIST_ITEM_INDENT = 720;
+const LIST_TEXT_TAB = 720;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -175,6 +176,29 @@ function bodyColumnParagraph(
   return paragraph(text, {
     ...options,
     indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT, ...options.indent },
+  });
+}
+
+function dashTabParagraph(
+  text: string,
+  options: Parameters<typeof paragraph>[1] = {},
+) {
+  const leftIndent = options.indent?.left ?? 0;
+
+  return new Paragraph({
+    alignment: options.align,
+    indent: options.indent,
+    leftTabStop: leftIndent + LIST_TEXT_TAB,
+    spacing: wordSpacing({
+      before: options.spacingBefore,
+      after: options.spacingAfter,
+      line: options.line,
+    }),
+    children: [
+      run("-", options),
+      new Tab(),
+      ...multilineRuns(text, options),
+    ],
   });
 }
 
@@ -637,7 +661,7 @@ function blockChildren(
         previewSection("Lampiran", [
           paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
           ...memoAttachmentItems(draft.attachments).map((item) =>
-            paragraph(`- ${item}`, { size: 22, indent: { left: LIST_ITEM_INDENT } }),
+            dashTabParagraph(item, { size: 22 }),
           ),
         ], sectionRule),
       ];
@@ -647,9 +671,8 @@ function blockChildren(
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) =>
-            paragraph(`- ${contact.name} - ${contact.email}`, {
+            dashTabParagraph(`${contact.name} - ${contact.email}`, {
               size: 22,
-              indent: { left: LIST_ITEM_INDENT },
             }),
           ),
         ], sectionRule),
@@ -675,11 +698,17 @@ function blockChildren(
       return [
         bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
         ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) =>
-          bodyColumnParagraph(item, {
-            size: 22,
-            spacingAfter: 70,
-            indent: { left: BODY_COLUMN_INDENT + LIST_ITEM_INDENT },
-          }),
+          item.startsWith("- ")
+            ? dashTabParagraph(item.slice(2), {
+                size: 22,
+                spacingAfter: 70,
+                indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+              })
+            : bodyColumnParagraph(item.trimStart(), {
+                size: 22,
+                spacingAfter: 70,
+                indent: { left: BODY_COLUMN_INDENT + LIST_TEXT_TAB, right: BODY_COLUMN_RIGHT_INDENT },
+              }),
         ),
       ];
     case "initials":
