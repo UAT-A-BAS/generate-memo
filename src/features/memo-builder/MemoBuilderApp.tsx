@@ -1643,7 +1643,7 @@ export function MemoBuilderApp() {
       <header className="sticky top-0 z-30 border-b border-[#d8e2ec] bg-white/95 backdrop-blur">
         <div className="flex w-full flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between xl:px-6">
           <div>
-            <h1 className="text-lg font-bold tracking-tight text-[#0f2d4a]">Memo Generator</h1>
+            <h1 className="text-[32px] font-bold leading-tight tracking-tight text-[#0f2d4a]">Memo Generator</h1>
             <p className="hidden">
               {draft.metadata.perihal} - {pages.length} preview pages -{" "}
               {" "}
