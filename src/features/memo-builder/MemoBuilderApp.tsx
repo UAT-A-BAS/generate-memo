@@ -288,7 +288,7 @@ function AppleToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-full border px-4 text-[13px] font-semibold leading-none backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
+      className={`inline-flex min-h-10 min-w-[136px] items-center justify-center gap-2 rounded-full border px-4 text-[13px] font-semibold leading-none backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
     >
       {children}
     </button>
@@ -511,7 +511,7 @@ function ReviewCommentsPopup({
       <button
         type="button"
         onClick={onToggleOpen}
-        className="fixed bottom-[88px] right-4 z-40 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#c6d3e1] bg-white/95 px-4 text-sm font-bold text-[#0f2d4a] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur transition hover:bg-[#edf4fb] focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+        className="fixed bottom-[128px] right-4 z-40 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#c6d3e1] bg-white/95 px-4 text-sm font-bold text-[#0f2d4a] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur transition hover:bg-[#edf4fb] focus:outline-none focus:ring-2 focus:ring-slate-900/10"
         aria-expanded={open}
         aria-controls="review-comments-popup"
       >
@@ -525,7 +525,7 @@ function ReviewCommentsPopup({
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[146px] right-4 z-50 grid max-h-[70dvh] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
+          className="fixed bottom-[188px] right-4 z-50 grid max-h-[70dvh] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
@@ -707,10 +707,13 @@ function MetadataPanel({
   metadata: MemoMetadata;
   updateMetadata: (patch: Partial<MemoMetadata>) => void;
 }) {
-  const { register } = useForm<MemoMetadata>({
+  const { register, reset } = useForm<MemoMetadata>({
     defaultValues: metadata,
   });
-  const [autoPerihal, setAutoPerihal] = useState(metadata.autoPerihal);
+
+  useEffect(() => {
+    reset(metadata);
+  }, [metadata, reset]);
 
   function registerField<K extends keyof MemoMetadata>(name: K) {
     const field = register(name);
@@ -723,10 +726,6 @@ function MetadataPanel({
           target instanceof HTMLInputElement && target.type === "checkbox"
             ? target.checked
             : target.value;
-
-        if (name === "autoPerihal") {
-          setAutoPerihal(Boolean(value));
-        }
 
         updateMetadata({ [name]: value } as Partial<MemoMetadata>);
       },
@@ -774,7 +773,7 @@ function MetadataPanel({
             />
             Perihal otomatis
           </label>
-          {autoPerihal ? (
+          {metadata.autoPerihal ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
               {metadata.perihal}
             </div>
@@ -1900,6 +1899,9 @@ export function MemoBuilderApp() {
           </div>
         </aside>
       </div>
+      <footer className="mt-6 border-t border-[#d8e2ec] bg-[#eaf2f8] px-4 py-7 text-center text-sm font-bold tracking-[0.02em] text-slate-600">
+        Developed by Alex Surya Marcelo (UAT - A) &bull; Memo Generator
+      </footer>
       <ReviewCommentsPopup
         open={reviewOpen}
         comments={draft.reviewComments ?? []}

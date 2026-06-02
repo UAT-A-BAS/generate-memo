@@ -803,7 +803,11 @@ function pageChildren(
       children.push(
         new Paragraph({
           pageBreakBefore: options.pageBreakBefore,
-          spacing: wordSpacing({ before: 240, after: 80 }),
+          spacing: wordSpacing({ before: 0, after: 0 }),
+          children: [new TextRun({ text: "" })],
+        }),
+        new Paragraph({
+          spacing: wordSpacing({ before: 0, after: 80 }),
           children: [
             run("Perihal:  ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),

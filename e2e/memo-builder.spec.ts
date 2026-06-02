@@ -84,6 +84,12 @@ test("updates generated perihal from metadata", async ({ page }) => {
   await expect(page.locator("aside").getByText("Pilot Implementasi Project Smoke Test").first()).toBeVisible();
 });
 
+test("shows memo generator credit at page end", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  await expect(page.getByText("Developed by Alex Surya Marcelo (UAT - A) • Memo Generator")).toBeVisible();
+});
+
 test("preview renders URL akses as clickable link", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
@@ -121,8 +127,9 @@ test("exports DOCX from current draft", async ({ page }) => {
 
   const continuationIndex = xml.indexOf("Perihal:  </w:t>");
   expect(continuationIndex).toBeGreaterThan(-1);
-  const continuationContext = xml.slice(Math.max(0, continuationIndex - 500), continuationIndex + 100);
-  expect(continuationContext).toContain('w:before="240"');
+  const continuationContext = xml.slice(Math.max(0, continuationIndex - 900), continuationIndex + 100);
+  expect(continuationContext).toContain("<w:pageBreakBefore/>");
+  expect(continuationContext).toContain('<w:t xml:space="preserve"></w:t>');
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {
@@ -225,6 +232,26 @@ test("collaboration panel starts a shareable worker room", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Restart Collab" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy Share Link" })).toBeVisible();
   await expect(page).toHaveURL(/room=/);
+});
+
+test("collaboration syncs metadata fields between pages", async ({ browser }) => {
+  const context = await browser.newContext();
+  const first = await context.newPage();
+  const second = await context.newPage();
+
+  await first.goto("http://localhost:3002");
+  await first.getByRole("button", { name: "Start Collab" }).click();
+  await expect(first).toHaveURL(/room=/);
+
+  await second.goto(first.url());
+  await second.getByLabel("Nama Project").fill("Collab Nama Project");
+
+  await expect(first.getByLabel("Nama Project")).toHaveValue("Collab Nama Project", {
+    timeout: 10000,
+  });
+  await expect(first.locator("aside").getByText("Pilot Implementasi Collab Nama Project").first()).toBeVisible();
+
+  await context.close();
 });
 
 test("review comments can be added to a field and focused", async ({ page }) => {
