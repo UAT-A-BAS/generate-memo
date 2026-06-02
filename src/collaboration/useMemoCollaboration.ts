@@ -50,6 +50,7 @@ const MEMO_KEYS: MemoKey[] = [
   "developmentRows",
   "pilotSchedule",
   "activities",
+  "attachments",
   "contacts",
   "signers",
   "ccRecipients",

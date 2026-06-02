@@ -4,6 +4,7 @@ import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
+import { memoAttachmentItems } from "@/utils/attachments";
 import {
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
@@ -231,6 +232,17 @@ function renderBlock(
           <p className="break-all underline">{draft.metadata.accessLink || "-"}</p>
         </PreviewSection>
       );
+    case "attachments":
+      return (
+        <PreviewSection title="Lampiran" rule={sectionRule}>
+          <p>Bersama dengan memo ini dilampirkan:</p>
+          <ul className="mt-1">
+            {memoAttachmentItems(draft.attachments).map((item, index) => (
+              <li key={`${item}-${index}`}>- {item}</li>
+            ))}
+          </ul>
+        </PreviewSection>
+      );
     case "contacts":
       return (
         <PreviewSection title="PIC yang Dapat Dihubungi" rule={sectionRule}>
@@ -331,6 +343,7 @@ function isPreviewSectionBlock(block: PreviewBlock) {
     block.type === "reference" ||
     block.type === "pilot-schedule" ||
     block.type === "access-link" ||
+    block.type === "attachments" ||
     block.type === "contacts"
   );
 }

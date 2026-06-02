@@ -7,6 +7,7 @@ import type {
 import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import { memoAttachmentItems } from "@/utils/attachments";
 import { richTextToPlainText } from "@/utils/richText";
 
 export type PreviewOrientation = "portrait" | "landscape";
@@ -31,6 +32,7 @@ export type PreviewBlock =
   | { id: string; type: "pilot-schedule"; estimatedHeight: number }
   | { id: string; type: "activity-row"; estimatedHeight: number; row: ActivityRow; index: number }
   | { id: string; type: "access-link"; estimatedHeight: number }
+  | { id: string; type: "attachments"; estimatedHeight: number }
   | { id: string; type: "contacts"; estimatedHeight: number }
   | { id: string; type: "signature"; estimatedHeight: number }
   | { id: string; type: "cc"; estimatedHeight: number }
@@ -50,7 +52,7 @@ export type PreviewPage = {
 
 const PAGE_LIMITS: Record<PreviewOrientation, number> = {
   portrait: 1040,
-  landscape: 620,
+  landscape: 660,
 };
 
 function visualLineCount(value: string, charsPerLine: number) {
@@ -59,10 +61,6 @@ function visualLineCount(value: string, charsPerLine: number) {
     const normalized = line.trim();
     return total + Math.max(1, Math.ceil(normalized.length / charsPerLine));
   }, 0);
-}
-
-function textHeight(value: string, base = 40, charsPerLine = 76) {
-  return base + Math.max(1, visualLineCount(value, charsPerLine)) * 17;
 }
 
 function nodeCount(node?: RichTextNode): number {
@@ -84,12 +82,23 @@ function richVisualBlockHeight(doc: RichTextDoc, base = 0, charsPerLine = 56) {
   return base + Math.max(textLines, paragraphCount) * 22 + Math.max(0, paragraphCount - 1) * 4;
 }
 
-function appendixRowContentHeight(row: ScenarioRow) {
-  const scenarioHeight = richVisualBlockHeight(row.scenario, 0, 42);
-  const expectedHeight = richVisualBlockHeight(row.expectedResult, 0, 44);
-  const picHeight = textHeight(row.pic, 0, 16);
+function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
+  const text = richTextToPlainText(doc);
+  const paragraphCount = Math.max(1, doc.content.length);
+  const textLines = Math.max(1, visualLineCount(text, charsPerLine));
+  return Math.max(textLines, paragraphCount) * 18 + Math.max(0, paragraphCount - 1) * 3;
+}
 
-  return 34 + Math.max(58, scenarioHeight, expectedHeight, picHeight);
+function compactTextHeight(value: string, charsPerLine = 76) {
+  return Math.max(1, visualLineCount(value, charsPerLine)) * 18;
+}
+
+function appendixRowContentHeight(row: ScenarioRow) {
+  const scenarioHeight = compactRichHeight(row.scenario, 48);
+  const expectedHeight = compactRichHeight(row.expectedResult, 50);
+  const picHeight = compactTextHeight(row.pic, 18);
+
+  return 24 + Math.max(38, scenarioHeight, expectedHeight, picHeight);
 }
 
 function splitDoc(doc: RichTextDoc, maxChars: number) {
@@ -168,6 +177,7 @@ function sourceBlockId(id: string) {
 }
 
 function mainBlocks(draft: MemoDraft): PreviewBlock[] {
+  const attachmentItems = memoAttachmentItems(draft.attachments);
   const blocks: PreviewBlock[] = [
     { id: "memo-heading", type: "memo-heading", estimatedHeight: 170 },
     {
@@ -209,6 +219,13 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
     })),
     ...(draft.metadata.accessLinkEnabled
       ? [{ id: "access-link", type: "access-link" as const, estimatedHeight: 72 }]
+      : []),
+    ...(attachmentItems.length
+      ? [{
+          id: "attachments",
+          type: "attachments" as const,
+          estimatedHeight: 58 + attachmentItems.length * 24,
+        }]
       : []),
     {
       id: "contacts",
@@ -288,8 +305,8 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       },
       estimatedHeight:
         block.estimatedHeight +
-        (showDate ? 30 : 0) +
-        (showSection ? Math.max(30, textHeight(sectionTitle, 2, 68)) : 0),
+        (showDate ? 24 : 0) +
+        (showSection ? Math.max(24, compactTextHeight(sectionTitle, 72)) : 0),
     };
   });
 }

@@ -18,6 +18,14 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function asLines(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => asString(item)).filter(Boolean).join("\n");
+  }
+
+  return asString(value);
+}
+
 function mapScenario(value: unknown): ScenarioRow {
   const item = asRecord(value);
 
@@ -57,6 +65,7 @@ export function generateMomJsonToMemoDraft(input: unknown): MemoDraft {
       accessLinkEnabled: Boolean(root.accessLink),
       accessLink: asString(root.accessLink),
     },
+    attachments: asLines(root.attachments ?? root.lampiran),
     appendixScenarios: scenarios.map(mapScenario),
   });
 }

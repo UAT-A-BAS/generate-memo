@@ -768,6 +768,32 @@ function ContactsPanel({
   );
 }
 
+function AttachmentsPanel({
+  attachments,
+  updateDraft,
+}: {
+  attachments: string;
+  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+}) {
+  return (
+    <Panel>
+      <SectionTitle title="Lampiran" />
+      <div className="mt-6">
+        <FieldLabel label="Daftar lampiran" fieldId="attachments">
+          <textarea
+            value={attachments}
+            rows={5}
+            onChange={(event) =>
+              updateDraft((current) => ({ ...current, attachments: event.target.value }))
+            }
+            className="min-h-28 w-full resize-y rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </FieldLabel>
+      </div>
+    </Panel>
+  );
+}
+
 type ScenarioDateGroup = {
   id: string;
   startDate: string;
@@ -1297,6 +1323,8 @@ export function MemoBuilderApp() {
               </FieldLabel>
             </div>
           </Panel>
+
+          <AttachmentsPanel attachments={draft.attachments} updateDraft={updateDraft} />
 
           <ContactsPanel draft={draft} updateDraft={updateDraft} />
 

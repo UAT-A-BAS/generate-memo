@@ -82,6 +82,7 @@ export type MemoDraft = {
   developmentRows: DevelopmentRow[];
   pilotSchedule: PilotSchedule;
   activities: ActivityRow[];
+  attachments: string;
   contacts: ContactRow[];
   signers: SignerRow[];
   ccRecipients: Recipient[];

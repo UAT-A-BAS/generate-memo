@@ -13,6 +13,8 @@ type RecipientListProps = {
 };
 
 const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
+const fieldClass =
+  "h-10 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10";
 
 function RequiredMark() {
   return <span className="text-red-600">*</span>;
@@ -29,24 +31,24 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
   }
 
   return (
-    <div className="grid gap-3">
+    <div className="grid min-w-0 gap-3">
       <DragDropList
         items={recipients}
         onReorder={onChange}
         itemLabel={(recipient, index) => recipient.name || recipient.position || `penerima ${index + 1}`}
         renderItem={(recipient) => (
-          <div className="grid gap-3">
-            <div className="grid items-end gap-3 md:grid-cols-[minmax(220px,1.1fr)_110px_minmax(220px,1fr)_40px]">
-              <label className="grid gap-1 text-xs font-medium text-slate-600">
+          <div className="grid min-w-0 gap-3">
+            <div className="grid min-w-0 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(96px,0.42fr)] xl:grid-cols-[minmax(0,1.1fr)_minmax(96px,0.42fr)_minmax(0,1fr)_40px]">
+              <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
                 <span>Jabatan / Unit {required ? <RequiredMark /> : null}</span>
                 <input
                   data-field-id={`recipient-${recipient.id}`}
                   value={recipient.position}
                   onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
-                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className={fieldClass}
                 />
               </label>
-              <label className="grid gap-1 text-xs font-medium text-slate-600">
+              <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
                 <span>Sapaan {required ? <RequiredMark /> : null}</span>
                 <select
                   data-field-id={`recipient-gender-${recipient.id}`}
@@ -56,26 +58,26 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
                       gender: event.target.value as Recipient["gender"],
                     })
                   }
-                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className={fieldClass}
                 >
                   {genderOptions.map((option) => (
                     <option key={option}>{option}</option>
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-xs font-medium text-slate-600">
+              <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
                 Nama opsional
                 <input
                   value={recipient.name ?? ""}
                   onChange={(event) => updateRecipient(recipient.id, { name: event.target.value })}
                   placeholder="Nama penerima"
-                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  className={fieldClass}
                 />
               </label>
               <button
                 type="button"
                 onClick={() => removeRecipient(recipient.id)}
-                className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20 sm:self-end"
                 aria-label="Hapus penerima"
               >
                 <Trash2 size={16} />

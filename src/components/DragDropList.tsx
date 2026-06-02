@@ -48,7 +48,7 @@ function SortableItem<T extends Identified>({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`grid grid-cols-[32px_1fr] gap-2 rounded-md border bg-white p-2 shadow-sm ${
+      className={`grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-2 rounded-md border bg-white p-2 shadow-sm ${
         isDragging ? "border-slate-900 shadow-md" : "border-slate-300"
       }`}
     >
@@ -61,7 +61,7 @@ function SortableItem<T extends Identified>({
       >
         <GripVertical size={17} />
       </button>
-      <div className="min-w-0">{renderItem(item, index)}</div>
+      <div className="min-w-0 overflow-hidden">{renderItem(item, index)}</div>
     </div>
   );
 }
@@ -91,7 +91,7 @@ export function DragDropList<T extends Identified>({
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-        <div className="grid gap-3">
+        <div className="grid min-w-0 gap-3">
           {items.map((item, index) => (
             <SortableItem
               key={item.id}

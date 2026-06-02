@@ -40,6 +40,7 @@ import {
 } from "@/documentLayout";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import { memoAttachmentItems } from "@/utils/attachments";
 import { richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
 import { spliceValidationTemplate } from "./spliceValidationTemplate";
@@ -62,6 +63,8 @@ const sectionTopBorder = {
   size: 6,
   color: "1F2937",
 };
+const APPENDIX_TITLE_SPACING_BEFORE = 520;
+const CONTINUATION_TITLE_SPACING_BEFORE = 520;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -433,7 +436,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
         ? [
             new TableRow({
               cantSplit: true,
-              children: [compactSpanningCell([appendixParagraph(block.meta.dateLabel, { bold: true, size: 17 })], 4, true)],
+              children: [compactSpanningCell([appendixParagraph(block.meta.dateLabel, { bold: true, size: 22 })], 4, true)],
             }),
           ]
         : [];
@@ -444,7 +447,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
               cantSplit: true,
               children: [
                 compactCell(
-                  [appendixParagraph(`${block.meta.sectionLetter}.`, { bold: true, size: 17, align: AlignmentType.CENTER })],
+                  [appendixParagraph(`${block.meta.sectionLetter}.`, { bold: true, size: 22, align: AlignmentType.CENTER })],
                   APPENDIX_COLUMN_WIDTHS[0],
                   true,
                 ),
@@ -483,9 +486,8 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       ...dateRows,
       ...sectionRows,
       new TableRow({
-        cantSplit: true,
         children: [
-          compactCell([appendixParagraph(`${block.meta.number}.`, { size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0]),
+          compactCell([appendixParagraph(`${block.meta.number}.`, { size: 22, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0]),
           compactCell(appendixRichParagraphs(block.row.scenario), APPENDIX_COLUMN_WIDTHS[1]),
           compactCell(appendixRichParagraphs(block.row.expectedResult), APPENDIX_COLUMN_WIDTHS[2]),
           picCell,
@@ -499,10 +501,10 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       cantSplit: true,
       tableHeader: true,
       children: [
-        compactCell([appendixParagraph("No", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0], true),
-        compactCell([appendixParagraph("Aktivitas", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[1], true),
-        compactCell([appendixParagraph("Hasil/Keterangan", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[2], true),
-        compactCell([appendixParagraph("PIC", { bold: true, size: 17, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[3], true),
+        compactCell([appendixParagraph("No", { bold: true, size: 22, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0], true),
+        compactCell([appendixParagraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[1], true),
+        compactCell([appendixParagraph("Hasil/Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[2], true),
+        compactCell([appendixParagraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[3], true),
       ],
     }),
     ...bodyRows,
@@ -531,6 +533,7 @@ function isSectionBlock(block: PreviewBlock) {
     block.type === "reference" ||
     block.type === "pilot-schedule" ||
     block.type === "access-link" ||
+    block.type === "attachments" ||
     block.type === "contacts"
   );
 }
@@ -627,6 +630,16 @@ function blockChildren(
           paragraph(draft.metadata.accessLink || "-", { size: 22 }),
         ], sectionRule),
       ];
+    case "attachments":
+      return [
+        ...leadingSectionSpacer(sectionRule),
+        previewSection("Lampiran", [
+          paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
+          ...memoAttachmentItems(draft.attachments).map((item) =>
+            paragraph(`- ${item}`, { size: 22 }),
+          ),
+        ], sectionRule),
+      ];
     case "contacts":
       return [
         ...leadingSectionSpacer(sectionRule),
@@ -683,9 +696,9 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     if (page.kind === "main") {
       children.push(
         new Paragraph({
-          spacing: wordSpacing({ before: 360, after: 80 }),
+          spacing: wordSpacing({ before: CONTINUATION_TITLE_SPACING_BEFORE, after: 80 }),
           children: [
-            run("Perihal: ", { size: 22, font: "Arial" }),
+            run("Perihal:  ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
             run(", Sambungan", { size: 22, font: "Arial" }),
           ],
@@ -697,16 +710,16 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
         new Paragraph({
           spacing: wordSpacing({ before: 360, after: 180 }),
           children: [
-            run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 20 }),
-            run(", Sambungan", { size: 20 }),
+            run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 22 }),
+            run(", Sambungan", { size: 22 }),
           ],
         }),
       );
     }
   } else if (page.kind === "appendix") {
     children.push(new Paragraph({
-      spacing: wordSpacing({ before: 360, after: 180 }),
-      children: [run(page.title, { bold: true, size: 20 })],
+      spacing: wordSpacing({ before: APPENDIX_TITLE_SPACING_BEFORE, after: 180 }),
+      children: [run(page.title, { bold: true, size: 22 })],
     }));
   }
 
