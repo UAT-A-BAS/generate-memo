@@ -1668,15 +1668,15 @@ export function MemoBuilderApp() {
             <CollaborationPanel collaboration={collaboration} />
             <AppleToolbarButton onClick={saveDraftData}>
               <FileJson size={16} />
-              Save Draft Data
+              Save
             </AppleToolbarButton>
             <AppleToolbarButton onClick={() => fileInputRef.current?.click()}>
               <Upload size={16} />
-              Load Draft Data
+              Load
             </AppleToolbarButton>
             <AppleToolbarButton onClick={handleResetDraft} tone="danger">
               <RefreshCcw size={16} />
-              Reset Draft
+              Reset
             </AppleToolbarButton>
           </div>
         </div>
