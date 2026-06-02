@@ -84,6 +84,12 @@ test("updates generated perihal from metadata", async ({ page }) => {
   await expect(page.locator("aside").getByText("Pilot Implementasi Project Smoke Test").first()).toBeVisible();
 });
 
+test("uses Memo Generator as the browser title", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  await expect(page).toHaveTitle("Memo Generator");
+});
+
 test("shows memo generator credit at page end", async ({ page }) => {
   await page.goto("http://localhost:3002");
 

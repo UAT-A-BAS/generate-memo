@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Memo Builder Fresh",
-  description: "Enterprise memo editor, preview, pagination, and DOCX exporter",
+  title: "Memo Generator",
+  description: "Enterprise memo generator, preview, pagination, and DOCX exporter",
 };
 
 export default function RootLayout({

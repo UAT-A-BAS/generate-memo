@@ -1911,37 +1911,35 @@ export function MemoBuilderApp() {
         onCancel={() => setCommentDialog(null)}
         onSave={saveReviewComment}
       />
-      <div className="fixed bottom-4 right-4 z-40 flex items-end gap-3" data-review-ignore>
-        <div
-          className="rounded-lg border border-[#c6d3e1] bg-white/95 p-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur"
+      <div
+        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-[26px] border border-white/70 bg-white/55 p-1.5 shadow-[0_18px_46px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-2xl"
+        data-review-ignore
+      >
+        <button
+          type="button"
+          onClick={exportDocx}
+          disabled={isExporting}
+          aria-label="Buat dokumen Word cepat"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#007aff]/20 bg-[#007aff]/10 px-4 text-[13px] font-semibold leading-none text-[#0057b8] shadow-[0_1px_2px_rgba(0,122,255,0.08),0_8px_24px_rgba(0,122,255,0.08)] backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px hover:bg-[#007aff]/15 focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           data-floating-generate
         >
-          <div className="mb-1 flex items-center justify-between gap-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-[#0f2d4a]">
-            <span>Docx</span>
-            <span className="font-bold normal-case tracking-normal text-slate-500">{pages.length} pages</span>
-          </div>
-          <button
-            type="button"
-            onClick={exportDocx}
-            disabled={isExporting}
-            aria-label="Buat dokumen Word cepat"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#185abd] bg-[#185abd] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#124078] focus:outline-none focus:ring-2 focus:ring-[#185abd]/25 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Download size={16} />
-            Generate Docx
-          </button>
-        </div>
+          <Download size={16} />
+          Generate Docx
+          <span className="rounded-full border border-white/70 bg-white/70 px-2 py-1 text-[11px] font-bold leading-none text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+            {pages.length} pages
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => setReviewOpen((current) => !current)}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#c6d3e1] bg-white/95 px-4 text-sm font-bold text-[#0f2d4a] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur transition hover:bg-[#edf4fb] focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 text-[13px] font-semibold leading-none text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98]"
           aria-expanded={reviewOpen}
           aria-controls="review-comments-popup"
         >
           <MessageSquare size={16} />
           Komentar Review
           {unresolvedReviewCount ? (
-            <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs text-white">{unresolvedReviewCount}</span>
+            <span className="rounded-full bg-rose-600 px-2 py-1 text-[11px] font-bold leading-none text-white shadow-[0_4px_12px_rgba(225,29,72,0.25)]">{unresolvedReviewCount}</span>
           ) : null}
         </button>
       </div>
