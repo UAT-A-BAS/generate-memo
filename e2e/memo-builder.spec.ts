@@ -161,6 +161,31 @@ test("appendix scenario uses section header numbering", async ({ page }) => {
   await expect(appendixTable).toContainText("1.");
 });
 
+test("lampiran toggle shows attachment list in preview", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const attachmentsPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran", exact: true }) })
+    .first();
+
+  await expect(attachmentsPanel.getByLabel("Tidak")).toBeChecked();
+  await expect(attachmentsPanel.getByLabel("Daftar lampiran")).toHaveCount(0);
+
+  await attachmentsPanel.getByLabel("Ya").check();
+  await attachmentsPanel.getByLabel("Daftar lampiran").fill(
+    [
+      "Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan",
+      "Skenario Pilot Implementasi BDS Web Gen 2 versi 4.3.0",
+    ].join("\n"),
+  );
+
+  await expect(page.locator("aside")).toContainText("Bersama dengan memo ini dilampirkan:");
+  await expect(page.locator("aside")).toContainText(
+    "- Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan",
+  );
+});
+
 test("appendix hierarchy adds date, section, and scenario in place", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());

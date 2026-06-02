@@ -65,6 +65,7 @@ export function generateMomJsonToMemoDraft(input: unknown): MemoDraft {
       accessLinkEnabled: Boolean(root.accessLink),
       accessLink: asString(root.accessLink),
     },
+    attachmentsEnabled: Boolean(root.attachments ?? root.lampiran),
     attachments: asLines(root.attachments ?? root.lampiran),
     appendixScenarios: scenarios.map(mapScenario),
   });

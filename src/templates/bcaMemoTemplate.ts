@@ -107,6 +107,7 @@ export function createInitialMemoDraft(): MemoDraft {
       endDate: "",
     },
     activities: [createActivityRow()],
+    attachmentsEnabled: false,
     attachments: "",
     contacts: [createContactRow()],
     signers: [createSignerRow()],
@@ -181,6 +182,10 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
       : base.developmentRows,
     pilotSchedule: input.pilotSchedule ?? base.pilotSchedule,
     activities,
+    attachmentsEnabled:
+      typeof input.attachmentsEnabled === "boolean"
+        ? input.attachmentsEnabled
+        : Boolean(input.attachments),
     attachments: typeof input.attachments === "string" ? input.attachments : base.attachments,
     contacts: Array.isArray(input.contacts) ? input.contacts : base.contacts,
     signers: Array.isArray(input.signers) ? input.signers : base.signers,

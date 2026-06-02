@@ -769,26 +769,54 @@ function ContactsPanel({
 }
 
 function AttachmentsPanel({
+  enabled,
   attachments,
   updateDraft,
 }: {
+  enabled: boolean;
   attachments: string;
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
 }) {
   return (
     <Panel>
       <SectionTitle title="Lampiran" />
-      <div className="mt-6">
-        <FieldLabel label="Daftar lampiran" fieldId="attachments">
-          <textarea
-            value={attachments}
-            rows={5}
-            onChange={(event) =>
-              updateDraft((current) => ({ ...current, attachments: event.target.value }))
-            }
-            className="min-h-28 w-full resize-y rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          />
-        </FieldLabel>
+      <div className="mt-6 grid gap-3">
+        <fieldset className="grid gap-2">
+          <legend className="text-xs font-medium text-slate-600">Memo memiliki Lampiran?</legend>
+          <div className="flex gap-2">
+            {[
+              ["Tidak", false],
+              ["Ya", true],
+            ].map(([label, value]) => (
+              <label
+                key={String(label)}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-400 bg-white px-3 text-sm font-medium text-slate-700"
+              >
+                <input
+                  type="radio"
+                  checked={enabled === value}
+                  onChange={() =>
+                    updateDraft((current) => ({ ...current, attachmentsEnabled: Boolean(value) }))
+                  }
+                  className="h-4 w-4 border-slate-400 text-slate-900 focus:ring-slate-900"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {enabled ? (
+          <FieldLabel label="Daftar lampiran" fieldId="attachments">
+            <textarea
+              value={attachments}
+              rows={5}
+              onChange={(event) =>
+                updateDraft((current) => ({ ...current, attachments: event.target.value }))
+              }
+              className="min-h-28 w-full resize-y rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            />
+          </FieldLabel>
+        ) : null}
       </div>
     </Panel>
   );
@@ -1324,7 +1352,11 @@ export function MemoBuilderApp() {
             </div>
           </Panel>
 
-          <AttachmentsPanel attachments={draft.attachments} updateDraft={updateDraft} />
+          <AttachmentsPanel
+            enabled={draft.attachmentsEnabled}
+            attachments={draft.attachments}
+            updateDraft={updateDraft}
+          />
 
           <ContactsPanel draft={draft} updateDraft={updateDraft} />
 

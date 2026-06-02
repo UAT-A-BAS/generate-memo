@@ -65,6 +65,7 @@ const sectionTopBorder = {
 };
 const APPENDIX_TITLE_SPACING_BEFORE = 520;
 const CONTINUATION_TITLE_SPACING_BEFORE = 520;
+const LIST_ITEM_INDENT = 720;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -636,7 +637,7 @@ function blockChildren(
         previewSection("Lampiran", [
           paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
           ...memoAttachmentItems(draft.attachments).map((item) =>
-            paragraph(`- ${item}`, { size: 22 }),
+            paragraph(`- ${item}`, { size: 22, indent: { left: LIST_ITEM_INDENT } }),
           ),
         ], sectionRule),
       ];
@@ -645,7 +646,12 @@ function blockChildren(
         ...leadingSectionSpacer(sectionRule),
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
-          ...draft.contacts.map((contact) => paragraph(`- ${contact.name} - ${contact.email}`, { size: 22 })),
+          ...draft.contacts.map((contact) =>
+            paragraph(`- ${contact.name} - ${contact.email}`, {
+              size: 22,
+              indent: { left: LIST_ITEM_INDENT },
+            }),
+          ),
         ], sectionRule),
       ];
     case "signature":
@@ -669,7 +675,11 @@ function blockChildren(
       return [
         bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
         ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) =>
-          bodyColumnParagraph(item, { size: 22, spacingAfter: 70 }),
+          bodyColumnParagraph(item, {
+            size: 22,
+            spacingAfter: 70,
+            indent: { left: BODY_COLUMN_INDENT + LIST_ITEM_INDENT },
+          }),
         ),
       ];
     case "initials":

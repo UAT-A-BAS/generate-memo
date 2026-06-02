@@ -220,11 +220,11 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
     ...(draft.metadata.accessLinkEnabled
       ? [{ id: "access-link", type: "access-link" as const, estimatedHeight: 72 }]
       : []),
-    ...(attachmentItems.length
+    ...(draft.attachmentsEnabled
       ? [{
           id: "attachments",
           type: "attachments" as const,
-          estimatedHeight: 58 + attachmentItems.length * 24,
+          estimatedHeight: 58 + Math.max(1, attachmentItems.length) * 24,
         }]
       : []),
     {

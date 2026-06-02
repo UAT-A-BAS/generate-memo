@@ -236,7 +236,7 @@ function renderBlock(
       return (
         <PreviewSection title="Lampiran" rule={sectionRule}>
           <p>Bersama dengan memo ini dilampirkan:</p>
-          <ul className="mt-1">
+          <ul className="mt-1 pl-8">
             {memoAttachmentItems(draft.attachments).map((item, index) => (
               <li key={`${item}-${index}`}>- {item}</li>
             ))}
@@ -247,7 +247,7 @@ function renderBlock(
       return (
         <PreviewSection title="PIC yang Dapat Dihubungi" rule={sectionRule}>
           <p>PIC yang dapat dihubungi sehubungan dengan {draft.metadata.perihal} adalah:</p>
-          <ul className="mt-1">
+          <ul className="mt-1 pl-8">
             {draft.contacts.map((contact) => (
               <li key={contact.id}>- {contact.name} - {contact.email}</li>
             ))}
@@ -275,7 +275,7 @@ function renderBlock(
       return (
         <div className="ml-[140px] mt-6 max-w-[575px] text-[14.67px] leading-[1.08]">
           <p>Tembusan:</p>
-          <div className="grid gap-0.5">
+          <div className="grid gap-0.5 pl-8">
             {draft.ccRecipients.map((recipient) => (
               <div key={recipient.id}>
                 <p>- {recipient.position}</p>
