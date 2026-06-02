@@ -16,7 +16,6 @@ import {
   TableCell,
   TableLayoutType,
   TableRow,
-  Tab,
   TextRun,
   UnderlineType,
   VerticalMergeType,
@@ -24,6 +23,7 @@ import {
   WidthType,
   type FileChild,
   type ISectionOptions,
+  type TableVerticalAlign,
 } from "docx";
 import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination/paginate";
@@ -64,7 +64,8 @@ const sectionTopBorder = {
   size: 6,
   color: "1F2937",
 };
-const LIST_TEXT_TAB = 720;
+const LIST_TEXT_GAP = "      ";
+const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -184,34 +185,25 @@ function blankLine() {
   });
 }
 
-function dashTabParagraph(
+function dashGapParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
 ) {
-  const leftIndent = options.indent?.left ?? 0;
+  return paragraph(`-${LIST_TEXT_GAP}${text}`, options);
+}
 
-  return new Paragraph({
-    alignment: options.align,
-    indent: options.indent,
-    leftTabStop: leftIndent + LIST_TEXT_TAB,
-    spacing: wordSpacing({
-      before: options.spacingBefore,
-      after: options.spacingAfter,
-      line: options.line,
-    }),
-    children: [
-      run("-", options),
-      new Tab(),
-      ...multilineRuns(text, options),
-    ],
-  });
+function tabAlignedParagraph(
+  text: string,
+  options: Parameters<typeof paragraph>[1] = {},
+) {
+  return paragraph(`${LIST_TEXT_ALIGNMENT_GAP}${text}`, options);
 }
 
 function memoHeadingItemParagraph(item: string) {
   const normalized = item.trimStart();
 
   if (normalized.startsWith("- ")) {
-    return dashTabParagraph(normalized.slice(2), {
+    return dashGapParagraph(normalized.slice(2), {
       size: 22,
       indent: { left: WORD_INDENT_002_CM },
       spacingBefore: 80,
@@ -219,9 +211,9 @@ function memoHeadingItemParagraph(item: string) {
     });
   }
 
-  return paragraph(normalized, {
+  return tabAlignedParagraph(normalized, {
     size: 22,
-    indent: { left: WORD_INDENT_002_CM + LIST_TEXT_TAB },
+    indent: { left: WORD_INDENT_002_CM },
     spacingBefore: 80,
     line: WORD_LINE_MULTIPLE_115,
   });
@@ -241,7 +233,7 @@ function continuationRule() {
   return new Paragraph({
     includeIfEmpty: true,
     indent: { left: CONTINUATION_RULE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: wordSpacing({ before: 160, after: 260 }),
+    spacing: wordSpacing({ before: 160, after: 120 }),
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
     },
@@ -301,7 +293,7 @@ function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
 function continuationNotice() {
   return new Paragraph({
     alignment: AlignmentType.RIGHT,
-    indent: { left: CONTINUATION_RULE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
     spacing: wordSpacing({ before: 140 }),
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
@@ -310,9 +302,14 @@ function continuationNotice() {
   });
 }
 
-function compactCell(children: Paragraph[], width?: number, shaded = false) {
+function compactCell(
+  children: Paragraph[],
+  width?: number,
+  shaded = false,
+  verticalAlign: TableVerticalAlign = VerticalAlign.TOP,
+) {
   return new TableCell({
-    verticalAlign: VerticalAlign.TOP,
+    verticalAlign,
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
     shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
@@ -537,9 +534,14 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       ...sectionRows,
       new TableRow({
         children: [
-          compactCell([appendixParagraph(`${block.meta.number}.`, { size: 22, align: AlignmentType.CENTER })], APPENDIX_COLUMN_WIDTHS[0]),
-          compactCell(appendixRichParagraphs(block.row.scenario), APPENDIX_COLUMN_WIDTHS[1]),
-          compactCell(appendixRichParagraphs(block.row.expectedResult), APPENDIX_COLUMN_WIDTHS[2]),
+          compactCell(
+            [appendixParagraph(`${block.meta.number}.`, { size: 22, align: AlignmentType.CENTER })],
+            APPENDIX_COLUMN_WIDTHS[0],
+            false,
+            VerticalAlign.CENTER,
+          ),
+          compactCell(appendixRichParagraphs(block.row.scenario), APPENDIX_COLUMN_WIDTHS[1], false, VerticalAlign.CENTER),
+          compactCell(appendixRichParagraphs(block.row.expectedResult), APPENDIX_COLUMN_WIDTHS[2], false, VerticalAlign.CENTER),
           picCell,
         ],
       }),
@@ -686,7 +688,7 @@ function blockChildren(
         previewSection("Lampiran", [
           paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
           ...memoAttachmentItems(draft.attachments).map((item) =>
-            dashTabParagraph(item, { size: 22 }),
+            dashGapParagraph(item, { size: 22 }),
           ),
         ], sectionRule),
       ];
@@ -696,7 +698,7 @@ function blockChildren(
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) =>
-            dashTabParagraph(`${contact.name} - ${contact.email}`, {
+            dashGapParagraph(`${contact.name} - ${contact.email}`, {
               size: 22,
             }),
           ),
@@ -724,15 +726,15 @@ function blockChildren(
         bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
         ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) =>
           item.startsWith("- ")
-            ? dashTabParagraph(item.slice(2), {
+            ? dashGapParagraph(item.slice(2), {
                 size: 22,
                 spacingAfter: 70,
                 indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
               })
-            : bodyColumnParagraph(item.trimStart(), {
+            : tabAlignedParagraph(item.trimStart(), {
                 size: 22,
                 spacingAfter: 70,
-                indent: { left: BODY_COLUMN_INDENT + LIST_TEXT_TAB, right: BODY_COLUMN_RIGHT_INDENT },
+                indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
               }),
         ),
       ];

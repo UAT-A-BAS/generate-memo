@@ -52,7 +52,7 @@ export type PreviewPage = {
 
 const PAGE_LIMITS: Record<PreviewOrientation, number> = {
   portrait: 1040,
-  landscape: 660,
+  landscape: 720,
 };
 
 function visualLineCount(value: string, charsPerLine: number) {
@@ -86,11 +86,11 @@ function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
   const text = richTextToPlainText(doc);
   const paragraphCount = Math.max(1, doc.content.length);
   const textLines = Math.max(1, visualLineCount(text, charsPerLine));
-  return Math.max(textLines, paragraphCount) * 18 + Math.max(0, paragraphCount - 1) * 3;
+  return Math.max(textLines, paragraphCount) * 16 + Math.max(0, paragraphCount - 1) * 3;
 }
 
 function compactTextHeight(value: string, charsPerLine = 76) {
-  return Math.max(1, visualLineCount(value, charsPerLine)) * 18;
+  return Math.max(1, visualLineCount(value, charsPerLine)) * 16;
 }
 
 function appendixRowContentHeight(row: ScenarioRow) {
@@ -98,7 +98,7 @@ function appendixRowContentHeight(row: ScenarioRow) {
   const expectedHeight = compactRichHeight(row.expectedResult, 50);
   const picHeight = compactTextHeight(row.pic, 18);
 
-  return 24 + Math.max(38, scenarioHeight, expectedHeight, picHeight);
+  return 20 + Math.max(34, scenarioHeight, expectedHeight, picHeight);
 }
 
 function splitDoc(doc: RichTextDoc, maxChars: number) {

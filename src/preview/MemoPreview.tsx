@@ -462,20 +462,20 @@ function renderGroupedBlocks(
                 ) : null}
                 {item.meta.showSection ? (
                   <tr className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
-                    <td className="border border-slate-900 px-1 py-0.5 text-center align-top" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                    <td className="border border-slate-900 px-1 py-0.5 text-center align-middle" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                       {item.meta.sectionLetter}.
                     </td>
-                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 align-top" colSpan={3} style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle" colSpan={3} style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                       {item.meta.sectionTitle}
                     </td>
                   </tr>
                 ) : null}
                 <tr>
-                  <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-top">{item.meta.number}.</td>
-                  <td className="border border-slate-900 px-1 py-0.5 align-top">
+                  <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-middle">{item.meta.number}.</td>
+                  <td className="border border-slate-900 px-1 py-0.5 align-middle">
                     <RichTextView html={richTextToHtml(item.row.scenario)} />
                   </td>
-                  <td className="border border-slate-900 px-1 py-0.5 align-top">
+                  <td className="border border-slate-900 px-1 py-0.5 align-middle">
                     <RichTextView html={richTextToHtml(item.row.expectedResult)} />
                   </td>
                   {picSpan.hidden ? null : (

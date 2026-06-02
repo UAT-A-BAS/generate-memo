@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { expect, test, type Download, type Page } from "@playwright/test";
+import JSZip from "jszip";
 
 function richText(text: string) {
   return {
@@ -19,15 +21,21 @@ function completeDraft() {
       projectName: "BDS Web Gen 2 versi 4.3.0",
       bureau: "A",
       autoPerihal: true,
-      accessLinkEnabled: false,
-      accessLink: "",
+      accessLinkEnabled: true,
+      accessLink: "https://bdswebg2-pilot.intra.bca.co.id:63144/#/auth/login",
     },
     recipients: [{ id: "recipient-test", gender: "Ibu", name: "Agustina", position: "Kepala Operasi Cabang Pluit" }],
     developmentRows: [{ id: "development-test", item: richText("Pengembangan"), description: richText("Keterangan") }],
     pilotSchedule: { startDate: "2026-05-07", endDate: "2026-05-21" },
     activities: [{ id: "activity-test", startDate: "2026-05-07", endDate: "2026-05-21", owner: "Tim APV", activity: richText("Aktivitas") }],
+    attachmentsEnabled: true,
+    attachments: [
+      "Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan",
+      "Skenario Pilot Implementasi BDS Web Gen 2 versi 4.3.0",
+    ].join("\n"),
     contacts: [{ id: "contact-test", name: "Nama PIC", email: "pic@example.com" }],
     signers: [{ id: "signer-test", name: "Signer", title: "Jabatan" }],
+    ccRecipients: [{ id: "cc-test", gender: "Bapak", name: "Verry Iskandar", position: "Kepala KCU Pluit" }],
     initials: "abc",
     initialsBureau: "A",
     appendixScenarios: [{
@@ -52,6 +60,16 @@ async function importDraft(page: Page, payload: unknown) {
   });
 }
 
+async function documentXmlFrom(download: Download) {
+  const path = await download.path();
+  expect(path).toBeTruthy();
+
+  const zip = await JSZip.loadAsync(await readFile(path as string));
+  const xml = await zip.file("word/document.xml")?.async("string");
+  expect(xml).toBeTruthy();
+  return xml as string;
+}
+
 test("updates generated perihal from metadata", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await page.getByLabel("Nama Project").fill("Project Smoke Test");
@@ -68,6 +86,16 @@ test("exports DOCX from current draft", async ({ page }) => {
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4.3.0).docx");
+
+  const xml = await documentXmlFrom(download);
+  expect(xml).toMatch(/<w:t[^>]*>- {6}Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
+  expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC - pic@example\.com<\/w:t>/);
+  expect(xml).toMatch(/<w:t[^>]*>- {6}Kepala KCU Pluit<\/w:t>/);
+
+  const urlIndex = xml.indexOf("https://bdswebg2-pilot");
+  expect(urlIndex).toBeGreaterThan(-1);
+  const urlContext = xml.slice(Math.max(0, urlIndex - 800), urlIndex + 300);
+  expect(urlContext).toContain('<w:u w:val="single"/>');
 });
 
 test("blocks DOCX export when mandatory fields are empty", async ({ page }) => {
