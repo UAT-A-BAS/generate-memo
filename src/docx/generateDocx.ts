@@ -66,6 +66,7 @@ const sectionTopBorder = {
 };
 const LIST_TEXT_GAP = "      ";
 const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
+const CONTINUATION_NOTICE_INDENT = BODY_COLUMN_INDENT + 500;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -293,7 +294,7 @@ function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
 function continuationNotice() {
   return new Paragraph({
     alignment: AlignmentType.RIGHT,
-    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    indent: { left: CONTINUATION_NOTICE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
     spacing: wordSpacing({ before: 140 }),
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
@@ -881,10 +882,14 @@ function buildSection(draft: MemoDraft, pages: PreviewPage[]): ISectionOptions {
   };
 }
 
+function hasExportablePageContent(page: PreviewPage) {
+  return page.blocks.some((block) => block.type !== "recipients");
+}
+
 export async function generateMemoDocxBlob(draft: MemoDraft) {
   const pages = paginateMemoDraft(draft);
-  const mainPages = pages.filter((page) => page.kind === "main");
-  const appendixPages = pages.filter((page) => page.kind === "appendix");
+  const mainPages = pages.filter((page) => page.kind === "main" && hasExportablePageContent(page));
+  const appendixPages = pages.filter((page) => page.kind === "appendix" && hasExportablePageContent(page));
   const validationTemplateBuffer = await fetch("/template-assets/validation-template.docx").then(
     (response) => response.arrayBuffer(),
   );
@@ -895,7 +900,7 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
     description: "Generated memo document",
     sections: [
       buildSection(draft, mainPages),
-      buildSection(draft, appendixPages),
+      ...(appendixPages.length ? [buildSection(draft, appendixPages)] : []),
     ],
   });
 

@@ -98,6 +98,21 @@ test("exports DOCX from current draft", async ({ page }) => {
   expect(urlContext).toContain('<w:u w:val="single"/>');
 });
 
+test("omits empty appendix pages from generated DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [],
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Generate Docx" }).click();
+  const download = await downloadPromise;
+  const xml = await documentXmlFrom(download);
+
+  expect(xml).not.toContain("Lampiran - Skenario");
+});
+
 test("blocks DOCX export when mandatory fields are empty", async ({ page }) => {
   await page.goto("http://localhost:3002");
 

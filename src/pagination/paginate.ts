@@ -320,6 +320,8 @@ function packPages(
     continuationTitle: string;
   },
 ): PreviewPage[] {
+  if (!blocks.length) return [];
+
   const pages: PreviewPage[] = [];
   let current: PreviewPage = {
     id: `${options.kind}-1`,

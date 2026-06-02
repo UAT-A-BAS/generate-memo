@@ -168,11 +168,13 @@ function sectionBreakParagraph(sectPr: string) {
     return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
   }
 
+  const zeroHeightParagraph =
+    '<w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/><w:rPr><w:sz w:val="1"/><w:szCs w:val="1"/></w:rPr>';
   const normalizedSectPr = /<w:type\b/.test(sectPr)
     ? sectPr.replace(/<w:type\b[^>]*\/>/, '<w:type w:val="nextPage"/>')
     : sectPr.replace(/(<w:pgSz\b)/, '<w:type w:val="nextPage"/>$1');
 
-  return `<w:p><w:pPr>${normalizedSectPr}</w:pPr></w:p>`;
+  return `<w:p><w:pPr>${zeroHeightParagraph}${normalizedSectPr}</w:pPr></w:p>`;
 }
 
 function prefixedTarget(target: string) {

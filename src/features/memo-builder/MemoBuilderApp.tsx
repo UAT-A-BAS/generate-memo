@@ -1023,9 +1023,9 @@ function AppendixPanel({
                       </span>
                       <textarea
                         value={section.title}
-                        rows={2}
+                        rows={1}
                         onChange={(event) => updateSectionTitle(section, event.target.value)}
-                        className="min-h-10 resize-y border-0 px-3 py-2 text-[15px] font-medium outline-none"
+                        className="min-h-10 resize-y border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
                       />
                     </div>
                   </FieldLabel>
