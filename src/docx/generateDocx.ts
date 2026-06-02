@@ -7,7 +7,6 @@ import {
   Header,
   LineRuleType,
   Packer,
-  PageBreak,
   PageNumber,
   PageOrientation,
   Paragraph,
@@ -747,7 +746,11 @@ function blockChildren(
   }
 }
 
-function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
+function pageChildren(
+  draft: MemoDraft,
+  page: PreviewPage,
+  options: { pageBreakBefore?: boolean } = {},
+): FileChild[] {
   const children: FileChild[] = [];
   let sectionCount = 0;
   const nextSectionRule = (): SectionRule => {
@@ -763,9 +766,9 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
   if (page.continuationTitle) {
     if (page.kind === "main") {
       children.push(
-        blankLine(),
         new Paragraph({
-          spacing: wordSpacing({ after: 80 }),
+          pageBreakBefore: options.pageBreakBefore,
+          spacing: wordSpacing({ before: 0, after: 80 }),
           children: [
             run("Perihal:  ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
@@ -777,6 +780,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     } else {
       children.push(
         new Paragraph({
+          pageBreakBefore: options.pageBreakBefore,
           spacing: wordSpacing({ before: 0, after: 180 }),
           children: [
             run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 22 }),
@@ -787,6 +791,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     }
   } else if (page.kind === "appendix") {
     children.push(new Paragraph({
+      pageBreakBefore: options.pageBreakBefore,
       spacing: wordSpacing({ before: 0, after: 180 }),
       children: [run(page.title, { bold: true, size: 22 })],
     }));
@@ -868,12 +873,9 @@ function sectionProperties(orientation: PreviewOrientation) {
 
 function buildSection(draft: MemoDraft, pages: PreviewPage[]): ISectionOptions {
   const orientation = pages[0]?.orientation ?? "portrait";
-  const children = pages.flatMap((page, index) => {
-    const pageContent = pageChildren(draft, page);
-    return index < pages.length - 1
-      ? [...pageContent, new Paragraph({ spacing: wordSpacing(), children: [new PageBreak()] })]
-      : pageContent;
-  });
+  const children = pages.flatMap((page, index) =>
+    pageChildren(draft, page, { pageBreakBefore: index > 0 }),
+  );
 
   return {
     headers: { default: header() },

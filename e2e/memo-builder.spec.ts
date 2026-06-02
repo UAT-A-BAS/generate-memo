@@ -92,6 +92,7 @@ test("exports DOCX from current draft", async ({ page }) => {
   expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC - pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Kepala KCU Pluit<\/w:t>/);
   expect(xml).toContain('<w:type w:val="continuous"/>');
+  expect(xml).not.toContain('w:type="page"');
 
   const urlIndex = xml.indexOf("https://bdswebg2-pilot");
   expect(urlIndex).toBeGreaterThan(-1);
