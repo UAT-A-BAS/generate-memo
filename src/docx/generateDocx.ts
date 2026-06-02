@@ -64,8 +64,6 @@ const sectionTopBorder = {
   size: 6,
   color: "1F2937",
 };
-const APPENDIX_TITLE_SPACING_BEFORE = 520;
-const CONTINUATION_TITLE_SPACING_BEFORE = 520;
 const LIST_TEXT_TAB = 720;
 
 type SectionRule = "full" | "content" | "none";
@@ -179,6 +177,13 @@ function bodyColumnParagraph(
   });
 }
 
+function blankLine() {
+  return new Paragraph({
+    spacing: wordSpacing(),
+    children: [new TextRun({ text: "" })],
+  });
+}
+
 function dashTabParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
@@ -199,6 +204,26 @@ function dashTabParagraph(
       new Tab(),
       ...multilineRuns(text, options),
     ],
+  });
+}
+
+function memoHeadingItemParagraph(item: string) {
+  const normalized = item.trimStart();
+
+  if (normalized.startsWith("- ")) {
+    return dashTabParagraph(normalized.slice(2), {
+      size: 22,
+      indent: { left: WORD_INDENT_002_CM },
+      spacingBefore: 80,
+      line: WORD_LINE_MULTIPLE_115,
+    });
+  }
+
+  return paragraph(normalized, {
+    size: 22,
+    indent: { left: WORD_INDENT_002_CM + LIST_TEXT_TAB },
+    spacingBefore: 80,
+    line: WORD_LINE_MULTIPLE_115,
   });
 }
 
@@ -325,7 +350,7 @@ function appendixRichParagraphs(doc: Parameters<typeof richTextToDocxParagraphs>
 function closingParagraph(text: string, withTopBorder = true) {
   return new Paragraph({
     indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: wordSpacing({ before: withTopBorder ? 140 : 0 }),
+    spacing: wordSpacing({ before: withTopBorder ? 140 : 0, after: 220 }),
     border: withTopBorder
       ? {
           top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 8 },
@@ -583,13 +608,13 @@ function blockChildren(
   switch (block.type) {
     case "memo-heading":
       return [
-        new Paragraph({ spacing: wordSpacing({ before: 320 }) }),
+        blankLine(),
         table([
           new TableRow({
             children: [
               new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Kepada", { size: 22 })] }),
               new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map((item) => memoHeadingParagraph(item, { size: 22 })) }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map(memoHeadingItemParagraph) }),
             ],
           }),
           new TableRow({
@@ -652,7 +677,7 @@ function blockChildren(
         ...leadingSectionSpacer(sectionRule),
         previewSection(`Akses Link ${draft.metadata.perihal}`, [
           paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 22 }),
-          paragraph(draft.metadata.accessLink || "-", { size: 22 }),
+          paragraph(draft.metadata.accessLink || "-", { size: 22, underline: true }),
         ], sectionRule),
       ];
     case "attachments":
@@ -734,8 +759,9 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
   if (page.continuationTitle) {
     if (page.kind === "main") {
       children.push(
+        blankLine(),
         new Paragraph({
-          spacing: wordSpacing({ before: CONTINUATION_TITLE_SPACING_BEFORE, after: 80 }),
+          spacing: wordSpacing({ after: 80 }),
           children: [
             run("Perihal:  ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),
@@ -747,7 +773,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     } else {
       children.push(
         new Paragraph({
-          spacing: wordSpacing({ before: 360, after: 180 }),
+          spacing: wordSpacing({ before: 0, after: 180 }),
           children: [
             run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 22 }),
             run(", Sambungan", { size: 22 }),
@@ -757,7 +783,7 @@ function pageChildren(draft: MemoDraft, page: PreviewPage): FileChild[] {
     }
   } else if (page.kind === "appendix") {
     children.push(new Paragraph({
-      spacing: wordSpacing({ before: APPENDIX_TITLE_SPACING_BEFORE, after: 180 }),
+      spacing: wordSpacing({ before: 0, after: 180 }),
       children: [run(page.title, { bold: true, size: 22 })],
     }));
   }
