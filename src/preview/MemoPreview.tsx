@@ -270,7 +270,7 @@ function renderBlock(
           <div className="mt-1 grid gap-0.5">
             {draft.contacts.map((contact) => (
               <DashTabLine key={contact.id}>
-                {contact.name} - {contact.email}
+                {contact.name} – {contact.email}
               </DashTabLine>
             ))}
           </div>

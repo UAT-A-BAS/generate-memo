@@ -89,7 +89,7 @@ test("exports DOCX from current draft", async ({ page }) => {
 
   const xml = await documentXmlFrom(download);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
-  expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC - pic@example\.com<\/w:t>/);
+  expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC – pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Kepala KCU Pluit<\/w:t>/);
   expect(xml).toContain('<w:type w:val="continuous"/>');
   expect(xml).not.toContain('w:type="page"');

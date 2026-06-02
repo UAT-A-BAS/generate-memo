@@ -699,7 +699,7 @@ function blockChildren(
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) =>
-            dashGapParagraph(`${contact.name} - ${contact.email}`, {
+            dashGapParagraph(`${contact.name} – ${contact.email}`, {
               size: 22,
             }),
           ),
