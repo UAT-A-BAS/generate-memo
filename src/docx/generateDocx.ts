@@ -66,7 +66,8 @@ const sectionTopBorder = {
 };
 const LIST_TEXT_GAP = "      ";
 const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
-const CONTINUATION_NOTICE_INDENT = BODY_COLUMN_INDENT + 500;
+const CONTINUATION_NOTICE_INDENT = BODY_COLUMN_INDENT;
+const CONTINUATION_NOTICE_RIGHT_INDENT = 0;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -294,7 +295,7 @@ function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
 function continuationNotice() {
   return new Paragraph({
     alignment: AlignmentType.RIGHT,
-    indent: { left: CONTINUATION_NOTICE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    indent: { left: CONTINUATION_NOTICE_INDENT, right: CONTINUATION_NOTICE_RIGHT_INDENT },
     spacing: wordSpacing({ before: 140 }),
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },

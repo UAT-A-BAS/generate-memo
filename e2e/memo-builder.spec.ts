@@ -91,6 +91,7 @@ test("exports DOCX from current draft", async ({ page }) => {
   expect(xml).toMatch(/<w:t[^>]*>- {6}Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC - pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Kepala KCU Pluit<\/w:t>/);
+  expect(xml).toContain('<w:type w:val="continuous"/>');
 
   const urlIndex = xml.indexOf("https://bdswebg2-pilot");
   expect(urlIndex).toBeGreaterThan(-1);
@@ -122,6 +123,18 @@ test("blocks DOCX export when mandatory fields are empty", async ({ page }) => {
   await expect(page.getByText("Generate Docx ditahan")).toBeVisible();
   await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/validation-jump-highlight/);
   expect(await downloadPromise).toBeNull();
+});
+
+test("tembusan shows mandatory markers", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const ccPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Tembusan" }) })
+    .first();
+
+  await expect(ccPanel).toContainText("Jabatan / Unit *");
+  await expect(ccPanel).toContainText("Sapaan *");
 });
 
 test("empty rich text fields start in plain text mode", async ({ page }) => {
