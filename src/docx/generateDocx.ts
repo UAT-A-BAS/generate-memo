@@ -3,6 +3,7 @@ import {
   BorderStyle,
   convertInchesToTwip,
   Document,
+  ExternalHyperlink,
   Footer,
   Header,
   LineRuleType,
@@ -166,6 +167,40 @@ function paragraph(
       line: options.line,
     }),
     children: multilineRuns(text, options),
+  });
+}
+
+function hyperlinkTarget(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return /^[a-z][a-z\d+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function hyperlinkParagraph(
+  text: string,
+  options: Parameters<typeof paragraph>[1] = {},
+) {
+  const trimmed = text.trim();
+  const target = hyperlinkTarget(trimmed);
+
+  if (!target) {
+    return paragraph("-", options);
+  }
+
+  return new Paragraph({
+    alignment: options.align,
+    indent: options.indent,
+    spacing: wordSpacing({
+      before: options.spacingBefore,
+      after: options.spacingAfter,
+      line: options.line,
+    }),
+    children: [
+      new ExternalHyperlink({
+        link: target,
+        children: multilineRuns(trimmed, { ...options, underline: true }),
+      }),
+    ],
   });
 }
 
@@ -680,7 +715,7 @@ function blockChildren(
         ...leadingSectionSpacer(sectionRule),
         previewSection(`Akses Link ${draft.metadata.perihal}`, [
           paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 22 }),
-          paragraph(draft.metadata.accessLink || "-", { size: 22, underline: true }),
+          hyperlinkParagraph(draft.metadata.accessLink || "-", { size: 22, underline: true }),
         ], sectionRule),
       ];
     case "attachments":
@@ -768,7 +803,7 @@ function pageChildren(
       children.push(
         new Paragraph({
           pageBreakBefore: options.pageBreakBefore,
-          spacing: wordSpacing({ before: 0, after: 80 }),
+          spacing: wordSpacing({ before: 240, after: 80 }),
           children: [
             run("Perihal:  ", { size: 22, font: "Arial" }),
             run(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" }),

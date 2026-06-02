@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
+  Check,
   Copy,
   Download,
   FileJson,
   FileText,
-  Link,
+  MessageSquare,
+  Pencil,
   Plus,
   RefreshCcw,
   Share2,
   Trash2,
   Upload,
-  Users,
   X,
 } from "lucide-react";
 import type {
@@ -23,6 +24,7 @@ import type {
   MemoDraft,
   MemoMetadata,
   MemoType,
+  ReviewComment,
   ScenarioRow,
 } from "@/types/memo";
 import { DateRangePicker } from "@/components/DateRangePicker";
@@ -261,31 +263,78 @@ function IconButton({
   );
 }
 
-function parseRoomInput(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
+function AppleToolbarButton({
+  children,
+  onClick,
+  disabled,
+  tone = "default",
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  tone?: "default" | "primary" | "danger";
+}) {
+  const tones = {
+    default:
+      "border-white/70 bg-white/70 text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_rgba(15,23,42,0.06)] hover:bg-white",
+    primary:
+      "border-[#007aff]/20 bg-[#007aff]/10 text-[#0057b8] shadow-[0_1px_2px_rgba(0,122,255,0.08),0_8px_24px_rgba(0,122,255,0.08)] hover:bg-[#007aff]/15",
+    danger:
+      "border-rose-200/80 bg-rose-50/80 text-rose-700 shadow-[0_1px_2px_rgba(190,18,60,0.06),0_8px_24px_rgba(190,18,60,0.06)] hover:bg-rose-100/90",
+  };
 
-  try {
-    const url = new URL(trimmed);
-    return url.searchParams.get("room") ?? trimmed;
-  } catch {
-    return trimmed;
-  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-full border px-4 text-[13px] font-semibold leading-none backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
 }
 
-function CollaborationModal({
-  open,
-  onClose,
+function SyncPill({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "live" | "saved" | "syncing" | "offline";
+}) {
+  const toneClass = {
+    neutral: "border-white/70 bg-white/55 text-slate-600",
+    live: "border-emerald-200/80 bg-emerald-50/80 text-emerald-800",
+    saved: "border-emerald-200/80 bg-emerald-50/80 text-emerald-800",
+    syncing: "border-amber-200/80 bg-amber-50/85 text-amber-800",
+    offline: "border-rose-200/80 bg-rose-50/85 text-rose-700",
+  }[tone];
+  const dotClass = {
+    neutral: "bg-slate-400/80",
+    live: "bg-emerald-600",
+    saved: "bg-emerald-600",
+    syncing: "bg-amber-400",
+    offline: "bg-rose-600",
+  }[tone];
+
+  return (
+    <span
+      className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-[12px] font-semibold leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl ${toneClass}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className={`h-2.5 w-2.5 rounded-full shadow-[0_0_0_3px_rgba(255,255,255,0.7)] ${dotClass}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function CollaborationPanel({
   collaboration,
 }: {
-  open: boolean;
-  onClose: () => void;
   collaboration: ReturnType<typeof useMemoCollaboration>;
 }) {
-  const [joinValue, setJoinValue] = useState("");
   const [copied, setCopied] = useState(false);
-
-  if (!open) return null;
 
   async function copyLink() {
     await collaboration.copyLink();
@@ -293,115 +342,360 @@ function CollaborationModal({
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  const syncTone =
+    collaboration.status === "saved"
+      ? "saved"
+      : collaboration.status === "offline"
+        ? "offline"
+        : "syncing";
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4">
-      <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 className="text-base font-bold text-[#0f2d4a]">Collab</h2>
-            <p className="text-xs text-slate-500">
-              {collaboration.active ? `Room ${collaboration.roomId}` : "Buat room atau join dari link"}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
-            aria-label="Tutup collaboration"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div className="grid gap-5 px-5 py-5">
-          <div className="grid gap-2">
-            <IconButton
-              onClick={() => {
-                collaboration.start();
-                setCopied(false);
-              }}
-              variant="primary"
-            >
-              <Share2 size={16} />
-              {collaboration.active ? "Buat Room Baru" : "Buat Room"}
-            </IconButton>
-          </div>
-
-          <div className="grid gap-2">
-            <label className="text-xs font-medium text-slate-600" htmlFor="join-room">Join room</label>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <input
-                id="join-room"
-                value={joinValue}
-                placeholder="Kode room atau link"
-                onChange={(event) => setJoinValue(event.target.value)}
-                className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-              />
-              <IconButton
-                onClick={() => {
-                  const roomId = parseRoomInput(joinValue);
-                  if (roomId) collaboration.join(roomId);
-                }}
-              >
-                <Link size={16} />
-                Join
-              </IconButton>
-            </div>
-          </div>
-
-          {collaboration.active ? (
-            <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
-              <input
-                readOnly
-                value={collaboration.shareLink}
-                className="h-10 rounded-md border border-slate-400 bg-white px-3 text-xs text-slate-700 outline-none"
-                aria-label="Share link"
-              />
-              <div className="flex flex-wrap gap-2">
-                <IconButton onClick={copyLink}>
-                  <Copy size={16} />
-                  {copied ? "Copied" : "Copy Link"}
-                </IconButton>
-                <IconButton onClick={() => collaboration.leave()} variant="danger">
-                  <X size={16} />
-                  Leave
-                </IconButton>
-              </div>
-              <p className="text-xs text-slate-500">
-                {collaboration.statusLabel} - {Math.max(1, collaboration.collaborators.length)} user -{" "}
-                {collaboration.lastSyncedAt ?? "-"}
-              </p>
-            </div>
-          ) : null}
-        </div>
-      </section>
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-[22px] border border-white/70 bg-white/45 p-1.5 shadow-[0_12px_36px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-2xl"
+      aria-label="Kolaborasi realtime"
+      data-review-ignore
+    >
+      <AppleToolbarButton
+        onClick={() => {
+          collaboration.start();
+          setCopied(false);
+        }}
+        tone="primary"
+      >
+        <Share2 size={16} />
+        {collaboration.active ? "Restart Collab" : "Start Collab"}
+      </AppleToolbarButton>
+      {collaboration.active ? (
+        <AppleToolbarButton onClick={copyLink}>
+          <Copy size={16} />
+          {copied ? "Copied" : "Copy Share Link"}
+        </AppleToolbarButton>
+      ) : null}
+      <SyncPill label={collaboration.modeLabel} tone={collaboration.active ? "live" : "neutral"} />
+      <SyncPill label={collaboration.syncLabel} tone={syncTone} />
+      <SyncPill label={`Users: ${Math.max(1, collaboration.collaborators.length)}`} tone="neutral" />
+      <SyncPill label={`Last synced: ${collaboration.lastSyncedAt ?? "-"}`} tone="neutral" />
     </div>
   );
 }
 
-function CollaborationStatusBar({
-  collaboration,
+type ReviewTarget = Pick<ReviewComment, "type" | "targetId" | "targetLabel" | "path">;
+
+type CommentDialogState = {
+  mode: "add" | "edit";
+  target: ReviewTarget;
+  commentId?: string;
+};
+
+function cleanTargetLabel(value: string) {
+  return value
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function elementPathFrom(root: HTMLElement, element: HTMLElement) {
+  const path: number[] = [];
+  let current: HTMLElement | null = element;
+
+  while (current && current !== root) {
+    const parentElement: HTMLElement | null = current.parentElement;
+    if (!parentElement) return [];
+    path.unshift(Array.from(parentElement.children).indexOf(current));
+    current = parentElement;
+  }
+
+  return current === root ? path : [];
+}
+
+function elementFromPath(root: HTMLElement, path: number[]) {
+  return path.reduce<Element | null>((node, index) => node?.children.item(index) ?? null, root);
+}
+
+function targetLabelFromElement(element: HTMLElement) {
+  const fieldLabel = element.closest("label");
+  const labelText = fieldLabel?.querySelector("span")?.textContent ?? fieldLabel?.textContent;
+  if (labelText) return cleanTargetLabel(labelText);
+
+  const sectionTitle = element.closest("section")?.querySelector("h2, h3")?.textContent;
+  if (sectionTitle) return cleanTargetLabel(sectionTitle);
+
+  return element.dataset.fieldId ?? "Area terkait";
+}
+
+function reviewTargetFromElement(element: HTMLElement, root: HTMLElement): ReviewTarget | null {
+  const target = element.closest<HTMLElement>("[data-field-id]");
+  if (!target) return null;
+
+  return {
+    type: "field",
+    targetId: target.dataset.fieldId ?? "",
+    targetLabel: targetLabelFromElement(target),
+    path: elementPathFrom(root, target),
+  };
+}
+
+function findReviewTargetElement(comment: ReviewComment, root: HTMLElement) {
+  if (comment.targetId) {
+    const byFieldId = root.querySelector<HTMLElement>(`[data-field-id="${CSS.escape(comment.targetId)}"]`);
+    if (byFieldId) return byFieldId;
+  }
+
+  if (comment.path.length) {
+    const byPath = elementFromPath(root, comment.path);
+    if (byPath instanceof HTMLElement) return byPath;
+  }
+
+  return null;
+}
+
+function focusReviewTarget(comment: ReviewComment, root: HTMLElement | null) {
+  if (!root) return;
+  document
+    .querySelectorAll(".review-target-highlight")
+    .forEach((element) => element.classList.remove("review-target-highlight"));
+
+  const target = findReviewTargetElement(comment, root);
+  if (!target) return;
+
+  target.classList.add("review-target-highlight");
+  target.scrollIntoView({ block: "center", behavior: "smooth", inline: "nearest" });
+  const focusTarget = target.matches("input, textarea, select, .ProseMirror")
+    ? target
+    : target.querySelector<HTMLElement>("input, textarea, select, .ProseMirror");
+  window.setTimeout(() => focusTarget?.focus({ preventScroll: true }), 250);
+  window.setTimeout(() => target.classList.remove("review-target-highlight"), 4500);
+}
+
+function formatCommentTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function ReviewCommentsPopup({
+  open,
+  comments,
+  commentMode,
+  onToggleOpen,
+  onToggleCommentMode,
+  onFocus,
+  onEdit,
+  onToggleResolve,
+  onDelete,
 }: {
-  collaboration: ReturnType<typeof useMemoCollaboration>;
+  open: boolean;
+  comments: ReviewComment[];
+  commentMode: boolean;
+  onToggleOpen: () => void;
+  onToggleCommentMode: () => void;
+  onFocus: (comment: ReviewComment) => void;
+  onEdit: (comment: ReviewComment) => void;
+  onToggleResolve: (comment: ReviewComment) => void;
+  onDelete: (comment: ReviewComment) => void;
 }) {
-  const statusColor =
-    collaboration.status === "connected"
-      ? "bg-emerald-500"
-      : collaboration.status === "reconnecting"
-        ? "bg-amber-500"
-        : "bg-slate-400";
+  const unresolvedCount = comments.filter((comment) => !comment.resolved).length;
+  const sortedComments = [...comments].sort((a, b) => {
+    if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+  });
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
-        <span className={`h-2 w-2 rounded-full ${statusColor}`} />
-        {collaboration.statusLabel}
-      </span>
-      {collaboration.active ? (
-        <span className="inline-flex h-8 items-center gap-2 rounded-full border border-[#c6d3e1] bg-[#edf4fb] px-3 text-xs font-medium text-[#0f2d4a]">
-          <Users size={14} />
-          {Math.max(1, collaboration.collaborators.length)} user
-        </span>
+    <div data-review-ignore>
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        className="fixed bottom-[88px] right-4 z-40 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#c6d3e1] bg-white/95 px-4 text-sm font-bold text-[#0f2d4a] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur transition hover:bg-[#edf4fb] focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+        aria-expanded={open}
+        aria-controls="review-comments-popup"
+      >
+        <MessageSquare size={16} />
+        Komentar Review
+        {unresolvedCount ? (
+          <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs text-white">{unresolvedCount}</span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <section
+          id="review-comments-popup"
+          className="fixed bottom-[146px] right-4 z-50 grid max-h-[70dvh] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
+          aria-labelledby="review-comments-title"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div>
+              <h2 id="review-comments-title" className="text-sm font-bold text-[#0f2d4a]">
+                Komentar Review
+              </h2>
+              <p className="text-xs font-semibold text-slate-500">
+                {comments.length} komentar
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onToggleCommentMode}
+                aria-pressed={commentMode}
+                className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-slate-900/10 ${
+                  commentMode
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <MessageSquare size={15} />
+                Add Comment
+              </button>
+              <button
+                type="button"
+                onClick={onToggleOpen}
+                className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+                aria-label="Tutup komentar review"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-auto p-3">
+            {sortedComments.length ? (
+              <div className="grid gap-2">
+                {sortedComments.map((comment) => (
+                  <article
+                    key={comment.id}
+                    className={`rounded-md border p-3 ${
+                      comment.resolved
+                        ? "border-slate-200 bg-slate-50 text-slate-500"
+                        : "border-[#c6d3e1] bg-white text-slate-900"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wide">
+                      <span className={comment.resolved ? "text-slate-500" : "text-emerald-700"}>
+                        {comment.resolved ? "Resolved" : "Unresolved"}
+                      </span>
+                      <span className="text-slate-400">/</span>
+                      <span>{comment.author || "Reviewer"}</span>
+                      <span className="text-slate-400">/</span>
+                      <span>{formatCommentTime(comment.updatedAt || comment.createdAt)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onFocus(comment)}
+                      className="mt-2 text-left text-sm font-bold text-[#185abd] underline-offset-2 hover:underline"
+                    >
+                      Lihat field: {comment.targetLabel}
+                    </button>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-5">{comment.text}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onToggleResolve(comment)}
+                        className="grid h-8 w-8 place-items-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        aria-label={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
+                        title={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
+                      >
+                        {comment.resolved ? <RefreshCcw size={14} /> : <Check size={15} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onEdit(comment)}
+                        className="grid h-8 w-8 place-items-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        aria-label={comment.resolved ? "Follow up komentar" : "Edit komentar"}
+                        title={comment.resolved ? "Follow up komentar" : "Edit komentar"}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(comment)}
+                        className="grid h-8 w-8 place-items-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                        aria-label="Hapus komentar"
+                        title="Hapus komentar"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-slate-300 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                Belum ada komentar review.
+              </div>
+            )}
+          </div>
+        </section>
       ) : null}
+    </div>
+  );
+}
+
+function ReviewCommentDialog({
+  state,
+  author,
+  text,
+  onAuthorChange,
+  onTextChange,
+  onCancel,
+  onSave,
+}: {
+  state: CommentDialogState | null;
+  author: string;
+  text: string;
+  onAuthorChange: (value: string) => void;
+  onTextChange: (value: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  if (!state) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/40 px-4" data-review-ignore>
+      <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-[#0f2d4a]">
+              {state.mode === "edit" ? "Edit komentar" : "Tambah komentar"}
+            </h2>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{state.target.targetLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            aria-label="Tutup komentar"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3">
+          <FieldLabel label="Nama Reviewer" required>
+            <input
+              value={author}
+              onChange={(event) => onAuthorChange(event.target.value)}
+              className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              autoFocus
+            />
+          </FieldLabel>
+          <FieldLabel label="Komentar" required>
+            <textarea
+              value={text}
+              rows={4}
+              onChange={(event) => onTextChange(event.target.value)}
+              className="min-h-28 resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            />
+          </FieldLabel>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <IconButton onClick={onCancel}>Batal</IconButton>
+          <IconButton onClick={onSave} variant="primary">Simpan</IconButton>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1147,10 +1441,15 @@ function AppendixPanel({
 }
 
 export function MemoBuilderApp() {
+  const appRootRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
-  const [collaborationOpen, setCollaborationOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [commentMode, setCommentMode] = useState(false);
+  const [commentDialog, setCommentDialog] = useState<CommentDialogState | null>(null);
+  const [commentAuthor, setCommentAuthor] = useState("");
+  const [commentText, setCommentText] = useState("");
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
@@ -1173,6 +1472,11 @@ export function MemoBuilderApp() {
     const timer = window.setInterval(saveToLocal, 3000);
     return () => window.clearInterval(timer);
   }, [hasLoaded, saveToLocal]);
+
+  useEffect(() => {
+    document.body.classList.toggle("is-review-commenting", commentMode);
+    return () => document.body.classList.remove("is-review-commenting");
+  }, [commentMode]);
 
   function saveDraftData() {
     downloadBlob(
@@ -1224,6 +1528,110 @@ export function MemoBuilderApp() {
     }
   }
 
+  function openCommentDialog(target: ReviewTarget) {
+    setReviewOpen(true);
+    setCommentAuthor(window.localStorage.getItem("memo-review-author") ?? "");
+    setCommentText("");
+    setCommentDialog({ mode: "add", target });
+  }
+
+  function openEditComment(comment: ReviewComment) {
+    setReviewOpen(true);
+    setCommentMode(false);
+    setCommentAuthor(comment.author);
+    setCommentText(comment.text);
+    setCommentDialog({
+      mode: "edit",
+      commentId: comment.id,
+      target: {
+        type: comment.type,
+        targetId: comment.targetId,
+        targetLabel: comment.targetLabel,
+        path: comment.path,
+      },
+    });
+  }
+
+  function handleReviewTargetClick(event: React.MouseEvent<HTMLElement>) {
+    if (!commentMode || !appRootRef.current) return;
+    const element = event.target instanceof HTMLElement ? event.target : null;
+    if (!element || element.closest("[data-review-ignore]")) return;
+
+    const target = reviewTargetFromElement(element, appRootRef.current);
+    if (!target) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    openCommentDialog(target);
+  }
+
+  function updateReviewComments(updater: (comments: ReviewComment[]) => ReviewComment[]) {
+    updateDraft((current) => ({
+      ...current,
+      reviewComments: updater(current.reviewComments ?? []),
+    }));
+  }
+
+  function saveReviewComment() {
+    if (!commentDialog) return;
+
+    const author = commentAuthor.trim();
+    const text = commentText.trim();
+    if (!author || !text) return;
+
+    window.localStorage.setItem("memo-review-author", author);
+    const now = new Date().toISOString();
+
+    updateReviewComments((comments) => {
+      if (commentDialog.mode === "edit" && commentDialog.commentId) {
+        return comments.map((comment) =>
+          comment.id === commentDialog.commentId
+            ? {
+                ...comment,
+                ...commentDialog.target,
+                author,
+                text,
+                resolved: false,
+                updatedAt: now,
+              }
+            : comment,
+        );
+      }
+
+      return [
+        ...comments,
+        {
+          id: createId("comment"),
+          ...commentDialog.target,
+          author,
+          text,
+          resolved: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+    });
+
+    setCommentDialog(null);
+    setCommentMode(false);
+    setReviewOpen(true);
+  }
+
+  function toggleResolveComment(comment: ReviewComment) {
+    const now = new Date().toISOString();
+    updateReviewComments((comments) =>
+      comments.map((item) =>
+        item.id === comment.id
+          ? { ...item, resolved: !item.resolved, updatedAt: now }
+          : item,
+      ),
+    );
+  }
+
+  function deleteReviewComment(comment: ReviewComment) {
+    updateReviewComments((comments) => comments.filter((item) => item.id !== comment.id));
+  }
+
   if (!hasLoaded) {
     return (
       <main className="grid min-h-dvh place-items-center bg-slate-100">
@@ -1235,7 +1643,11 @@ export function MemoBuilderApp() {
   }
 
   return (
-    <main className="min-h-dvh bg-slate-100 text-slate-950">
+    <main
+      ref={appRootRef}
+      onClickCapture={handleReviewTargetClick}
+      className="min-h-dvh bg-slate-100 text-slate-950"
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -1247,40 +1659,28 @@ export function MemoBuilderApp() {
         <div className="flex w-full flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between xl:px-6">
           <div>
             <h1 className="text-lg font-bold tracking-tight text-[#0f2d4a]">Memo Generator</h1>
-            <div className="mt-2">
-              <CollaborationStatusBar collaboration={collaboration} />
-            </div>
             <p className="hidden">
               {draft.metadata.perihal} - {pages.length} preview pages -{" "}
               {" "}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <IconButton onClick={() => setCollaborationOpen(true)}>
-              <Share2 size={16} />
-              Collaboration
-            </IconButton>
-            <IconButton onClick={saveDraftData}>
+          <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
+            <CollaborationPanel collaboration={collaboration} />
+            <AppleToolbarButton onClick={saveDraftData}>
               <FileJson size={16} />
               Save Draft Data
-            </IconButton>
-            <IconButton onClick={() => fileInputRef.current?.click()}>
+            </AppleToolbarButton>
+            <AppleToolbarButton onClick={() => fileInputRef.current?.click()}>
               <Upload size={16} />
               Load Draft Data
-            </IconButton>
-            <IconButton onClick={handleResetDraft}>
+            </AppleToolbarButton>
+            <AppleToolbarButton onClick={handleResetDraft} tone="danger">
               <RefreshCcw size={16} />
               Reset Draft
-            </IconButton>
+            </AppleToolbarButton>
           </div>
         </div>
       </header>
-
-      <CollaborationModal
-        open={collaborationOpen}
-        onClose={() => setCollaborationOpen(false)}
-        collaboration={collaboration}
-      />
 
       <div className="grid w-full gap-3 px-3 py-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:px-4">
         <div className="grid min-w-0 content-start gap-3">
@@ -1500,9 +1900,33 @@ export function MemoBuilderApp() {
           </div>
         </aside>
       </div>
+      <ReviewCommentsPopup
+        open={reviewOpen}
+        comments={draft.reviewComments ?? []}
+        commentMode={commentMode}
+        onToggleOpen={() => setReviewOpen((current) => !current)}
+        onToggleCommentMode={() => {
+          setReviewOpen(true);
+          setCommentMode((current) => !current);
+        }}
+        onFocus={(comment) => focusReviewTarget(comment, appRootRef.current)}
+        onEdit={openEditComment}
+        onToggleResolve={toggleResolveComment}
+        onDelete={deleteReviewComment}
+      />
+      <ReviewCommentDialog
+        state={commentDialog}
+        author={commentAuthor}
+        text={commentText}
+        onAuthorChange={setCommentAuthor}
+        onTextChange={setCommentText}
+        onCancel={() => setCommentDialog(null)}
+        onSave={saveReviewComment}
+      />
       <div
         className="fixed bottom-4 right-4 z-40 rounded-lg border border-[#c6d3e1] bg-white/95 p-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur"
         data-floating-generate
+        data-review-ignore
       >
         <div className="mb-1 flex items-center justify-between gap-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-[#0f2d4a]">
           <span>Docx</span>

@@ -91,6 +91,23 @@ textarea {
   box-shadow: 0 0 0 6px rgb(220 38 38 / 0.12);
 }
 
+.review-target-highlight {
+  border-radius: 8px;
+  outline: 3px solid #185abd;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgb(24 90 189 / 0.14);
+}
+
+body.is-review-commenting [data-field-id] {
+  cursor: copy;
+}
+
+body.is-review-commenting [data-field-id]:hover {
+  border-radius: 8px;
+  outline: 2px solid #185abd;
+  outline-offset: 3px;
+}
+
 .preview-rich-text .rt-underline {
   text-decoration: underline;
 }

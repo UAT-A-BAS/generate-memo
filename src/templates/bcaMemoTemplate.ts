@@ -5,6 +5,7 @@ import type {
   MemoDraft,
   MemoMetadata,
   Recipient,
+  ReviewComment,
   ScenarioRow,
   SignerRow,
 } from "@/types/memo";
@@ -115,8 +116,42 @@ export function createInitialMemoDraft(): MemoDraft {
     initials: "",
     initialsBureau: "A",
     appendixScenarios: [createScenarioRow()],
+    reviewComments: [],
     updatedAt: new Date().toISOString(),
   };
+}
+
+function normalizeReviewComments(input: unknown): ReviewComment[] {
+  if (!Array.isArray(input)) return [];
+
+  const usedIds = new Set<string>();
+  return input
+    .filter((item): item is Partial<ReviewComment> => Boolean(item && typeof item === "object"))
+    .map((item) => {
+      let id = typeof item.id === "string" && item.id.trim() ? item.id : createId("comment");
+      while (usedIds.has(id)) id = createId("comment");
+      usedIds.add(id);
+
+      const createdAt = typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString();
+      const updatedAt = typeof item.updatedAt === "string" ? item.updatedAt : createdAt;
+
+      return {
+        id,
+        type: item.type === "preview" ? "preview" : "field",
+        targetId: typeof item.targetId === "string" ? item.targetId : "",
+        targetLabel: typeof item.targetLabel === "string" && item.targetLabel.trim()
+          ? item.targetLabel
+          : "Area terkait",
+        path: Array.isArray(item.path)
+          ? item.path.filter((index): index is number => Number.isInteger(index))
+          : [],
+        text: typeof item.text === "string" ? item.text : "",
+        author: typeof item.author === "string" ? item.author : "",
+        resolved: Boolean(item.resolved),
+        createdAt,
+        updatedAt,
+      };
+    });
 }
 
 export type MemoDraftInput = Partial<Omit<MemoDraft, "metadata">> & {
@@ -192,6 +227,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     ccRecipients: input.ccRecipients ?? base.ccRecipients,
     initialsBureau: input.initialsBureau ?? base.initialsBureau,
     appendixScenarios,
+    reviewComments: normalizeReviewComments(input.reviewComments),
     updatedAt: new Date().toISOString(),
   };
 }

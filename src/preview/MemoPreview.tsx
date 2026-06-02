@@ -246,10 +246,22 @@ function renderBlock(
         </PreviewSection>
       );
     case "access-link":
+      const accessLink = draft.metadata.accessLink.trim();
       return (
         <PreviewSection title={`Akses Link ${draft.metadata.perihal}`} rule={sectionRule}>
           <p>{draft.metadata.perihal} dapat diakses melalui link berikut:</p>
-          <p className="break-all underline">{draft.metadata.accessLink || "-"}</p>
+          {accessLink ? (
+            <a
+              href={/^[a-z][a-z\d+.-]*:/i.test(accessLink) ? accessLink : `https://${accessLink}`}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all underline"
+            >
+              {accessLink}
+            </a>
+          ) : (
+            <p>-</p>
+          )}
         </PreviewSection>
       );
     case "attachments":

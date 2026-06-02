@@ -66,8 +66,9 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
                 </select>
               </label>
               <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
-                Nama opsional
+                <span>Nama opsional</span>
                 <input
+                  data-field-id={`recipient-name-${recipient.id}`}
                   value={recipient.name ?? ""}
                   onChange={(event) => updateRecipient(recipient.id, { name: event.target.value })}
                   placeholder="Nama penerima"

@@ -61,13 +61,20 @@ async function importDraft(page: Page, payload: unknown) {
 }
 
 async function documentXmlFrom(download: Download) {
+  const parts = await docxPartsFrom(download);
+  return parts.xml;
+}
+
+async function docxPartsFrom(download: Download) {
   const path = await download.path();
   expect(path).toBeTruthy();
 
   const zip = await JSZip.loadAsync(await readFile(path as string));
   const xml = await zip.file("word/document.xml")?.async("string");
+  const rels = await zip.file("word/_rels/document.xml.rels")?.async("string");
   expect(xml).toBeTruthy();
-  return xml as string;
+  expect(rels).toBeTruthy();
+  return { xml: xml as string, rels: rels as string };
 }
 
 test("updates generated perihal from metadata", async ({ page }) => {
@@ -75,6 +82,17 @@ test("updates generated perihal from metadata", async ({ page }) => {
   await page.getByLabel("Nama Project").fill("Project Smoke Test");
 
   await expect(page.locator("aside").getByText("Pilot Implementasi Project Smoke Test").first()).toBeVisible();
+});
+
+test("preview renders URL akses as clickable link", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const link = page.locator("aside a", { hasText: "https://bdswebg2-pilot" }).first();
+  await expect(link).toHaveAttribute(
+    "href",
+    "https://bdswebg2-pilot.intra.bca.co.id:63144/#/auth/login",
+  );
 });
 
 test("exports DOCX from current draft", async ({ page }) => {
@@ -87,17 +105,24 @@ test("exports DOCX from current draft", async ({ page }) => {
 
   expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4.3.0).docx");
 
-  const xml = await documentXmlFrom(download);
+  const { xml, rels } = await docxPartsFrom(download);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
-  expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC – pic@example\.com<\/w:t>/);
+  expect(xml).toMatch(/<w:t[^>]*>- {6}Nama PIC \u2013 pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>- {6}Kepala KCU Pluit<\/w:t>/);
   expect(xml).toContain('<w:type w:val="continuous"/>');
   expect(xml).not.toContain('w:type="page"');
+  expect(xml).toContain("<w:hyperlink");
+  expect(rels).toContain('Target="https://bdswebg2-pilot.intra.bca.co.id:63144/#/auth/login"');
 
   const urlIndex = xml.indexOf("https://bdswebg2-pilot");
   expect(urlIndex).toBeGreaterThan(-1);
   const urlContext = xml.slice(Math.max(0, urlIndex - 800), urlIndex + 300);
   expect(urlContext).toContain('<w:u w:val="single"/>');
+
+  const continuationIndex = xml.indexOf("Perihal:  </w:t>");
+  expect(continuationIndex).toBeGreaterThan(-1);
+  const continuationContext = xml.slice(Math.max(0, continuationIndex - 500), continuationIndex + 100);
+  expect(continuationContext).toContain('w:before="240"');
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {
@@ -187,24 +212,34 @@ test("double click does not enable bold typing", async ({ page }) => {
   expect(html).not.toContain("<strong>");
 });
 
-test("collaboration syncs between two browser pages", async ({ browser }) => {
-  const context = await browser.newContext();
-  const first = await context.newPage();
-  const second = await context.newPage();
+test("collaboration panel starts a shareable worker room", async ({ page }) => {
+  await page.goto("http://localhost:3002");
 
-  await first.goto("http://localhost:3002");
-  await first.getByRole("button", { name: "Collaboration" }).click();
-  await first.getByRole("button", { name: "Buat Room" }).click();
-  const roomUrl = first.url();
+  await expect(page.getByRole("button", { name: "Start Collab" })).toBeVisible();
+  await expect(page.getByText("Personal Draft")).toBeVisible();
+  await expect(page.getByText("Offline")).toBeVisible();
+  await expect(page.getByText("Users: 1")).toBeVisible();
+  await expect(page.getByText("Last synced: -")).toBeVisible();
 
-  await second.goto(roomUrl);
-  await second.getByLabel("Nama Project").fill("Collab Smoke Test");
+  await page.getByRole("button", { name: "Start Collab" }).click();
+  await expect(page.getByRole("button", { name: "Restart Collab" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy Share Link" })).toBeVisible();
+  await expect(page).toHaveURL(/room=/);
+});
 
-  await expect(first.locator("aside").getByText("Pilot Implementasi Collab Smoke Test").first()).toBeVisible({
-    timeout: 7000,
-  });
+test("review comments can be added to a field and focused", async ({ page }) => {
+  await page.goto("http://localhost:3002");
 
-  await context.close();
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  await page.getByRole("button", { name: "Add Comment" }).click();
+  await page.getByLabel("Nama Project").click();
+  await page.getByLabel("Nama Reviewer").fill("Reviewer A");
+  await page.getByRole("textbox", { name: "Komentar *" }).fill("Perbaiki nama project");
+  await page.getByRole("button", { name: "Simpan" }).click();
+
+  await expect(page.getByRole("button", { name: "Lihat field: Nama Project" })).toBeVisible();
+  await page.getByRole("button", { name: "Lihat field: Nama Project" }).click();
+  await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/review-target-highlight/);
 });
 
 test("appendix scenario uses section header numbering", async ({ page }) => {

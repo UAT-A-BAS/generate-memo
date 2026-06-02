@@ -54,6 +54,19 @@ export type SignerRow = {
   title: string;
 };
 
+export type ReviewComment = {
+  id: string;
+  type: "field" | "preview";
+  targetId: string;
+  targetLabel: string;
+  path: number[];
+  text: string;
+  author: string;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type MemoMetadata = {
   noMemo: string;
   releaseDate: string;
@@ -90,6 +103,7 @@ export type MemoDraft = {
   initials: string;
   initialsBureau: Bureau;
   appendixScenarios: ScenarioRow[];
+  reviewComments: ReviewComment[];
   updatedAt: string;
 };
 
