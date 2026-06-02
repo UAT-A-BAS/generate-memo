@@ -39,19 +39,23 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
         renderItem={(recipient) => (
           <div className="grid min-w-0 gap-3">
             <div className="grid min-w-0 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(96px,0.42fr)] xl:grid-cols-[minmax(0,1.1fr)_minmax(96px,0.42fr)_minmax(0,1fr)_40px]">
-              <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+              <label
+                className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
+                data-field-id={`recipient-${recipient.id}`}
+              >
                 <span>Jabatan / Unit {required ? <RequiredMark /> : null}</span>
                 <input
-                  data-field-id={`recipient-${recipient.id}`}
                   value={recipient.position}
                   onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
                   className={fieldClass}
                 />
               </label>
-              <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+              <label
+                className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
+                data-field-id={`recipient-gender-${recipient.id}`}
+              >
                 <span>Sapaan {required ? <RequiredMark /> : null}</span>
                 <select
-                  data-field-id={`recipient-gender-${recipient.id}`}
                   value={recipient.gender}
                   onChange={(event) =>
                     updateRecipient(recipient.id, {
@@ -65,10 +69,12 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
                   ))}
                 </select>
               </label>
-              <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+              <label
+                className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
+                data-field-id={`recipient-name-${recipient.id}`}
+              >
                 <span>Nama opsional</span>
                 <input
-                  data-field-id={`recipient-name-${recipient.id}`}
                   value={recipient.name ?? ""}
                   onChange={(event) => updateRecipient(recipient.id, { name: event.target.value })}
                   placeholder="Nama penerima"

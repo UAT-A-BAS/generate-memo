@@ -42,6 +42,7 @@ const MAP_NAME = "form";
 const DATA_KEY = "data";
 const UPDATED_AT_KEY = "updatedAt";
 const UPDATED_BY_KEY = "updatedBy";
+const SNAPSHOT_PREFIX = "snapshot:";
 
 function jsonEqual(a: unknown, b: unknown) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -117,10 +118,38 @@ function safeJsonParse(value: string) {
   }
 }
 
-function sharedDraftFromMap(map: Y.Map<unknown>) {
-  const data = map.get(DATA_KEY);
-  if (!data || typeof data !== "object") return null;
-  return normalizeMemoDraft(data as Partial<MemoDraft>);
+function snapshotKey(updatedAt: number, userId: string) {
+  return `${SNAPSHOT_PREFIX}${updatedAt}:${encodeURIComponent(userId)}`;
+}
+
+function draftSyncKey(draft: MemoDraft) {
+  const syncDraft = {
+    ...normalizeMemoDraft(draft),
+    updatedAt: "",
+  };
+  return JSON.stringify(syncDraft);
+}
+
+function sharedDraftStateFromMap(map: Y.Map<unknown>) {
+  let latestData = map.get(DATA_KEY);
+  let latestUpdatedAt = Number(map.get(UPDATED_AT_KEY) || 0);
+
+  map.forEach((value, key) => {
+    if (typeof key !== "string" || !key.startsWith(SNAPSHOT_PREFIX)) return;
+    if (!value || typeof value !== "object") return;
+
+    const updatedAt = Number(key.slice(SNAPSHOT_PREFIX.length).split(":")[0] || "0");
+    if (updatedAt >= latestUpdatedAt) {
+      latestUpdatedAt = updatedAt;
+      latestData = value;
+    }
+  });
+
+  if (!latestData || typeof latestData !== "object") return null;
+  return {
+    draft: normalizeMemoDraft(latestData as Partial<MemoDraft>),
+    updatedAt: latestUpdatedAt || Date.now(),
+  };
 }
 
 export function collaborationLink(roomId: string) {
@@ -147,12 +176,20 @@ export function useMemoCollaboration(
   const sharedUpdateTimerRef = useRef<number | null>(null);
   const applyingRemoteRef = useRef(false);
   const localBaselineRef = useRef("");
+  const localUpdatedAtRef = useRef(0);
+  const pendingStateUpdateRef = useRef(false);
   const activeRoomRef = useRef("");
   const userRef = useRef<PresenceUser | null>(null);
   const draftRef = useRef(draft);
 
   useEffect(() => {
     draftRef.current = draft;
+    if (!applyingRemoteRef.current && activeRoomRef.current) {
+      const nextSnapshot = draftSyncKey(draft);
+      if (nextSnapshot !== localBaselineRef.current) {
+        localUpdatedAtRef.current = Date.now();
+      }
+    }
   }, [draft]);
 
   const updateStatus = useCallback((status: ConnectionStatus, lastSyncedAt?: string) => {
@@ -182,6 +219,8 @@ export function useMemoCollaboration(
     mapRef.current = null;
     activeRoomRef.current = "";
     localBaselineRef.current = "";
+    localUpdatedAtRef.current = 0;
+    pendingStateUpdateRef.current = false;
     if (clearUrl) setRoomUrl("");
     setState({
       active: false,
@@ -209,7 +248,9 @@ export function useMemoCollaboration(
     mapRef.current = map;
     userRef.current = user;
     activeRoomRef.current = cleanRoom;
-    localBaselineRef.current = JSON.stringify(seedDraft ?? draftRef.current);
+    localBaselineRef.current = draftSyncKey(seedDraft ?? draftRef.current);
+    localUpdatedAtRef.current = seedDraft ? Date.now() : 0;
+    pendingStateUpdateRef.current = false;
 
     const sendPresence = () => {
       const socket = socketRef.current;
@@ -220,45 +261,62 @@ export function useMemoCollaboration(
     const sendYUpdate = (update: Uint8Array) => {
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) {
+        pendingStateUpdateRef.current = true;
         updateStatus("offline");
         return;
       }
       socket.send(update);
+      pendingStateUpdateRef.current = false;
       updateStatus("syncing");
     };
 
-    const applySharedDraft = (nextDraft: MemoDraft) => {
+    const applySharedDraft = (nextDraft: MemoDraft, updatedAt = Date.now()) => {
       if (jsonEqual(nextDraft, draftRef.current)) {
-        localBaselineRef.current = JSON.stringify(nextDraft);
+        localBaselineRef.current = draftSyncKey(nextDraft);
         return;
       }
       applyingRemoteRef.current = true;
-      localBaselineRef.current = JSON.stringify(nextDraft);
+      localBaselineRef.current = draftSyncKey(nextDraft);
+      localUpdatedAtRef.current = updatedAt;
       replaceDraft(nextDraft, "loaded");
       applyingRemoteRef.current = false;
-      const updatedAt = Number(map.get(UPDATED_AT_KEY) || Date.now());
       setState((current) => ({
         ...current,
         lastSyncedAt: formatSyncTime(new Date(updatedAt)),
       }));
     };
 
-    const commitSharedDraft = (nextDraft = draftRef.current) => {
+    const commitSharedDraft = (nextDraft = draftRef.current, updatedAt = Date.now()) => {
       if (!mapRef.current || !docRef.current || applyingRemoteRef.current) return;
       const normalized = normalizeMemoDraft(nextDraft);
-      const updatedAt = Date.now();
-      localBaselineRef.current = JSON.stringify(normalized);
+      localBaselineRef.current = draftSyncKey(normalized);
+      localUpdatedAtRef.current = updatedAt;
+      pendingStateUpdateRef.current = true;
       docRef.current.transact(() => {
         mapRef.current?.set(DATA_KEY, normalized);
         mapRef.current?.set(UPDATED_AT_KEY, updatedAt);
         mapRef.current?.set(UPDATED_BY_KEY, user.id);
+        mapRef.current?.set(snapshotKey(updatedAt, user.id), normalized);
       }, LOCAL_ORIGIN);
+
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        sendYUpdate(Y.encodeStateAsUpdate(docRef.current));
+      }
     };
 
     const applySharedDraftIfPresent = () => {
-      const remoteDraft = sharedDraftFromMap(map);
-      if (!remoteDraft) return false;
-      applySharedDraft(remoteDraft);
+      const remoteState = sharedDraftStateFromMap(map);
+      if (!remoteState) return false;
+      const remoteUpdatedAt = remoteState.updatedAt;
+      const localIsDirty = draftSyncKey(draftRef.current) !== localBaselineRef.current;
+      const socketReady = socketRef.current?.readyState === WebSocket.OPEN;
+
+      if ((localIsDirty || pendingStateUpdateRef.current) && socketReady && localUpdatedAtRef.current >= remoteUpdatedAt) {
+        commitSharedDraft(draftRef.current, localUpdatedAtRef.current || Date.now());
+        return true;
+      }
+
+      applySharedDraft(remoteState.draft, remoteUpdatedAt || Date.now());
       return true;
     };
 
@@ -291,6 +349,9 @@ export function useMemoCollaboration(
         if (socket !== socketRef.current) return;
         updateStatus("connected");
         sendPresence();
+        if (firstServerSync && pendingStateUpdateRef.current) {
+          sendYUpdate(Y.encodeStateAsUpdate(doc));
+        }
       });
 
       socket.addEventListener("message", async (event) => {
@@ -318,7 +379,7 @@ export function useMemoCollaboration(
 
         if (!firstServerSync) {
           firstServerSync = true;
-          const hasRemoteDraft = Boolean(sharedDraftFromMap(map));
+          const hasRemoteDraft = Boolean(sharedDraftStateFromMap(map));
           if (pendingSeed && (!hasRemoteDraft || pendingSeedMustWin)) {
             commitSharedDraft(pendingSeed);
           } else if (!applySharedDraftIfPresent() && pendingSeed) {
@@ -366,22 +427,31 @@ export function useMemoCollaboration(
 
   useEffect(() => {
     if (!state.active || applyingRemoteRef.current || !mapRef.current || !docRef.current) return;
-    const nextSnapshot = JSON.stringify(draft);
+    const nextSnapshot = draftSyncKey(draft);
     if (nextSnapshot === localBaselineRef.current) return;
 
     if (sharedUpdateTimerRef.current) window.clearTimeout(sharedUpdateTimerRef.current);
     sharedUpdateTimerRef.current = window.setTimeout(() => {
       if (!mapRef.current || !docRef.current || applyingRemoteRef.current) return;
       const normalized = normalizeMemoDraft(draftRef.current);
-      const updatedAt = Date.now();
-      localBaselineRef.current = JSON.stringify(normalized);
+      const updatedAt = localUpdatedAtRef.current || Date.now();
+      localBaselineRef.current = draftSyncKey(normalized);
+      localUpdatedAtRef.current = updatedAt;
+      pendingStateUpdateRef.current = true;
       docRef.current.transact(() => {
         mapRef.current?.set(DATA_KEY, normalized);
         mapRef.current?.set(UPDATED_AT_KEY, updatedAt);
         mapRef.current?.set(UPDATED_BY_KEY, userRef.current?.id ?? "");
+        mapRef.current?.set(snapshotKey(updatedAt, userRef.current?.id ?? "unknown"), normalized);
       }, LOCAL_ORIGIN);
+
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(Y.encodeStateAsUpdate(docRef.current));
+        pendingStateUpdateRef.current = false;
+        updateStatus("syncing");
+      }
     }, 180);
-  }, [draft, state.active]);
+  }, [draft, state.active, updateStatus]);
 
   useEffect(() => {
     function updateOnlineStatus() {

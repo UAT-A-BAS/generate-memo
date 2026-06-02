@@ -230,7 +230,7 @@ test("collaboration panel starts a shareable worker room", async ({ page }) => {
 
   await page.getByRole("button", { name: "Start Collab" }).click();
   await expect(page.getByRole("button", { name: "Restart Collab" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Copy Share Link" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy Link" })).toBeVisible();
   await expect(page).toHaveURL(/room=/);
 });
 
@@ -267,6 +267,10 @@ test("review comments can be added to a field and focused", async ({ page }) => 
   await expect(page.getByRole("button", { name: "Lihat field: Nama Project" })).toBeVisible();
   await page.getByRole("button", { name: "Lihat field: Nama Project" }).click();
   await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/review-target-highlight/);
+
+  await page.getByRole("button", { name: "Add Comment" }).click();
+  await page.getByLabel("Nama Project").click();
+  await expect(page.getByLabel("Nama Reviewer")).toHaveValue("");
 });
 
 test("appendix scenario uses section header numbering", async ({ page }) => {

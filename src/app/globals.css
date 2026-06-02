@@ -99,13 +99,22 @@ textarea {
 }
 
 body.is-review-commenting [data-field-id] {
-  cursor: copy;
+  cursor: crosshair;
+  transition: background-color 140ms ease, outline-color 140ms ease, box-shadow 140ms ease;
+}
+
+body.is-review-commenting label[data-field-id],
+body.is-review-commenting [data-field-id]:not(input):not(select):not(textarea) {
+  margin: -6px;
+  padding: 6px;
+  border-radius: 10px;
 }
 
 body.is-review-commenting [data-field-id]:hover {
-  border-radius: 8px;
-  outline: 2px solid #185abd;
-  outline-offset: 3px;
+  background-color: rgb(24 90 189 / 0.05);
+  outline: 2px solid rgb(24 90 189 / 0.55);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgb(24 90 189 / 0.08);
 }
 
 .preview-rich-text .rt-underline {

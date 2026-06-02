@@ -228,6 +228,6 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     initialsBureau: input.initialsBureau ?? base.initialsBureau,
     appendixScenarios,
     reviewComments: normalizeReviewComments(input.reviewComments),
-    updatedAt: new Date().toISOString(),
+    updatedAt: input.updatedAt ?? new Date().toISOString(),
   };
 }

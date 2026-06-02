@@ -288,7 +288,7 @@ function AppleToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex min-h-10 min-w-[136px] items-center justify-center gap-2 rounded-full border px-4 text-[13px] font-semibold leading-none backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-full border px-4 text-[13px] font-semibold leading-none backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
     >
       {children}
     </button>
@@ -368,7 +368,7 @@ function CollaborationPanel({
       {collaboration.active ? (
         <AppleToolbarButton onClick={copyLink}>
           <Copy size={16} />
-          {copied ? "Copied" : "Copy Share Link"}
+          {copied ? "Copied" : "Copy Link"}
         </AppleToolbarButton>
       ) : null}
       <SyncPill label={collaboration.modeLabel} tone={collaboration.active ? "live" : "neutral"} />
@@ -500,7 +500,6 @@ function ReviewCommentsPopup({
   onToggleResolve: (comment: ReviewComment) => void;
   onDelete: (comment: ReviewComment) => void;
 }) {
-  const unresolvedCount = comments.filter((comment) => !comment.resolved).length;
   const sortedComments = [...comments].sort((a, b) => {
     if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
@@ -508,24 +507,10 @@ function ReviewCommentsPopup({
 
   return (
     <div data-review-ignore>
-      <button
-        type="button"
-        onClick={onToggleOpen}
-        className="fixed bottom-[128px] right-4 z-40 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#c6d3e1] bg-white/95 px-4 text-sm font-bold text-[#0f2d4a] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur transition hover:bg-[#edf4fb] focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-        aria-expanded={open}
-        aria-controls="review-comments-popup"
-      >
-        <MessageSquare size={16} />
-        Komentar Review
-        {unresolvedCount ? (
-          <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs text-white">{unresolvedCount}</span>
-        ) : null}
-      </button>
-
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[188px] right-4 z-50 grid max-h-[70dvh] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
+          className="fixed bottom-[96px] right-4 z-50 grid max-h-[70dvh] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
@@ -1529,7 +1514,7 @@ export function MemoBuilderApp() {
 
   function openCommentDialog(target: ReviewTarget) {
     setReviewOpen(true);
-    setCommentAuthor(window.localStorage.getItem("memo-review-author") ?? "");
+    setCommentAuthor("");
     setCommentText("");
     setCommentDialog({ mode: "add", target });
   }
@@ -1578,7 +1563,6 @@ export function MemoBuilderApp() {
     const text = commentText.trim();
     if (!author || !text) return;
 
-    window.localStorage.setItem("memo-review-author", author);
     const now = new Date().toISOString();
 
     updateReviewComments((comments) => {
@@ -1630,6 +1614,8 @@ export function MemoBuilderApp() {
   function deleteReviewComment(comment: ReviewComment) {
     updateReviewComments((comments) => comments.filter((item) => item.id !== comment.id));
   }
+
+  const unresolvedReviewCount = (draft.reviewComments ?? []).filter((comment) => !comment.resolved).length;
 
   if (!hasLoaded) {
     return (
@@ -1899,7 +1885,7 @@ export function MemoBuilderApp() {
           </div>
         </aside>
       </div>
-      <footer className="mt-6 border-t border-[#d8e2ec] bg-[#eaf2f8] px-4 py-7 text-center text-sm font-bold tracking-[0.02em] text-slate-600">
+      <footer className="px-4 pb-7 pt-1 text-center text-xs font-semibold tracking-[0.02em] text-slate-500/80">
         Developed by Alex Surya Marcelo (UAT - A) &bull; Memo Generator
       </footer>
       <ReviewCommentsPopup
@@ -1925,24 +1911,38 @@ export function MemoBuilderApp() {
         onCancel={() => setCommentDialog(null)}
         onSave={saveReviewComment}
       />
-      <div
-        className="fixed bottom-4 right-4 z-40 rounded-lg border border-[#c6d3e1] bg-white/95 p-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur"
-        data-floating-generate
-        data-review-ignore
-      >
-        <div className="mb-1 flex items-center justify-between gap-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-[#0f2d4a]">
-          <span>Docx</span>
-          <span className="font-bold normal-case tracking-normal text-slate-500">{pages.length} pages</span>
+      <div className="fixed bottom-4 right-4 z-40 flex items-end gap-3" data-review-ignore>
+        <div
+          className="rounded-lg border border-[#c6d3e1] bg-white/95 p-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur"
+          data-floating-generate
+        >
+          <div className="mb-1 flex items-center justify-between gap-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-[#0f2d4a]">
+            <span>Docx</span>
+            <span className="font-bold normal-case tracking-normal text-slate-500">{pages.length} pages</span>
+          </div>
+          <button
+            type="button"
+            onClick={exportDocx}
+            disabled={isExporting}
+            aria-label="Buat dokumen Word cepat"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#185abd] bg-[#185abd] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#124078] focus:outline-none focus:ring-2 focus:ring-[#185abd]/25 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download size={16} />
+            Generate Docx
+          </button>
         </div>
         <button
           type="button"
-          onClick={exportDocx}
-          disabled={isExporting}
-          aria-label="Buat dokumen Word cepat"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#185abd] bg-[#185abd] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#124078] focus:outline-none focus:ring-2 focus:ring-[#185abd]/25 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => setReviewOpen((current) => !current)}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#c6d3e1] bg-white/95 px-4 text-sm font-bold text-[#0f2d4a] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur transition hover:bg-[#edf4fb] focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+          aria-expanded={reviewOpen}
+          aria-controls="review-comments-popup"
         >
-          <Download size={16} />
-          Generate Docx
+          <MessageSquare size={16} />
+          Komentar Review
+          {unresolvedReviewCount ? (
+            <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs text-white">{unresolvedReviewCount}</span>
+          ) : null}
         </button>
       </div>
     </main>
