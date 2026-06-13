@@ -29,8 +29,8 @@ export function RecipientList({
   minRows = 1,
   required = true,
   genderRequired = required,
-  genderPlaceholder,
-  defaultGender = "Bapak",
+  genderPlaceholder = "Sapaan",
+  defaultGender = "",
 }: RecipientListProps) {
   function updateRecipient(id: string, patch: Partial<Recipient>) {
     onChange(recipients.map((recipient) => (recipient.id === id ? { ...recipient, ...patch } : recipient)));
@@ -81,6 +81,7 @@ export function RecipientList({
                   className={`${fieldClass} ${
                     recipient.gender ? "text-slate-900" : "text-slate-400"
                   }`}
+                  style={{ color: recipient.gender ? "#0f172a" : "#94a3b8" }}
                 >
                   {genderPlaceholder ? (
                     <option value="" disabled hidden>

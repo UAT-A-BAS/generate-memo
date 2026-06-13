@@ -24,6 +24,8 @@ import type {
   MemoDraft,
   MemoMetadata,
   MemoType,
+  ReviewAuditAction,
+  ReviewAuditLogEntry,
   ReviewComment,
   ScenarioRow,
 } from "@/types/memo";
@@ -47,6 +49,10 @@ import { useMemoDraftStore } from "@/store/useMemoDraftStore";
 import { generateMomJsonToMemoDraft } from "@/utils/generateMomJsonToMemoDraft";
 import { MemoPreview } from "@/preview/MemoPreview";
 import { useMemoCollaboration } from "@/collaboration/useMemoCollaboration";
+import {
+  getStoredCollaboratorIdentity,
+  saveCollaboratorIdentity,
+} from "@/collaboration/collaboratorIdentity";
 import { createId } from "@/utils/ids";
 
 const memoTypes: MemoType[] = [
@@ -339,8 +345,10 @@ function SyncPill({
 
 function CollaborationPanel({
   collaboration,
+  onStart,
 }: {
   collaboration: ReturnType<typeof useMemoCollaboration>;
+  onStart: () => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -365,7 +373,7 @@ function CollaborationPanel({
     >
       <AppleToolbarButton
         onClick={() => {
-          collaboration.start();
+          onStart();
           setCopied(false);
         }}
         tone="primary"
@@ -390,9 +398,15 @@ function CollaborationPanel({
 type ReviewTarget = Pick<ReviewComment, "type" | "targetId" | "targetLabel" | "path">;
 
 type CommentDialogState = {
-  mode: "add" | "edit";
+  mode: "add" | "edit" | "reply";
   target: ReviewTarget;
   commentId?: string;
+};
+
+type IdentityDialogAction = "add-comment" | "start-collab" | "join-collab";
+
+type IdentityDialogState = {
+  action: IdentityDialogAction;
 };
 
 function cleanTargetLabel(value: string) {
@@ -490,20 +504,24 @@ function formatCommentTime(value: string) {
 function ReviewCommentsPopup({
   open,
   comments,
+  auditLog,
   commentMode,
   onToggleOpen,
   onToggleCommentMode,
   onFocus,
+  onReply,
   onEdit,
   onToggleResolve,
   onDelete,
 }: {
   open: boolean;
   comments: ReviewComment[];
+  auditLog: ReviewAuditLogEntry[];
   commentMode: boolean;
   onToggleOpen: () => void;
   onToggleCommentMode: () => void;
   onFocus: (comment: ReviewComment) => void;
+  onReply: (comment: ReviewComment) => void;
   onEdit: (comment: ReviewComment) => void;
   onToggleResolve: (comment: ReviewComment) => void;
   onDelete: (comment: ReviewComment) => void;
@@ -512,6 +530,9 @@ function ReviewCommentsPopup({
     if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
   });
+  const sortedAuditLog = [...auditLog].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   return (
     <div data-review-ignore>
@@ -584,7 +605,32 @@ function ReviewCommentsPopup({
                       Lihat field: {comment.targetLabel}
                     </button>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-5">{comment.text}</p>
+                    {comment.replies.length ? (
+                      <div className="mt-3 grid gap-2 border-l-2 border-sky-200 pl-3">
+                        {comment.replies.map((reply) => (
+                          <div key={reply.id} className="rounded-md bg-sky-50/70 px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                              <span className="text-[#185abd]">{reply.author || "Reviewer"}</span>
+                              <span>/</span>
+                              <span>{formatCommentTime(reply.createdAt)}</span>
+                            </div>
+                            <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-800">
+                              {reply.text}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onReply(comment)}
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sky-200 px-2.5 text-xs font-bold text-[#185abd] hover:bg-sky-50"
+                        aria-label="Balas komentar"
+                      >
+                        <MessageSquare size={14} />
+                        Reply
+                      </button>
                       <button
                         type="button"
                         onClick={() => onToggleResolve(comment)}
@@ -621,6 +667,32 @@ function ReviewCommentsPopup({
                 Belum ada komentar review.
               </div>
             )}
+            <section className="mt-3 border-t border-slate-200 pt-3" aria-labelledby="review-audit-title">
+              <div className="flex items-center justify-between gap-2">
+                <h3 id="review-audit-title" className="text-xs font-bold uppercase tracking-wide text-[#0f2d4a]">
+                  Audit Log
+                </h3>
+                <span className="text-[11px] font-semibold text-slate-400">
+                  {sortedAuditLog.length} aktivitas
+                </span>
+              </div>
+              {sortedAuditLog.length ? (
+                <ol className="mt-2 grid gap-2">
+                  {sortedAuditLog.map((entry) => (
+                    <li key={entry.id} className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      <p>
+                        <strong>{entry.actor || "Reviewer"}</strong> {entry.description}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                        {formatCommentTime(entry.createdAt)}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-2 text-xs font-semibold text-slate-400">Belum ada aktivitas.</p>
+              )}
+            </section>
           </div>
         </section>
       ) : null}
@@ -630,17 +702,15 @@ function ReviewCommentsPopup({
 
 function ReviewCommentDialog({
   state,
-  author,
+  actor,
   text,
-  onAuthorChange,
   onTextChange,
   onCancel,
   onSave,
 }: {
   state: CommentDialogState | null;
-  author: string;
+  actor: string;
   text: string;
-  onAuthorChange: (value: string) => void;
   onTextChange: (value: string) => void;
   onCancel: () => void;
   onSave: () => void;
@@ -649,13 +719,23 @@ function ReviewCommentDialog({
 
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/40 px-4" data-review-ignore>
-      <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-comment-dialog-title"
+        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-[#0f2d4a]">
-              {state.mode === "edit" ? "Edit komentar" : "Tambah komentar"}
+            <h2 id="review-comment-dialog-title" className="text-base font-bold text-[#0f2d4a]">
+              {state.mode === "edit"
+                ? "Edit komentar"
+                : state.mode === "reply"
+                  ? "Balas komentar"
+                  : "Tambah komentar"}
             </h2>
             <p className="mt-1 text-xs font-semibold text-slate-500">{state.target.targetLabel}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Oleh: {actor}</p>
           </div>
           <button
             type="button"
@@ -667,28 +747,87 @@ function ReviewCommentDialog({
           </button>
         </div>
         <div className="mt-4 grid gap-3">
-          <FieldLabel label="Nama Reviewer" required>
-            <input
-              value={author}
-              onChange={(event) => onAuthorChange(event.target.value)}
-              className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-              autoFocus
-            />
-          </FieldLabel>
-          <FieldLabel label="Komentar" required>
+          <FieldLabel label={state.mode === "reply" ? "Balasan" : "Komentar"} required>
             <textarea
               value={text}
               rows={4}
               onChange={(event) => onTextChange(event.target.value)}
               className="min-h-28 resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              autoFocus
             />
           </FieldLabel>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <IconButton onClick={onCancel}>Batal</IconButton>
-          <IconButton onClick={onSave} variant="primary">Simpan</IconButton>
+          <IconButton onClick={onSave} variant="primary">
+            {state.mode === "reply" ? "Kirim balasan" : "Simpan"}
+          </IconButton>
         </div>
       </section>
+    </div>
+  );
+}
+
+function CollaboratorIdentityDialog({
+  state,
+  name,
+  onNameChange,
+  onCancel,
+  onContinue,
+}: {
+  state: IdentityDialogState | null;
+  name: string;
+  onNameChange: (value: string) => void;
+  onCancel: () => void;
+  onContinue: () => void;
+}) {
+  if (!state) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/40 px-4" data-review-ignore>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="collaborator-identity-title"
+        className="w-full max-w-[504px] rounded-xl border border-slate-200 bg-white p-[18px] shadow-2xl"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onContinue();
+        }}
+      >
+        <h2 id="collaborator-identity-title" className="text-[15px] font-bold text-slate-900">
+          Isi nama kolaborator
+        </h2>
+        <p className="mt-4 text-[13px] font-semibold text-slate-500">
+          Nama dipakai untuk presence dan audit log komentar review.
+        </p>
+        <label className="mt-4 grid gap-1.5 text-xs font-bold text-slate-800">
+          <span>Nama <span className="text-red-600">*</span></span>
+          <input
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            placeholder="Nama reviewer / maker"
+            className="h-12 rounded-lg border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none placeholder:text-slate-400 focus:border-[#1f5d8a] focus:ring-4 focus:ring-[#1f5d8a]/15"
+            autoFocus
+          />
+        </label>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#1f5d8a] px-4 text-xs font-bold text-white hover:bg-[#174d74] focus:outline-none focus:ring-2 focus:ring-[#1f5d8a]/25 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Lanjut
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -1439,8 +1578,11 @@ export function MemoBuilderApp() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [commentMode, setCommentMode] = useState(false);
   const [commentDialog, setCommentDialog] = useState<CommentDialogState | null>(null);
-  const [commentAuthor, setCommentAuthor] = useState("");
   const [commentText, setCommentText] = useState("");
+  const [collaboratorName, setCollaboratorName] = useState("");
+  const [identityLoaded, setIdentityLoaded] = useState(false);
+  const [identityDialog, setIdentityDialog] = useState<IdentityDialogState | null>(null);
+  const [identityInput, setIdentityInput] = useState("");
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
@@ -1456,13 +1598,34 @@ export function MemoBuilderApp() {
   const hasActiveEditChanges = useMemoDraftStore(
     (state) => state.hasActiveEditChanges,
   );
-  const collaboration = useMemoCollaboration(draft, replaceDraft);
+  const collaboration = useMemoCollaboration(draft, replaceDraft, collaboratorName);
 
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
 
   useEffect(() => {
     loadFromLocal();
   }, [loadFromLocal]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const identity = getStoredCollaboratorIdentity();
+      setCollaboratorName(identity?.name ?? "");
+      setIdentityLoaded(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!identityLoaded || collaboratorName.trim() || identityDialog) return;
+    const timer = window.setTimeout(() => {
+      const roomId = new URL(window.location.href).searchParams.get("room");
+      if (roomId) {
+        setIdentityInput("");
+        setIdentityDialog({ action: "join-collab" });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [collaboratorName, identityDialog, identityLoaded]);
 
   useEffect(() => {
     if (!hasLoaded) return;
@@ -1601,7 +1764,6 @@ export function MemoBuilderApp() {
 
   function openCommentDialog(target: ReviewTarget) {
     setReviewOpen(true);
-    setCommentAuthor("");
     setCommentText("");
     setCommentDialog({ mode: "add", target });
   }
@@ -1609,10 +1771,25 @@ export function MemoBuilderApp() {
   function openEditComment(comment: ReviewComment) {
     setReviewOpen(true);
     setCommentMode(false);
-    setCommentAuthor(comment.author);
     setCommentText(comment.text);
     setCommentDialog({
       mode: "edit",
+      commentId: comment.id,
+      target: {
+        type: comment.type,
+        targetId: comment.targetId,
+        targetLabel: comment.targetLabel,
+        path: comment.path,
+      },
+    });
+  }
+
+  function openReplyComment(comment: ReviewComment) {
+    setReviewOpen(true);
+    setCommentMode(false);
+    setCommentText("");
+    setCommentDialog({
+      mode: "reply",
       commentId: comment.id,
       target: {
         type: comment.type,
@@ -1636,53 +1813,213 @@ export function MemoBuilderApp() {
     openCommentDialog(target);
   }
 
-  function updateReviewComments(
-    updater: (comments: ReviewComment[]) => ReviewComment[],
+  function createAuditEntry(
+    action: ReviewAuditAction,
+    actor: string,
+    description: string,
+    options: { commentId?: string; targetLabel?: string } = {},
+  ): ReviewAuditLogEntry {
+    return {
+      id: createId("audit"),
+      action,
+      actor,
+      description,
+      commentId: options.commentId,
+      targetLabel: options.targetLabel,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  function updateReviewState(
+    updater: (state: {
+      comments: ReviewComment[];
+      auditLog: ReviewAuditLogEntry[];
+    }) => {
+      comments: ReviewComment[];
+      auditLog: ReviewAuditLogEntry[];
+    },
     recordHistory = false,
   ) {
-    updateDraft((current) => ({
-      ...current,
-      reviewComments: updater(current.reviewComments ?? []),
-    }), recordHistory);
+    updateDraft((current) => {
+      const next = updater({
+        comments: current.reviewComments ?? [],
+        auditLog: current.reviewAuditLog ?? [],
+      });
+      return {
+        ...current,
+        reviewComments: next.comments,
+        reviewAuditLog: next.auditLog,
+      };
+    }, recordHistory);
+  }
+
+  function appendAuditEntry(entry: ReviewAuditLogEntry) {
+    updateReviewState(({ comments, auditLog }) => ({
+      comments,
+      auditLog: [...auditLog, entry],
+    }));
+  }
+
+  function startCollaboration(name: string) {
+    appendAuditEntry(createAuditEntry(
+      "collaboration-started",
+      name,
+      "memulai kolaborasi",
+    ));
+    collaboration.start(name);
+  }
+
+  function requestStartCollaboration() {
+    if (collaboratorName.trim()) {
+      startCollaboration(collaboratorName.trim());
+      return;
+    }
+    setIdentityInput("");
+    setIdentityDialog({ action: "start-collab" });
+  }
+
+  function requestToggleCommentMode() {
+    setReviewOpen(true);
+    if (commentMode) {
+      setCommentMode(false);
+      return;
+    }
+    if (collaboratorName.trim()) {
+      setCommentMode(true);
+      return;
+    }
+    setIdentityInput("");
+    setIdentityDialog({ action: "add-comment" });
+  }
+
+  function continueIdentityDialog() {
+    if (!identityDialog) return;
+    const cleanName = identityInput.trim();
+    if (!cleanName) return;
+
+    saveCollaboratorIdentity(cleanName);
+    setCollaboratorName(cleanName);
+
+    if (identityDialog.action === "start-collab") {
+      startCollaboration(cleanName);
+    } else if (identityDialog.action === "add-comment") {
+      setReviewOpen(true);
+      setCommentMode(true);
+    }
+
+    setIdentityDialog(null);
+    setIdentityInput("");
+  }
+
+  function cancelIdentityDialog() {
+    if (identityDialog?.action === "join-collab") {
+      collaboration.leave();
+    }
+    setIdentityDialog(null);
+    setIdentityInput("");
   }
 
   function saveReviewComment() {
     if (!commentDialog) return;
 
-    const author = commentAuthor.trim();
+    const author = collaboratorName.trim();
     const text = commentText.trim();
     if (!author || !text) return;
 
     const now = new Date().toISOString();
 
-    updateReviewComments((comments) => {
+    updateReviewState(({ comments, auditLog }) => {
       if (commentDialog.mode === "edit" && commentDialog.commentId) {
-        return comments.map((comment) =>
+        return {
+          comments: comments.map((comment) =>
           comment.id === commentDialog.commentId
             ? {
                 ...comment,
                 ...commentDialog.target,
-                author,
                 text,
                 resolved: false,
                 updatedAt: now,
               }
             : comment,
-        );
+          ),
+          auditLog: [
+            ...auditLog,
+            createAuditEntry(
+              "comment-edited",
+              author,
+              `mengedit komentar pada ${commentDialog.target.targetLabel}`,
+              {
+                commentId: commentDialog.commentId,
+                targetLabel: commentDialog.target.targetLabel,
+              },
+            ),
+          ],
+        };
       }
 
-      return [
-        ...comments,
-        {
-          id: createId("comment"),
-          ...commentDialog.target,
-          author,
-          text,
-          resolved: false,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ];
+      if (commentDialog.mode === "reply" && commentDialog.commentId) {
+        return {
+          comments: comments.map((comment) =>
+            comment.id === commentDialog.commentId
+              ? {
+                  ...comment,
+                  resolved: false,
+                  updatedAt: now,
+                  replies: [
+                    ...comment.replies,
+                    {
+                      id: createId("reply"),
+                      author,
+                      text,
+                      createdAt: now,
+                    },
+                  ],
+                }
+              : comment,
+          ),
+          auditLog: [
+            ...auditLog,
+            createAuditEntry(
+              "comment-replied",
+              author,
+              `membalas komentar pada ${commentDialog.target.targetLabel}`,
+              {
+                commentId: commentDialog.commentId,
+                targetLabel: commentDialog.target.targetLabel,
+              },
+            ),
+          ],
+        };
+      }
+
+      const commentId = createId("comment");
+      return {
+        comments: [
+          ...comments,
+          {
+            id: commentId,
+            ...commentDialog.target,
+            author,
+            text,
+            resolved: false,
+            createdAt: now,
+            updatedAt: now,
+            replies: [],
+          },
+        ],
+        auditLog: [
+          ...auditLog,
+          createAuditEntry(
+            "comment-created",
+            author,
+            `menambahkan komentar pada ${commentDialog.target.targetLabel}`,
+            {
+              commentId,
+              targetLabel: commentDialog.target.targetLabel,
+            },
+          ),
+        ],
+      };
     });
 
     setCommentDialog(null);
@@ -1692,18 +2029,39 @@ export function MemoBuilderApp() {
 
   function toggleResolveComment(comment: ReviewComment) {
     const now = new Date().toISOString();
-    updateReviewComments((comments) =>
-      comments.map((item) =>
+    const nextResolved = !comment.resolved;
+    updateReviewState(({ comments, auditLog }) => ({
+      comments: comments.map((item) =>
         item.id === comment.id
-          ? { ...item, resolved: !item.resolved, updatedAt: now }
+          ? { ...item, resolved: nextResolved, updatedAt: now }
           : item,
       ),
-    );
+      auditLog: [
+        ...auditLog,
+        createAuditEntry(
+          nextResolved ? "comment-resolved" : "comment-reopened",
+          collaboratorName,
+          `${nextResolved ? "menyelesaikan" : "membuka kembali"} komentar pada ${comment.targetLabel}`,
+          { commentId: comment.id, targetLabel: comment.targetLabel },
+        ),
+      ],
+    }));
   }
 
   function deleteReviewComment(comment: ReviewComment) {
-    updateReviewComments(
-      (comments) => comments.filter((item) => item.id !== comment.id),
+    updateReviewState(
+      ({ comments, auditLog }) => ({
+        comments: comments.filter((item) => item.id !== comment.id),
+        auditLog: [
+          ...auditLog,
+          createAuditEntry(
+            "comment-deleted",
+            collaboratorName,
+            `menghapus komentar pada ${comment.targetLabel}`,
+            { commentId: comment.id, targetLabel: comment.targetLabel },
+          ),
+        ],
+      }),
       true,
     );
   }
@@ -1745,7 +2103,10 @@ export function MemoBuilderApp() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
-            <CollaborationPanel collaboration={collaboration} />
+            <CollaborationPanel
+              collaboration={collaboration}
+              onStart={requestStartCollaboration}
+            />
             <AppleToolbarButton onClick={saveDraftData}>
               <FileJson size={16} />
               Save
@@ -1996,25 +2357,30 @@ export function MemoBuilderApp() {
       <ReviewCommentsPopup
         open={reviewOpen}
         comments={draft.reviewComments ?? []}
+        auditLog={draft.reviewAuditLog ?? []}
         commentMode={commentMode}
         onToggleOpen={() => setReviewOpen((current) => !current)}
-        onToggleCommentMode={() => {
-          setReviewOpen(true);
-          setCommentMode((current) => !current);
-        }}
+        onToggleCommentMode={requestToggleCommentMode}
         onFocus={(comment) => focusReviewTarget(comment, appRootRef.current)}
+        onReply={openReplyComment}
         onEdit={openEditComment}
         onToggleResolve={toggleResolveComment}
         onDelete={deleteReviewComment}
       />
       <ReviewCommentDialog
         state={commentDialog}
-        author={commentAuthor}
+        actor={collaboratorName}
         text={commentText}
-        onAuthorChange={setCommentAuthor}
         onTextChange={setCommentText}
         onCancel={() => setCommentDialog(null)}
         onSave={saveReviewComment}
+      />
+      <CollaboratorIdentityDialog
+        state={identityDialog}
+        name={identityInput}
+        onNameChange={setIdentityInput}
+        onCancel={cancelIdentityDialog}
+        onContinue={continueIdentityDialog}
       />
       <div
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-[26px] border border-white/70 bg-white/55 p-1.5 shadow-[0_18px_46px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-2xl"

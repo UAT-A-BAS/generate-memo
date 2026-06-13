@@ -178,11 +178,13 @@ function paragraph(
     spacingBefore?: number;
     spacingAfter?: number;
     line?: number;
+    keepNext?: boolean;
   } = {},
 ) {
   return new Paragraph({
     alignment: options.align,
     indent: options.indent,
+    keepNext: options.keepNext,
     spacing: wordSpacing({
       before: options.spacingBefore,
       after: options.spacingAfter,
@@ -544,25 +546,34 @@ function memoHeadingRecipientParagraphs(recipients: Recipient[]) {
   });
 }
 
-function ccRecipientParagraphs(recipients: Recipient[]) {
-  const useDash = recipients.length > 1;
+function ccRecipientParagraphs(recipients: Recipient[], totalRecipients = recipients.length) {
+  const useDash = totalRecipients > 1;
 
   return recipients.flatMap((recipient) => {
+    const attention = formatRecipientAttention(recipient);
     const sharedOptions = {
       size: 22,
       spacingAfter: 70,
       indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
     };
+    const positionOptions = {
+      ...sharedOptions,
+      keepNext: Boolean(attention),
+    };
     const position = useDash
-      ? dashGapParagraph(recipient.position, sharedOptions)
-      : bodyColumnParagraph(recipient.position, { size: 22, spacingAfter: 70 });
-    const name = formatRecipientAttention(recipient)
+      ? dashGapParagraph(recipient.position, positionOptions)
+      : bodyColumnParagraph(recipient.position, {
+          size: 22,
+          spacingAfter: 70,
+          keepNext: Boolean(attention),
+        });
+    const name = attention
       ? useDash
         ? tabAlignedParagraph(
-            formatRecipientAttention(recipient),
+            attention,
             sharedOptions,
           )
-        : bodyColumnParagraph(formatRecipientAttention(recipient), {
+        : bodyColumnParagraph(attention, {
             size: 22,
             spacingAfter: 70,
           })
@@ -1087,7 +1098,7 @@ function blockChildren(
     case "cc":
       return [
         bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
-        ...ccRecipientParagraphs(draft.ccRecipients),
+        ...ccRecipientParagraphs(block.recipients, block.totalRecipients),
       ];
     case "initials":
       return [bodyColumnParagraph(initialsText(draft), { size: 20, spacingBefore: 260 })];

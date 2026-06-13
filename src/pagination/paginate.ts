@@ -2,6 +2,7 @@ import type {
   ActivityRow,
   DevelopmentRow,
   MemoDraft,
+  Recipient,
   ScenarioRow,
 } from "@/types/memo";
 import type { RichTextDoc, RichTextNode } from "@/types/richText";
@@ -12,6 +13,7 @@ import {
 } from "@/documentLayout";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
+import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { richTextToPlainText } from "@/utils/richText";
 
 export type PreviewOrientation = "portrait" | "landscape";
@@ -39,7 +41,13 @@ export type PreviewBlock =
   | { id: string; type: "attachments"; estimatedHeight: number }
   | { id: string; type: "contacts"; estimatedHeight: number }
   | { id: string; type: "signature"; estimatedHeight: number }
-  | { id: string; type: "cc"; estimatedHeight: number }
+  | {
+      id: string;
+      type: "cc";
+      estimatedHeight: number;
+      recipients: Recipient[];
+      totalRecipients: number;
+    }
   | { id: string; type: "initials"; estimatedHeight: number }
   | { id: string; type: "appendix-row"; estimatedHeight: number; row: ScenarioRow; index: number; meta: AppendixRowMeta }
   | { id: string; type: "validation"; estimatedHeight: number };
@@ -68,6 +76,7 @@ const PORTRAIT_CONTENT_HEIGHT =
 const FIRST_PORTRAIT_PAGE_LIMIT = Math.floor(PORTRAIT_CONTENT_HEIGHT - 40);
 const CONTINUATION_PORTRAIT_PAGE_LIMIT = Math.floor(PORTRAIT_CONTENT_HEIGHT - 120);
 const LANDSCAPE_PAGE_LIMIT = 560;
+const CC_BLOCK_PAGE_LIMIT = 780;
 
 function pageLimit(orientation: PreviewOrientation, pageIndex: number) {
   if (orientation === "landscape") return LANDSCAPE_PAGE_LIMIT;
@@ -112,6 +121,14 @@ function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
 
 function compactTextHeight(value: string, charsPerLine = 76) {
   return Math.max(1, visualLineCount(value, charsPerLine)) * 16;
+}
+
+function ccBlockHeight(recipients: Recipient[]) {
+  return 48 + recipients.reduce(
+    (height, recipient) =>
+      height + (formatRecipientAttention(recipient) ? 45 : 24),
+    0,
+  );
 }
 
 function appendixRowContentHeight(row: ScenarioRow) {
@@ -250,6 +267,30 @@ function splitDoc(doc: RichTextDoc, maxChars: number) {
 }
 
 function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
+  if (block.type === "cc" && block.estimatedHeight > CC_BLOCK_PAGE_LIMIT) {
+    const chunks: Recipient[][] = [];
+    let current: Recipient[] = [];
+
+    for (const recipient of block.recipients) {
+      if (
+        current.length > 0 &&
+        ccBlockHeight([...current, recipient]) > CC_BLOCK_PAGE_LIMIT
+      ) {
+        chunks.push(current);
+        current = [];
+      }
+      current.push(recipient);
+    }
+    if (current.length) chunks.push(current);
+
+    return chunks.map((recipients, index) => ({
+      ...block,
+      id: `${block.id}-part-${index + 1}`,
+      recipients,
+      estimatedHeight: ccBlockHeight(recipients),
+    }));
+  }
+
   if (block.type === "development-row" && block.estimatedHeight > 540) {
     const itemParts = splitDoc(block.row.item, 520);
     const descriptionParts = splitDoc(block.row.description, 700);
@@ -377,11 +418,17 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       type: "contacts",
       estimatedHeight: 58 + draft.contacts.length * 28,
     },
-    { id: "signature", type: "signature", estimatedHeight: 132 },
+    {
+      id: "signature",
+      type: "signature",
+      estimatedHeight: 104 + draft.signers.length * 28,
+    },
     {
       id: "cc",
       type: "cc",
-      estimatedHeight: 48 + draft.ccRecipients.length * 22,
+      recipients: draft.ccRecipients,
+      totalRecipients: draft.ccRecipients.length,
+      estimatedHeight: ccBlockHeight(draft.ccRecipients),
     },
     { id: "initials", type: "initials", estimatedHeight: 40 },
   ];
@@ -482,20 +529,12 @@ function packPages(
   };
   let used = 0;
   let limit = pageLimit(options.orientation, 0);
-  const closingHeight = blocks
-    .filter((block) => block.type === "signature" || block.type === "cc" || block.type === "initials")
-    .reduce((total, block) => total + block.estimatedHeight, 0);
-
   for (const block of blocks) {
-    const isClosingBlock = block.type === "signature" || block.type === "cc" || block.type === "initials";
-    const currentHasClosing = current.blocks.some((item) => item.type === "signature");
     const hasContent = current.blocks.length > 0;
-    const shouldStartClosingPage =
-      block.type === "signature" && hasContent && used + closingHeight > limit;
     const wouldOverflow = used + block.estimatedHeight > limit;
-    const shouldBreakForOverflow = wouldOverflow && hasContent && !(isClosingBlock && currentHasClosing);
+    const shouldBreakForOverflow = wouldOverflow && hasContent;
 
-    if (shouldStartClosingPage || shouldBreakForOverflow) {
+    if (shouldBreakForOverflow) {
       pages.push(current);
       current = {
         id: `${options.kind}-${pages.length + 1}`,

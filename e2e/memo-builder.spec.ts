@@ -730,6 +730,28 @@ test("tembusan shows mandatory markers", async ({ page }) => {
   await expect(salutation).toHaveClass(/text-slate-900/);
 });
 
+test("all salutation fields start with the Sapaan placeholder", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const recipientPanels = [
+    page.locator("section").filter({ has: page.getByRole("heading", { name: "Kepada" }) }).first(),
+    page.locator("section").filter({ has: page.getByRole("heading", { name: "Tembusan" }) }).first(),
+  ];
+
+  for (const panel of recipientPanels) {
+    const salutation = panel.getByLabel("Sapaan");
+    await expect(salutation).toHaveValue("");
+    await expect(salutation).toHaveClass(/text-slate-400/);
+    expect(
+      await salutation.evaluate((element) => getComputedStyle(element).color),
+    ).toBe("rgb(148, 163, 184)");
+    const placeholder = salutation.locator('option[value=""]');
+    await expect(placeholder).toHaveText("Sapaan");
+    await expect(placeholder).toHaveAttribute("disabled", "");
+    await expect(placeholder).toHaveAttribute("hidden", "");
+  }
+});
+
 test("tembusan can be generated without a salutation", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
@@ -750,6 +772,64 @@ test("tembusan can be generated without a salutation", async ({ page }) => {
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml).toContain("U.p. Yth. Verry Iskandar");
+});
+
+test("closing wording stays directly after PIC and only later blocks continue", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      accessLinkEnabled: false,
+      accessLink: "",
+    },
+    developmentRows: [],
+    activities: [],
+    attachmentsEnabled: false,
+    attachments: "",
+    ccRecipients: Array.from({ length: 20 }, (_, index) => ({
+      id: `cc-closing-${index}`,
+      gender: "",
+      name: `Penerima ${index + 1}`,
+      position: `Unit Kerja ${index + 1}`,
+    })),
+  });
+
+  const mainPages = page.locator('aside article[data-page-kind="main"]');
+  const contactPage = mainPages.filter({
+    has: page.getByRole("heading", { name: "PIC yang Dapat Dihubungi", exact: true }),
+  });
+  await expect(contactPage).toHaveCount(1);
+  await expect(
+    contactPage.getByText(
+      "Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(contactPage.getByText("SIGNER - Jabatan", { exact: true })).toBeVisible();
+
+  const pageOverflow = await mainPages
+    .locator("[data-preview-page-content]")
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const contactIndex = xml.indexOf("PIC yang Dapat Dihubungi");
+  const closingIndex = xml.indexOf("Demikian informasi ini kami sampaikan");
+  const ccRecipient16Index = xml.indexOf("Unit Kerja 16");
+  const ccRecipient17Index = xml.indexOf("Unit Kerja 17");
+  expect(contactIndex).toBeGreaterThan(-1);
+  expect(closingIndex).toBeGreaterThan(contactIndex);
+  expect(xml.slice(contactIndex, closingIndex)).not.toContain("<w:pageBreakBefore/>");
+  expect(ccRecipient16Index).toBeGreaterThan(closingIndex);
+  expect(ccRecipient17Index).toBeGreaterThan(ccRecipient16Index);
+  expect(xml.slice(ccRecipient16Index, ccRecipient17Index)).toContain("<w:pageBreakBefore/>");
+  expect(xml.slice(ccRecipient16Index, ccRecipient17Index)).toContain("Perihal:");
+  expect(xml.slice(ccRecipient16Index, ccRecipient17Index)).toContain("Sambungan");
 });
 
 test("consecutive duplicate table values merge and center in preview and DOCX", async ({ page }) => {
@@ -958,21 +1038,39 @@ test("collaboration panel starts a shareable worker room", async ({ page }) => {
   await expect(page.getByText("Last synced: -")).toBeVisible();
 
   await page.getByRole("button", { name: "Start Collab" }).click();
+  const identityDialog = page.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await expect(identityDialog).toBeVisible();
+  await expect(page).not.toHaveURL(/room=/);
+  await identityDialog.getByLabel("Nama *").fill("Maker Collab");
+  await identityDialog.getByRole("button", { name: "Lanjut" }).click();
   await expect(page.getByRole("button", { name: "Restart Collab" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy Link" })).toBeVisible();
   await expect(page).toHaveURL(/room=/);
+
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  await expect(page.getByText("Maker Collab memulai kolaborasi")).toBeVisible();
+  await page.getByRole("button", { name: "Add Comment" }).click();
+  await expect(page.getByRole("heading", { name: "Isi nama kolaborator" })).toHaveCount(0);
 });
 
 test("collaboration syncs metadata fields between pages", async ({ browser }) => {
-  const context = await browser.newContext();
-  const first = await context.newPage();
-  const second = await context.newPage();
+  const firstContext = await browser.newContext();
+  const secondContext = await browser.newContext();
+  const first = await firstContext.newPage();
+  const second = await secondContext.newPage();
 
   await first.goto("http://localhost:3002");
   await first.getByRole("button", { name: "Start Collab" }).click();
+  const firstIdentityDialog = first.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await firstIdentityDialog.getByLabel("Nama *").fill("Collaborator One");
+  await firstIdentityDialog.getByRole("button", { name: "Lanjut" }).click();
   await expect(first).toHaveURL(/room=/);
 
   await second.goto(first.url());
+  const secondIdentityDialog = second.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await expect(secondIdentityDialog).toBeVisible();
+  await secondIdentityDialog.getByLabel("Nama *").fill("Collaborator Two");
+  await secondIdentityDialog.getByRole("button", { name: "Lanjut" }).click();
   await expect(first.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
   await expect(second.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
   await second.getByLabel("Nama Project").fill("Collab Nama Project");
@@ -982,7 +1080,8 @@ test("collaboration syncs metadata fields between pages", async ({ browser }) =>
   });
   await expect(first.locator("aside").getByText("Pilot Implementasi Collab Nama Project").first()).toBeVisible();
 
-  await context.close();
+  await firstContext.close();
+  await secondContext.close();
 });
 
 test("review comments can be added to a field and focused", async ({ page }) => {
@@ -990,18 +1089,30 @@ test("review comments can be added to a field and focused", async ({ page }) => 
 
   await page.getByRole("button", { name: "Komentar Review" }).click();
   await page.getByRole("button", { name: "Add Comment" }).click();
+  const identityDialog = page.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await expect(identityDialog).toBeVisible();
+  await identityDialog.getByLabel("Nama *").fill("Reviewer A");
+  await identityDialog.getByRole("button", { name: "Lanjut" }).click();
   await page.getByLabel("Nama Project").click();
-  await page.getByLabel("Nama Reviewer").fill("Reviewer A");
+  await expect(page.getByLabel("Nama Reviewer")).toHaveCount(0);
   await page.getByRole("textbox", { name: "Komentar *" }).fill("Perbaiki nama project");
   await page.getByRole("button", { name: "Simpan" }).click();
 
   await expect(page.getByRole("button", { name: "Lihat field: Nama Project" })).toBeVisible();
+  await expect(page.getByText("Reviewer A menambahkan komentar pada Nama Project")).toBeVisible();
   await page.getByRole("button", { name: "Lihat field: Nama Project" }).click();
   await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/review-target-highlight/);
 
+  await page.getByRole("button", { name: "Balas komentar" }).click();
+  await page.getByRole("textbox", { name: "Balasan *" }).fill("Sudah diperbaiki");
+  await page.getByRole("button", { name: "Kirim balasan" }).click();
+  await expect(page.getByText("Sudah diperbaiki", { exact: true })).toBeVisible();
+  await expect(page.getByText("Reviewer A membalas komentar pada Nama Project")).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Komentar Review" }).click();
   await page.getByRole("button", { name: "Add Comment" }).click();
-  await page.getByLabel("Nama Project").click();
-  await expect(page.getByLabel("Nama Reviewer")).toHaveValue("");
+  await expect(page.getByRole("heading", { name: "Isi nama kolaborator" })).toHaveCount(0);
 });
 
 test("appendix scenario uses section header numbering", async ({ page }) => {

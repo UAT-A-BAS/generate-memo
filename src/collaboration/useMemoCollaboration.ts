@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { MemoDraft } from "@/types/memo";
 import { normalizeMemoDraft } from "@/templates/bcaMemoTemplate";
+import { saveCollaboratorIdentity } from "@/collaboration/collaboratorIdentity";
 
 type ConnectionStatus = "offline" | "syncing" | "connected" | "saved";
 
@@ -89,27 +90,6 @@ function workerWebSocketUrl(roomId: string) {
   return url.toString();
 }
 
-function userProfile() {
-  const stored = window.localStorage.getItem("memo-builder:user-profile");
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as Partial<PresenceUser>;
-      if (parsed.id && parsed.name && parsed.color) return parsed as PresenceUser;
-    } catch {
-      window.localStorage.removeItem("memo-builder:user-profile");
-    }
-  }
-
-  const suffix = Math.floor(100 + Math.random() * 900);
-  const profile = {
-    id: `memo-user-${randomRoomId()}`,
-    name: `Reviewer ${suffix}`,
-    color: ["#0A67B1", "#18735C", "#7C3AED", "#B45309", "#BE123C"][suffix % 5],
-  };
-  window.localStorage.setItem("memo-builder:user-profile", JSON.stringify(profile));
-  return profile;
-}
-
 function safeJsonParse(value: string) {
   try {
     return JSON.parse(value) as PresenceMessage;
@@ -162,6 +142,7 @@ export function collaborationLink(roomId: string) {
 export function useMemoCollaboration(
   draft: MemoDraft,
   replaceDraft: (draft: MemoDraft, status?: "idle" | "loaded" | "saved" | "imported" | "error") => void,
+  collaboratorName: string,
 ) {
   const [state, setState] = useState<CollaborationState>({
     active: false,
@@ -230,16 +211,22 @@ export function useMemoCollaboration(
     });
   }, [clearTimers]);
 
-  const connect = useCallback((roomId: string, seedDraft: MemoDraft | null, updateUrl = true) => {
+  const connect = useCallback((
+    roomId: string,
+    seedDraft: MemoDraft | null,
+    updateUrl = true,
+    identityName = collaboratorName,
+  ) => {
     const cleanRoom = roomId.trim();
-    if (!cleanRoom) return;
+    const cleanName = identityName.trim();
+    if (!cleanRoom || !cleanName) return;
 
     disconnect(false);
     if (updateUrl) setRoomUrl(cleanRoom);
 
     const doc = new Y.Doc();
     const map = doc.getMap(MAP_NAME);
-    const user = userProfile();
+    const user = saveCollaboratorIdentity(cleanName);
     let firstServerSync = false;
     let pendingSeed = seedDraft ? normalizeMemoDraft(seedDraft) : null;
     let pendingSeedMustWin = Boolean(seedDraft);
@@ -412,18 +399,20 @@ export function useMemoCollaboration(
       collaborators: [{ ...user, isLocal: true }],
     });
     connectSocket();
-  }, [disconnect, replaceDraft, clearTimers, updateStatus]);
+  }, [collaboratorName, disconnect, replaceDraft, clearTimers, updateStatus]);
 
   useEffect(() => {
     const roomId = roomFromUrl();
     const timer = window.setTimeout(() => {
-      if (roomId) connect(roomId, null, false);
+      if (roomId && collaboratorName.trim()) {
+        connect(roomId, null, false, collaboratorName);
+      }
     }, 0);
     return () => {
       window.clearTimeout(timer);
       disconnect(false);
     };
-  }, [connect, disconnect]);
+  }, [collaboratorName, connect, disconnect]);
 
   useEffect(() => {
     if (!state.active || applyingRemoteRef.current || !mapRef.current || !docRef.current) return;
@@ -469,15 +458,16 @@ export function useMemoCollaboration(
     };
   }, [state.status, updateStatus]);
 
-  const start = useCallback(() => {
+  const start = useCallback((identityName = collaboratorName) => {
+    if (!identityName.trim()) return "";
     const roomId = randomRoomId();
-    connect(roomId, draft, true);
+    connect(roomId, draft, true, identityName);
     return roomId;
-  }, [connect, draft]);
+  }, [collaboratorName, connect, draft]);
 
-  const join = useCallback((roomId: string) => {
-    connect(roomId, null, true);
-  }, [connect]);
+  const join = useCallback((roomId: string, identityName = collaboratorName) => {
+    connect(roomId, null, true, identityName);
+  }, [collaboratorName, connect]);
 
   const copyLink = useCallback(async () => {
     if (!state.roomId) return "";

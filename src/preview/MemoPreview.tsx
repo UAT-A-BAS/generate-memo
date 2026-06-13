@@ -342,11 +342,11 @@ function renderBlock(
         <div className="ml-[140px] mt-6 text-[14.67px] leading-[1.08]">
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
-            {draft.ccRecipients.map((recipient) => (
+            {block.recipients.map((recipient) => (
               <CcRecipientLine
                 key={recipient.id}
                 recipient={recipient}
-                total={draft.ccRecipients.length}
+                total={block.totalRecipients}
               />
             ))}
           </div>

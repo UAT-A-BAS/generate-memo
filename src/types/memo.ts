@@ -54,6 +54,13 @@ export type SignerRow = {
   title: string;
 };
 
+export type ReviewCommentReply = {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+};
+
 export type ReviewComment = {
   id: string;
   type: "field" | "preview";
@@ -65,6 +72,26 @@ export type ReviewComment = {
   resolved: boolean;
   createdAt: string;
   updatedAt: string;
+  replies: ReviewCommentReply[];
+};
+
+export type ReviewAuditAction =
+  | "collaboration-started"
+  | "comment-created"
+  | "comment-edited"
+  | "comment-replied"
+  | "comment-resolved"
+  | "comment-reopened"
+  | "comment-deleted";
+
+export type ReviewAuditLogEntry = {
+  id: string;
+  action: ReviewAuditAction;
+  actor: string;
+  description: string;
+  commentId?: string;
+  targetLabel?: string;
+  createdAt: string;
 };
 
 export type MemoMetadata = {
@@ -104,6 +131,7 @@ export type MemoDraft = {
   initialsBureau: Bureau;
   appendixScenarios: ScenarioRow[];
   reviewComments: ReviewComment[];
+  reviewAuditLog: ReviewAuditLogEntry[];
   updatedAt: string;
 };
 

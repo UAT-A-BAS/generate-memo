@@ -5,7 +5,9 @@ import type {
   MemoDraft,
   MemoMetadata,
   Recipient,
+  ReviewAuditLogEntry,
   ReviewComment,
+  ReviewCommentReply,
   ScenarioRow,
   SignerRow,
 } from "@/types/memo";
@@ -16,7 +18,7 @@ import { createId } from "@/utils/ids";
 export function createRecipient(seed: Partial<Recipient> = {}): Recipient {
   return {
     id: createId("recipient"),
-    gender: "Bapak",
+    gender: "",
     name: "",
     position: "",
     bureau: "",
@@ -117,8 +119,29 @@ export function createInitialMemoDraft(): MemoDraft {
     initialsBureau: "A",
     appendixScenarios: [createScenarioRow()],
     reviewComments: [],
+    reviewAuditLog: [],
     updatedAt: new Date().toISOString(),
   };
+}
+
+function normalizeReviewReplies(input: unknown): ReviewCommentReply[] {
+  if (!Array.isArray(input)) return [];
+
+  const usedIds = new Set<string>();
+  return input
+    .filter((item): item is Partial<ReviewCommentReply> => Boolean(item && typeof item === "object"))
+    .map((item) => {
+      let id = typeof item.id === "string" && item.id.trim() ? item.id : createId("reply");
+      while (usedIds.has(id)) id = createId("reply");
+      usedIds.add(id);
+
+      return {
+        id,
+        text: typeof item.text === "string" ? item.text : "",
+        author: typeof item.author === "string" ? item.author : "",
+        createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
+      };
+    });
 }
 
 function normalizeReviewComments(input: unknown): ReviewComment[] {
@@ -150,6 +173,42 @@ function normalizeReviewComments(input: unknown): ReviewComment[] {
         resolved: Boolean(item.resolved),
         createdAt,
         updatedAt,
+        replies: normalizeReviewReplies(item.replies),
+      };
+    });
+}
+
+function normalizeReviewAuditLog(input: unknown): ReviewAuditLogEntry[] {
+  if (!Array.isArray(input)) return [];
+
+  const validActions = new Set<ReviewAuditLogEntry["action"]>([
+    "collaboration-started",
+    "comment-created",
+    "comment-edited",
+    "comment-replied",
+    "comment-resolved",
+    "comment-reopened",
+    "comment-deleted",
+  ]);
+  const usedIds = new Set<string>();
+
+  return input
+    .filter((item): item is Partial<ReviewAuditLogEntry> => Boolean(item && typeof item === "object"))
+    .map((item) => {
+      let id = typeof item.id === "string" && item.id.trim() ? item.id : createId("audit");
+      while (usedIds.has(id)) id = createId("audit");
+      usedIds.add(id);
+
+      return {
+        id,
+        action: validActions.has(item.action as ReviewAuditLogEntry["action"])
+          ? item.action as ReviewAuditLogEntry["action"]
+          : "comment-created",
+        actor: typeof item.actor === "string" ? item.actor : "",
+        description: typeof item.description === "string" ? item.description : "",
+        commentId: typeof item.commentId === "string" ? item.commentId : undefined,
+        targetLabel: typeof item.targetLabel === "string" ? item.targetLabel : undefined,
+        createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
       };
     });
 }
@@ -228,6 +287,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     initialsBureau: input.initialsBureau ?? base.initialsBureau,
     appendixScenarios,
     reviewComments: normalizeReviewComments(input.reviewComments),
+    reviewAuditLog: normalizeReviewAuditLog(input.reviewAuditLog),
     updatedAt: input.updatedAt ?? new Date().toISOString(),
   };
 }
