@@ -324,7 +324,7 @@ function renderBlock(
       return (
         <div
           className={`ml-[140px] text-[14.67px] leading-[1.08] ${
-            options.continuationMainPage ? "mt-0" : "mt-7 border-t border-slate-800 pt-5"
+            options.continuationMainPage ? "mt-4" : "mt-5 border-t border-slate-800 pt-3"
           }`}
         >
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
@@ -339,7 +339,7 @@ function renderBlock(
       );
     case "cc":
       return (
-        <div className="ml-[140px] mt-6 text-[14.67px] leading-[1.08]">
+        <div className="ml-[140px] mt-4 text-[14.67px] leading-[1.08]">
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
             {block.recipients.map((recipient) => (
@@ -353,7 +353,7 @@ function renderBlock(
         </div>
       );
     case "initials":
-      return <p className="ml-[140px] mt-6 text-[13.33px]">{initialsText(draft)}</p>;
+      return <p className="ml-[140px] mt-4 text-[13.33px]">{initialsText(draft)}</p>;
     case "validation":
       return (
         <div className="relative h-full overflow-hidden px-2 pt-12 text-[12px] text-[#333]">
@@ -669,7 +669,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
             <span className="text-[13.33px]">, Sambungan</span>
           </h2>
         ) : (
-          <div className="mb-7">
+          <div className="mb-3">
             <h2>
               <span className="font-[Arial] text-[14.67px]">Perihal: </span>
               <strong className="font-[Arial] text-[16px]">{draft.metadata.perihal}</strong>

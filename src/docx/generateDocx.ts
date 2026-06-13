@@ -299,14 +299,18 @@ function continuationRule(): FileChild[] {
   return [
     exactSpacer(160),
     bodyRuleTable([paragraph("\u00A0", { size: 2 })]),
-    exactSpacer(120),
   ];
 }
 
-function sectionCell(children: FileChild[], width: number, withTopBorder: boolean) {
+function sectionCell(
+  children: FileChild[],
+  width: number,
+  withTopBorder: boolean,
+  topMargin = 180,
+) {
   return new TableCell({
     verticalAlign: VerticalAlign.TOP,
-    margins: { top: 180, bottom: 0, left: 0, right: 0 },
+    margins: { top: topMargin, bottom: 0, left: 0, right: 0 },
     width: { size: width, type: WidthType.DXA },
     borders: {
       ...noBorder,
@@ -334,13 +338,14 @@ function sectionTitleParagraph(title: string) {
 function previewSection(title: string, content: FileChild[], rule: SectionRule = "content") {
   const titleHasRule = rule === "full";
   const contentHasRule = rule !== "none";
+  const topMargin = rule === "none" ? 0 : 180;
 
   return table([
     new TableRow({
       children: [
-        sectionCell([sectionTitleParagraph(title)], BODY_TITLE_WIDTH, titleHasRule),
-        sectionCell([paragraph("", { size: 2 })], BODY_COLUMN_GAP, titleHasRule),
-        sectionCell(content, MAIN_BODY_TABLE_WIDTH, contentHasRule),
+        sectionCell([sectionTitleParagraph(title)], BODY_TITLE_WIDTH, titleHasRule, topMargin),
+        sectionCell([paragraph("", { size: 2 })], BODY_COLUMN_GAP, titleHasRule, topMargin),
+        sectionCell(content, MAIN_BODY_TABLE_WIDTH, contentHasRule, topMargin),
       ],
     }),
   ], MAIN_PAGE_CONTENT_WIDTH, [
@@ -478,7 +483,7 @@ function appendixParagraph(
 function closingParagraph(text: string, withTopBorder = true) {
   return new Paragraph({
     indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: wordSpacing({ before: withTopBorder ? 140 : 0, after: 220 }),
+    spacing: wordSpacing({ before: 220, after: 220 }),
     border: withTopBorder
       ? {
           top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 8 },
@@ -932,7 +937,7 @@ function leadingSectionSpacer(sectionRule: SectionRule): FileChild[] {
   return [
     new Paragraph({
       spacing: {
-        before: sectionRule === "full" ? 300 : 240,
+        before: sectionRule === "full" ? 300 : sectionRule === "none" ? 0 : 240,
         after: 0,
         line: 1,
         lineRule: LineRuleType.EXACT,
@@ -958,7 +963,10 @@ function blockChildren(
   draft: MemoDraft,
   block: PreviewBlock,
   sectionRule: SectionRule = "content",
-  options: { continuationMainPage?: boolean } = {},
+  options: {
+    continuationMainPage?: boolean;
+    firstBlockOnContinuation?: boolean;
+  } = {},
 ): FileChild[] {
   switch (block.type) {
     case "memo-heading":
@@ -1097,11 +1105,15 @@ function blockChildren(
       ];
     case "cc":
       return [
-        bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
+        bodyColumnParagraph("Tembusan:", {
+          size: 22,
+          spacingBefore: options.firstBlockOnContinuation ? 0 : 220,
+          spacingAfter: 70,
+        }),
         ...ccRecipientParagraphs(block.recipients, block.totalRecipients),
       ];
     case "initials":
-      return [bodyColumnParagraph(initialsText(draft), { size: 20, spacingBefore: 260 })];
+      return [bodyColumnParagraph(initialsText(draft), { size: 20, spacingBefore: 220 })];
     default:
       return [];
   }
@@ -1225,6 +1237,11 @@ function pageChildren(
     children.push(
       ...blockChildren(draft, block, isSectionBlock(block) ? nextSectionRule() : "content", {
         continuationMainPage: Boolean(page.continuationTitle && page.kind === "main"),
+        firstBlockOnContinuation: Boolean(
+          page.continuationTitle &&
+          page.kind === "main" &&
+          index === 0
+        ),
       }),
     );
     index += 1;

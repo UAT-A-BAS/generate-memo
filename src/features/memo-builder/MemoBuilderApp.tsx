@@ -504,7 +504,6 @@ function formatCommentTime(value: string) {
 function ReviewCommentsPopup({
   open,
   comments,
-  auditLog,
   commentMode,
   onToggleOpen,
   onToggleCommentMode,
@@ -516,7 +515,6 @@ function ReviewCommentsPopup({
 }: {
   open: boolean;
   comments: ReviewComment[];
-  auditLog: ReviewAuditLogEntry[];
   commentMode: boolean;
   onToggleOpen: () => void;
   onToggleCommentMode: () => void;
@@ -530,16 +528,13 @@ function ReviewCommentsPopup({
     if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
   });
-  const sortedAuditLog = [...auditLog].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
 
   return (
     <div data-review-ignore>
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[96px] right-4 z-50 grid max-h-[70dvh] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
+          className="fixed bottom-[96px] right-4 z-50 grid max-h-[70dvh] w-[min(640px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
@@ -582,7 +577,7 @@ function ReviewCommentsPopup({
                 {sortedComments.map((comment) => (
                   <article
                     key={comment.id}
-                    className={`rounded-md border p-3 ${
+                    className={`min-w-0 rounded-md border p-3 ${
                       comment.resolved
                         ? "border-slate-200 bg-slate-50 text-slate-500"
                         : "border-[#c6d3e1] bg-white text-slate-900"
@@ -604,7 +599,12 @@ function ReviewCommentsPopup({
                     >
                       Lihat field: {comment.targetLabel}
                     </button>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-5">{comment.text}</p>
+                    <p
+                      data-review-comment-body
+                      className="mt-2 whitespace-pre-wrap break-words text-sm leading-5 [overflow-wrap:anywhere]"
+                    >
+                      {comment.text}
+                    </p>
                     {comment.replies.length ? (
                       <div className="mt-3 grid gap-2 border-l-2 border-sky-200 pl-3">
                         {comment.replies.map((reply) => (
@@ -614,7 +614,10 @@ function ReviewCommentsPopup({
                               <span>/</span>
                               <span>{formatCommentTime(reply.createdAt)}</span>
                             </div>
-                            <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-800">
+                            <p
+                              data-review-reply-body
+                              className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-800 [overflow-wrap:anywhere]"
+                            >
                               {reply.text}
                             </p>
                           </div>
@@ -667,32 +670,6 @@ function ReviewCommentsPopup({
                 Belum ada komentar review.
               </div>
             )}
-            <section className="mt-3 border-t border-slate-200 pt-3" aria-labelledby="review-audit-title">
-              <div className="flex items-center justify-between gap-2">
-                <h3 id="review-audit-title" className="text-xs font-bold uppercase tracking-wide text-[#0f2d4a]">
-                  Audit Log
-                </h3>
-                <span className="text-[11px] font-semibold text-slate-400">
-                  {sortedAuditLog.length} aktivitas
-                </span>
-              </div>
-              {sortedAuditLog.length ? (
-                <ol className="mt-2 grid gap-2">
-                  {sortedAuditLog.map((entry) => (
-                    <li key={entry.id} className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                      <p>
-                        <strong>{entry.actor || "Reviewer"}</strong> {entry.description}
-                      </p>
-                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
-                        {formatCommentTime(entry.createdAt)}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="mt-2 text-xs font-semibold text-slate-400">Belum ada aktivitas.</p>
-              )}
-            </section>
           </div>
         </section>
       ) : null}
@@ -2357,7 +2334,6 @@ export function MemoBuilderApp() {
       <ReviewCommentsPopup
         open={reviewOpen}
         comments={draft.reviewComments ?? []}
-        auditLog={draft.reviewAuditLog ?? []}
         commentMode={commentMode}
         onToggleOpen={() => setReviewOpen((current) => !current)}
         onToggleCommentMode={requestToggleCommentMode}
