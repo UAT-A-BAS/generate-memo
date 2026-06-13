@@ -5,6 +5,8 @@ import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/pagi
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
 import { memoAttachmentItems } from "@/utils/attachments";
+import { formatRecipientAttention } from "@/utils/formatRecipient";
+import { consecutiveMergeState } from "@/utils/tableMerge";
 import {
   ACTIVITY_COLUMN_WIDTHS,
   ACTIVITY_NUMBERED_COLUMN_WIDTHS,
@@ -59,7 +61,7 @@ function PreviewSection({
   children,
   rule = "content",
 }: {
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
   rule?: SectionRule;
 }) {
@@ -71,7 +73,9 @@ function PreviewSection({
   return (
     <section className={`${sectionMarginClass} ${sectionRuleClass}`}>
       <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.08]">
-        <h3 className={`${titleRuleClass} text-[13.33px] font-bold leading-[1.08]`}>{title}</h3>
+        <h3 className={`${titleRuleClass} text-[13.33px] leading-[1.08]`}>
+          {typeof title === "string" ? <strong>{title}</strong> : title}
+        </h3>
         <div className={contentRuleClass}>{children}</div>
       </div>
     </section>
@@ -94,7 +98,7 @@ function BulletAlignedLine({
 }
 
 function recipientLine(recipient: Recipient, index: number, total: number) {
-  const name = recipient.name?.trim() ? `U.p. Yth. ${recipient.gender} ${recipient.name}` : "";
+  const name = formatRecipientAttention(recipient);
   const useBullet = total > 1;
 
   return (
@@ -135,9 +139,7 @@ function ContactLine({
 }
 
 function CcRecipientLine({ recipient, total }: { recipient: Recipient; total: number }) {
-  const name = recipient.name?.trim()
-    ? `U.p. Yth. ${recipient.gender} ${recipient.name}`
-    : "";
+  const name = formatRecipientAttention(recipient);
 
   if (total === 1) {
     return (
@@ -208,32 +210,14 @@ function consumeRows(
   return { rows, nextIndex: index };
 }
 
-function mergeKey(value: string) {
-  return value.trim().replace(/\s+/g, " ");
-}
-
-function appendixPicSpan(rows: Extract<PreviewBlock, { type: "appendix-row" }>[], index: number) {
-  const current = rows[index];
-  const pic = mergeKey(current.row.pic);
-  if (!pic) return { hidden: false, span: 1 };
-
-  if (
-    index > 0 &&
-    !current.meta.showDate &&
-    !current.meta.showSection &&
-    mergeKey(rows[index - 1].row.pic) === pic
-  ) {
-    return { hidden: true, span: 0 };
-  }
-
-  let span = 1;
-  for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
-    const next = rows[cursor];
-    if (next.meta.showDate || next.meta.showSection || mergeKey(next.row.pic) !== pic) break;
-    span += 1;
-  }
-
-  return { hidden: false, span };
+function continuationSectionTitle(title: string, continuation: boolean) {
+  if (!continuation) return title;
+  return (
+    <>
+      <strong>{title}</strong>
+      <span>, Sambungan</span>
+    </>
+  );
 }
 
 function renderBlock(
@@ -457,29 +441,53 @@ function renderGroupedBlocks(
       const { rows, nextIndex } = consumeRows(blocks, index, "development-row");
       const developmentRows = rows as Extract<PreviewBlock, { type: "development-row" }>[];
       const numbered = draft.developmentRows.length > 1;
-      const title = isTableSectionContinuation(developmentRows[0])
-        ? "Lingkup Pengembangan, Sambungan"
-        : "Lingkup Pengembangan";
+      const continuation = isTableSectionContinuation(developmentRows[0]);
       rendered.push(
-        <PreviewSection title={title} rule={nextSectionRule()} key={`development-${index}`}>
+        <PreviewSection
+          title={continuationSectionTitle("Lingkup Pengembangan", continuation)}
+          rule={nextSectionRule()}
+          key={`development-${index}`}
+        >
           <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.perihal}:</p>
           <MemoTable
             headers={numbered ? ["No.", "Pengembangan", "Keterangan"] : ["Pengembangan", "Keterangan"]}
             columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
           >
-            {developmentRows.map((item) => (
+            {developmentRows.map((item, rowIndex) => {
+              const itemMerge = consecutiveMergeState(
+                developmentRows,
+                rowIndex,
+                (row) => richTextToPlainText(row.row.item),
+              );
+              const descriptionMerge = consecutiveMergeState(
+                developmentRows,
+                rowIndex,
+                (row) => richTextToPlainText(row.row.description),
+              );
+              return (
               <tr key={item.id}>
                 {numbered ? (
                   <td className="w-12 border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
                 ) : null}
-                <td className="border border-slate-900 px-2 py-1 align-middle">
-                  <RichTextView html={richTextToHtml(item.row.item)} />
-                </td>
-                <td className="border border-slate-900 px-2 py-1 align-middle">
-                  <RichTextView html={richTextToHtml(item.row.description)} />
-                </td>
+                {itemMerge.hidden ? null : (
+                  <td
+                    className={`border border-slate-900 px-2 py-1 align-middle ${itemMerge.span > 1 ? "text-center" : ""}`}
+                    rowSpan={itemMerge.span}
+                  >
+                    <RichTextView html={richTextToHtml(item.row.item)} />
+                  </td>
+                )}
+                {descriptionMerge.hidden ? null : (
+                  <td
+                    className={`border border-slate-900 px-2 py-1 align-middle ${descriptionMerge.span > 1 ? "text-center" : ""}`}
+                    rowSpan={descriptionMerge.span}
+                  >
+                    <RichTextView html={richTextToHtml(item.row.description)} />
+                  </td>
+                )}
               </tr>
-            ))}
+              );
+            })}
           </MemoTable>
         </PreviewSection>,
       );
@@ -491,30 +499,60 @@ function renderGroupedBlocks(
       const { rows, nextIndex } = consumeRows(blocks, index, "activity-row");
       const activityRows = rows as Extract<PreviewBlock, { type: "activity-row" }>[];
       const numbered = draft.activities.length > 1;
-      const title = isTableSectionContinuation(activityRows[0])
-        ? "Aktivitas Cabang dan Unit Kerja, Sambungan"
-        : "Aktivitas Cabang dan Unit Kerja";
+      const continuation = isTableSectionContinuation(activityRows[0]);
       rendered.push(
-        <PreviewSection title={title} rule={nextSectionRule()} key={`activity-${index}`}>
+        <PreviewSection
+          title={continuationSectionTitle("Aktivitas Cabang dan Unit Kerja", continuation)}
+          rule={nextSectionRule()}
+          key={`activity-${index}`}
+        >
           <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
           <MemoTable
             headers={numbered ? ["No.", "Aktivitas", "PIC", "Waktu"] : ["Aktivitas", "PIC", "Waktu"]}
             columnWidths={numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTH_PERCENTAGES : ACTIVITY_COLUMN_WIDTH_PERCENTAGES}
           >
-            {activityRows.map((item) => (
+            {activityRows.map((item, rowIndex) => {
+              const activityMerge = consecutiveMergeState(
+                activityRows,
+                rowIndex,
+                (row) => richTextToPlainText(row.row.activity),
+              );
+              const ownerMerge = consecutiveMergeState(
+                activityRows,
+                rowIndex,
+                (row) => row.row.owner,
+              );
+              const dateMerge = consecutiveMergeState(
+                activityRows,
+                rowIndex,
+                (row) => formatDateRangeID(row.row.startDate, row.row.endDate),
+              );
+              return (
               <tr key={item.id}>
                 {numbered ? (
                   <td className="border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
                 ) : null}
-                <td className="border border-slate-900 px-2 py-1 align-middle">
-                  <RichTextView html={richTextToHtml(item.row.activity)} />
-                </td>
-                <td className="border border-slate-900 px-2 py-1 text-center align-middle">{item.row.owner}</td>
-                <td className="border border-slate-900 px-2 py-1 text-center align-middle">
-                  {formatDateRangeID(item.row.startDate, item.row.endDate)}
-                </td>
+                {activityMerge.hidden ? null : (
+                  <td
+                    className={`border border-slate-900 px-2 py-1 align-middle ${activityMerge.span > 1 ? "text-center" : ""}`}
+                    rowSpan={activityMerge.span}
+                  >
+                    <RichTextView html={richTextToHtml(item.row.activity)} />
+                  </td>
+                )}
+                {ownerMerge.hidden ? null : (
+                  <td className="border border-slate-900 px-2 py-1 text-center align-middle" rowSpan={ownerMerge.span}>
+                    {item.row.owner}
+                  </td>
+                )}
+                {dateMerge.hidden ? null : (
+                  <td className="border border-slate-900 px-2 py-1 text-center align-middle" rowSpan={dateMerge.span}>
+                    {formatDateRangeID(item.row.startDate, item.row.endDate)}
+                  </td>
+                )}
               </tr>
-            ))}
+              );
+            })}
           </MemoTable>
         </PreviewSection>,
       );
@@ -532,7 +570,25 @@ function renderGroupedBlocks(
           compact
         >
           {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item, rowIndex, appendixRows) => {
-            const picSpan = appendixPicSpan(appendixRows, rowIndex);
+            const startsGroup = (row: typeof item) => row.meta.showDate || row.meta.showSection;
+            const scenarioMerge = consecutiveMergeState(
+              appendixRows,
+              rowIndex,
+              (row) => richTextToPlainText(row.row.scenario),
+              startsGroup,
+            );
+            const resultMerge = consecutiveMergeState(
+              appendixRows,
+              rowIndex,
+              (row) => richTextToPlainText(row.row.expectedResult),
+              startsGroup,
+            );
+            const picMerge = consecutiveMergeState(
+              appendixRows,
+              rowIndex,
+              (row) => row.row.pic,
+              startsGroup,
+            );
             return (
               <Fragment key={item.id}>
                 {item.meta.showDate ? (
@@ -552,14 +608,24 @@ function renderGroupedBlocks(
                 ) : null}
                 <tr>
                   <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-middle">{item.meta.number}.</td>
-                  <td className="border border-slate-900 px-1 py-0.5 align-middle">
-                    <RichTextView html={richTextToHtml(item.row.scenario)} />
-                  </td>
-                  <td className="border border-slate-900 px-1 py-0.5 align-middle">
-                    <RichTextView html={richTextToHtml(item.row.expectedResult)} />
-                  </td>
-                  {picSpan.hidden ? null : (
-                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 text-center align-middle" rowSpan={picSpan.span}>
+                  {scenarioMerge.hidden ? null : (
+                    <td
+                      className={`border border-slate-900 px-1 py-0.5 align-middle ${scenarioMerge.span > 1 ? "text-center" : ""}`}
+                      rowSpan={scenarioMerge.span}
+                    >
+                      <RichTextView html={richTextToHtml(item.row.scenario)} />
+                    </td>
+                  )}
+                  {resultMerge.hidden ? null : (
+                    <td
+                      className={`border border-slate-900 px-1 py-0.5 align-middle ${resultMerge.span > 1 ? "text-center" : ""}`}
+                      rowSpan={resultMerge.span}
+                    >
+                      <RichTextView html={richTextToHtml(item.row.expectedResult)} />
+                    </td>
+                  )}
+                  {picMerge.hidden ? null : (
+                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 text-center align-middle" rowSpan={picMerge.span}>
                       {item.row.pic}
                     </td>
                   )}
@@ -592,6 +658,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
 
   return (
     <div
+      data-preview-page-content
       className={`absolute bottom-16 ${isAppendix ? "left-10 right-14" : "left-24 right-20"}`}
       style={{ top: contentTop }}
     >
@@ -636,7 +703,7 @@ export function MemoPreview({ draft }: { draft: MemoDraft }) {
     <div className="grid gap-5 py-4">
       {pages.map((page, index) => (
         <div key={page.id} className="origin-top">
-          <PageContainer orientation={page.orientation}>
+          <PageContainer orientation={page.orientation} kind={page.kind}>
             <HeaderFooterRenderer
               pageNumber={index + 1}
               totalPages={pages.length}

@@ -41,8 +41,13 @@ function nodeHtml(node: RichTextNode): string {
       return `<p>${children || "<br />"}</p>`;
     case "bulletList":
       return `<ul>${children}</ul>`;
-    case "orderedList":
-      return `<ol>${children}</ol>`;
+    case "orderedList": {
+      const start = Number(node.attrs?.start ?? 1);
+      const startAttribute = Number.isInteger(start) && start !== 1
+        ? ` start="${start}"`
+        : "";
+      return `<ol${startAttribute}>${children}</ol>`;
+    }
     case "listItem":
       return `<li>${children}</li>`;
     case "hardBreak":
@@ -72,4 +77,3 @@ export function estimateRichTextHeight(doc?: RichTextDoc, base = 34) {
   const paragraphCount = doc?.content?.length ?? 1;
   return base + lines * 18 + Math.max(0, paragraphCount - 1) * 8;
 }
-

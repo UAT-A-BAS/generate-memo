@@ -1,6 +1,6 @@
 import type { RichTextDoc } from "./richText";
 
-export type GenderTitle = "Bapak" | "Ibu" | "Tim" | "Yth.";
+export type GenderTitle = "" | "Bapak" | "Ibu" | "Tim" | "Yth.";
 
 export type MemoType = "Pilot" | "Nasional";
 

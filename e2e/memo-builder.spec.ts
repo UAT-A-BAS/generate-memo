@@ -35,6 +35,14 @@ function richList(type: "bulletList" | "orderedList", items: string[]) {
   };
 }
 
+function richListFrom(type: "bulletList" | "orderedList", start: number, items: string[]) {
+  const doc = richList(type, items);
+  if (type === "orderedList") {
+    doc.content[0].attrs = { start };
+  }
+  return doc;
+}
+
 function completeDraft() {
   return {
     metadata: {
@@ -305,17 +313,59 @@ test("preserves bullet and numbered rich text in preview and DOCX", async ({ pag
   expect(xml).toContain("2. ");
 });
 
+test("preserves an ordered-list start value in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [{
+      id: "development-list-start",
+      item: richListFrom("orderedList", 4, ["Keempat", "Kelima"]),
+      description: richText("Keterangan"),
+    }],
+  });
+
+  const previewList = page.locator("aside .preview-rich-text ol").first();
+  await expect(previewList).toHaveAttribute("start", "4");
+  await expect(previewList).toContainText("Keempat");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("4. ");
+  expect(xml).toContain("5. ");
+});
+
 test("bold toolbar button toggles bold and paragraph toolbar button is removed", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   const editor = page.locator(".ProseMirror").first();
   const editorShell = editor.locator("..").locator("..");
   await editor.click();
+  await page.keyboard.type("Awal ");
   await editorShell.getByRole("button", { name: "Bold" }).click();
   await page.keyboard.type("Tebal");
 
-  expect(await editor.evaluate((node) => node.innerHTML)).toContain("<strong>Tebal</strong>");
+  expect(await editor.evaluate((node) => node.innerHTML)).toContain(
+    "<p>Awal <strong>Tebal</strong></p>",
+  );
   await expect(page.getByRole("button", { name: "Paragraph" })).toHaveCount(0);
+});
+
+test("toolbar formatting works from the keyboard without another editor click", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const editor = page.locator(".ProseMirror").first();
+  const editorShell = editor.locator("..").locator("..");
+  const boldButton = editorShell.getByRole("button", { name: "Bold" });
+
+  await boldButton.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Keyboard bold");
+
+  await expect(editor).toBeFocused();
+  expect(await editor.evaluate((node) => node.innerHTML)).toContain(
+    "<strong>Keyboard bold</strong>",
+  );
 });
 
 test("bullet and numbered toolbar buttons format the active editor", async ({ page }) => {
@@ -336,6 +386,28 @@ test("bullet and numbered toolbar buttons format the active editor", async ({ pa
   expect(await numberedEditor.evaluate((node) => node.innerHTML)).toContain("<ol");
 });
 
+test("Enter creates the next item in bullet and numbered lists", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const editors = page.locator(".ProseMirror");
+  const bulletEditor = editors.nth(0);
+  const numberedEditor = editors.nth(1);
+
+  await bulletEditor.evaluate((node) => (node as HTMLElement).focus());
+  await bulletEditor.locator("..").locator("..").getByRole("button", { name: "Bullet list" }).click();
+  await page.keyboard.type("Bullet satu");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Bullet dua");
+  expect(await bulletEditor.locator("li").count()).toBe(2);
+
+  await numberedEditor.evaluate((node) => (node as HTMLElement).focus());
+  await numberedEditor.locator("..").locator("..").getByRole("button", { name: "Numbered list" }).click();
+  await page.keyboard.type("Nomor satu");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Nomor dua");
+  expect(await numberedEditor.locator("li").count()).toBe(2);
+});
+
 test("Ctrl+Z restores a deleted row", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
@@ -351,6 +423,17 @@ test("Ctrl+Z restores a deleted row", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Hapus lingkup" })).toHaveCount(1);
   await page.keyboard.press("Control+Z");
   await expect(page.getByRole("button", { name: "Hapus lingkup" })).toHaveCount(2);
+});
+
+test("typing does not pollute structural undo history", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const projectName = page.getByLabel("Nama Project");
+
+  await projectName.fill("Input tetap");
+  await page.getByRole("heading", { name: "Memo Generator" }).click();
+  await page.keyboard.press("Control+Z");
+
+  await expect(projectName).toHaveValue("Input tetap");
 });
 
 test("calendar popup escapes sortable row clipping", async ({ page }) => {
@@ -414,12 +497,39 @@ test("labels split development and activity tables as continuations in preview a
   await expect(
     page.locator("aside").getByText("Aktivitas Cabang dan Unit Kerja, Sambungan", { exact: true }).first(),
   ).toBeVisible();
+  const developmentContinuation = page
+    .locator("aside h3")
+    .filter({ hasText: "Lingkup Pengembangan, Sambungan" })
+    .first();
+  const activityContinuation = page
+    .locator("aside h3")
+    .filter({ hasText: "Aktivitas Cabang dan Unit Kerja, Sambungan" })
+    .first();
+  await expect(developmentContinuation.locator("strong")).toHaveText("Lingkup Pengembangan");
+  await expect(developmentContinuation.locator("span")).toHaveText(", Sambungan");
+  await expect(activityContinuation.locator("strong")).toHaveText(
+    "Aktivitas Cabang dan Unit Kerja",
+  );
+  await expect(activityContinuation.locator("span")).toHaveText(", Sambungan");
+  const pageOverflow = await page
+    .locator('aside article[data-page-kind="main"] [data-preview-page-content]')
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  expect(xml).toContain("Lingkup Pengembangan, Sambungan");
-  expect(xml).toContain("Aktivitas Cabang dan Unit Kerja, Sambungan");
+  const plainXmlText = xml.replace(/<[^>]+>/g, "");
+  expect(plainXmlText).toContain("Lingkup Pengembangan, Sambungan");
+  expect(plainXmlText).toContain("Aktivitas Cabang dan Unit Kerja, Sambungan");
+  expect((xml.match(/<w:tblW w:type="dxa" w:w="9266"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(/<w:gridCol w:w="2100"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(/<w:gridCol w:w="350"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect(xml).toMatch(
+    /<w:b\/>[\s\S]{0,300}<w:t[^>]*>Lingkup Pengembangan<\/w:t><\/w:r><w:r>[\s\S]{0,300}<w:t[^>]*>, Sambungan<\/w:t>/,
+  );
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {
@@ -457,7 +567,118 @@ test("tembusan shows mandatory markers", async ({ page }) => {
     .first();
 
   await expect(ccPanel).toContainText("Jabatan / Unit *");
-  await expect(ccPanel).toContainText("Sapaan *");
+  await expect(ccPanel).not.toContainText("Sapaan *");
+  await expect(ccPanel.getByRole("option", { name: "Sapaan" })).toHaveValue("");
+});
+
+test("tembusan can be generated without a salutation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    ccRecipients: [{
+      id: "cc-without-salutation",
+      gender: "",
+      name: "Verry Iskandar",
+      position: "Kepala KCU Pluit",
+    }],
+  });
+
+  const ccAttention = page.locator("aside p").filter({ hasText: "Verry Iskandar" }).first();
+  await expect(ccAttention).toHaveText("U.p. Yth. Verry Iskandar");
+  expect(await ccAttention.textContent()).toBe("U.p. Yth. Verry Iskandar");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("U.p. Yth. Verry Iskandar");
+});
+
+test("consecutive duplicate table values merge and center in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const duplicateItem = richText("Nilai pengembangan sama");
+  const duplicateDescription = richText("Keterangan sama");
+  const duplicateActivity = richText("Aktivitas sama");
+  const duplicateScenario = richText("Skenario sama");
+  const duplicateResult = richText("Hasil sama");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [
+      { id: "development-merge-1", item: duplicateItem, description: duplicateDescription },
+      { id: "development-merge-2", item: duplicateItem, description: duplicateDescription },
+    ],
+    activities: [
+      {
+        id: "activity-merge-1",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        owner: "CTSA",
+        activity: duplicateActivity,
+      },
+      {
+        id: "activity-merge-2",
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        owner: "CTSA",
+        activity: duplicateActivity,
+      },
+    ],
+    appendixScenarios: [
+      {
+        ...completeDraft().appendixScenarios[0],
+        id: "scenario-merge-1",
+        scenario: duplicateScenario,
+        expectedResult: duplicateResult,
+        pic: "CTSA",
+      },
+      {
+        ...completeDraft().appendixScenarios[0],
+        id: "scenario-merge-2",
+        scenario: duplicateScenario,
+        expectedResult: duplicateResult,
+        pic: "CTSA",
+        section: "",
+      },
+    ],
+  });
+
+  const mergedCells = page.locator('aside td[rowspan="2"]');
+  await expect(mergedCells).toHaveCount(8);
+  for (let index = 0; index < await mergedCells.count(); index += 1) {
+    await expect(mergedCells.nth(index)).toHaveClass(/text-center/);
+    await expect(mergedCells.nth(index)).toHaveClass(/align-middle/);
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect((xml.match(/<w:vMerge w:val="restart"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
+  expect((xml.match(/<w:vMerge w:val="continue"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
+});
+
+test("memo and appendix preview use the exact generated A4 paper size without changing validation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const portrait = await page.locator('aside article[data-page-kind="main"]').first().boundingBox();
+  const landscape = await page.locator('aside article[data-page-kind="appendix"]').first().boundingBox();
+  const validation = await page.locator('aside article[data-page-kind="validation"]').boundingBox();
+  expect(portrait).toBeTruthy();
+  expect(landscape).toBeTruthy();
+  expect(validation).toBeTruthy();
+  expect(portrait?.width).toBeCloseTo((210 / 25.4) * 96, 1);
+  expect(portrait?.height).toBeCloseTo((297 / 25.4) * 96, 1);
+  expect(landscape?.width).toBeCloseTo((297 / 25.4) * 96, 1);
+  expect(landscape?.height).toBeCloseTo((210 / 25.4) * 96, 1);
+  expect(validation?.width).toBe(794);
+  expect(validation?.height).toBe(1123);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain('<w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/>');
+  expect(xml).toContain(
+    '<w:pgMar w:top="960" w:right="1200" w:bottom="960" w:left="1440" w:header="840" w:footer="480" w:gutter="0"/>',
+  );
 });
 
 test("empty rich text fields start in plain text mode", async ({ page }) => {

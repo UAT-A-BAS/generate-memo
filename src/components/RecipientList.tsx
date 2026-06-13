@@ -7,9 +7,12 @@ import { DragDropList } from "./DragDropList";
 
 type RecipientListProps = {
   recipients: Recipient[];
-  onChange: (recipients: Recipient[]) => void;
+  onChange: (recipients: Recipient[], options?: { recordHistory?: boolean }) => void;
   minRows?: number;
   required?: boolean;
+  genderRequired?: boolean;
+  genderPlaceholder?: string;
+  defaultGender?: Recipient["gender"];
 };
 
 const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
@@ -20,14 +23,25 @@ function RequiredMark() {
   return <span className="text-red-600">*</span>;
 }
 
-export function RecipientList({ recipients, onChange, minRows = 1, required = true }: RecipientListProps) {
+export function RecipientList({
+  recipients,
+  onChange,
+  minRows = 1,
+  required = true,
+  genderRequired = required,
+  genderPlaceholder,
+  defaultGender = "Bapak",
+}: RecipientListProps) {
   function updateRecipient(id: string, patch: Partial<Recipient>) {
     onChange(recipients.map((recipient) => (recipient.id === id ? { ...recipient, ...patch } : recipient)));
   }
 
   function removeRecipient(id: string) {
     const next = recipients.filter((recipient) => recipient.id !== id);
-    onChange(next.length >= minRows ? next : [createRecipient()]);
+    onChange(
+      next.length >= minRows ? next : [createRecipient({ gender: defaultGender })],
+      { recordHistory: true },
+    );
   }
 
   return (
@@ -54,7 +68,7 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
                 className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
                 data-field-id={`recipient-gender-${recipient.id}`}
               >
-                <span>Sapaan {required ? <RequiredMark /> : null}</span>
+                <span>Sapaan {genderRequired ? <RequiredMark /> : null}</span>
                 <select
                   value={recipient.gender}
                   onChange={(event) =>
@@ -64,8 +78,9 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
                   }
                   className={fieldClass}
                 >
+                  {genderPlaceholder ? <option value="">{genderPlaceholder}</option> : null}
                   {genderOptions.map((option) => (
-                    <option key={option}>{option}</option>
+                    <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
               </label>
@@ -95,7 +110,7 @@ export function RecipientList({ recipients, onChange, minRows = 1, required = tr
       />
       <button
         type="button"
-        onClick={() => onChange([...recipients, createRecipient()])}
+        onClick={() => onChange([...recipients, createRecipient({ gender: defaultGender })])}
         className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
       >
         <Plus size={16} />

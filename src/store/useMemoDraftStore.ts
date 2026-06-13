@@ -17,7 +17,7 @@ type MemoDraftStore = {
   status: SaveStatus;
   lastSavedAt?: string;
   error?: string;
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: (updater: (draft: MemoDraft) => MemoDraft, recordHistory?: boolean) => void;
   updateMetadata: (patch: Partial<MemoMetadata>) => void;
   replaceDraft: (draft: MemoDraft, status?: SaveStatus) => void;
   loadFromLocal: () => void;
@@ -41,10 +41,12 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   history: [],
   hasLoaded: false,
   status: "idle",
-  updateDraft: (updater) => {
+  updateDraft: (updater, recordHistory = false) => {
     set((state) => ({
       draft: touch(updater(state.draft)),
-      history: [...state.history, state.draft].slice(-HISTORY_LIMIT),
+      history: recordHistory
+        ? [...state.history, state.draft].slice(-HISTORY_LIMIT)
+        : state.history,
       status: "idle",
       error: undefined,
     }));
@@ -66,7 +68,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
           ...state.draft,
           metadata: nextMetadata,
         }),
-        history: [...state.history, state.draft].slice(-HISTORY_LIMIT),
+        history: state.history,
         status: "idle",
         error: undefined,
       };

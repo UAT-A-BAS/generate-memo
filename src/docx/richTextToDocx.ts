@@ -13,6 +13,7 @@ type RichTextDocxOptions = {
   spacingAfter?: number;
   spacingBefore?: number;
   line?: number;
+  alignment?: IParagraphOptions["alignment"];
 };
 
 const WORD_LINE_MULTIPLE_108 = 259;
@@ -61,7 +62,12 @@ function paragraphFromNode(
   const runs = textRunsFromNode(node, options);
 
   return new Paragraph({
-    indent: depth > 0 ? { left: depth * 360, hanging: prefix ? 180 : 0 } : undefined,
+    alignment: options.alignment,
+    indent: prefix
+      ? { left: (depth + 1) * 360, hanging: 240 }
+      : depth > 0
+        ? { left: (depth + 1) * 360 }
+        : undefined,
     spacing: {
       before: options.spacingBefore ?? 0,
       after: options.spacingAfter ?? 0,
@@ -117,6 +123,7 @@ export function richTextToDocxParagraphs(
   if (!doc?.content?.length) {
     return [
       new Paragraph({
+        alignment: options.alignment,
         spacing: {
           before: options.spacingBefore ?? 0,
           after: options.spacingAfter ?? 0,

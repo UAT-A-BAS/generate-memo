@@ -92,14 +92,18 @@ function FieldLabel({
   children,
   required = false,
   fieldId,
+  asGroup = false,
 }: {
   label: string;
   children: React.ReactNode;
   required?: boolean;
   fieldId?: string;
+  asGroup?: boolean;
 }) {
+  const Root = asGroup ? "div" : "label";
+
   return (
-    <label
+    <Root
       className="grid content-start gap-1 text-[13px] font-semibold text-slate-700"
       data-field-id={fieldId}
     >
@@ -108,9 +112,14 @@ function FieldLabel({
         {required ? <span className="text-red-600"> *</span> : null}
       </span>
       {children}
-    </label>
+    </Root>
   );
 }
+
+type DraftUpdater = (
+  updater: (draft: MemoDraft) => MemoDraft,
+  recordHistory?: boolean,
+) => void;
 
 type ValidationIssue = {
   id: string;
@@ -141,7 +150,6 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
 
   draft.ccRecipients.forEach((recipient, index) => {
     if (!hasText(recipient.position)) add(`recipient-${recipient.id}`, `Tembusan ${index + 1}: Jabatan / Unit`);
-    if (!hasText(recipient.gender)) add(`recipient-gender-${recipient.id}`, `Tembusan ${index + 1}: Sapaan`);
   });
 
   if (draft.metadata.memoType === "Nasional" && draft.referenceEnabled && !hasRichText(draft.reference)) {
@@ -781,10 +789,10 @@ function DevelopmentPanel({
   updateDraft,
 }: {
   rows: DevelopmentRow[];
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: DraftUpdater;
 }) {
-  function setRows(nextRows: DevelopmentRow[]) {
-    updateDraft((draft) => ({ ...draft, developmentRows: nextRows }));
+  function setRows(nextRows: DevelopmentRow[], recordHistory = false) {
+    updateDraft((draft) => ({ ...draft, developmentRows: nextRows }), recordHistory);
   }
 
   return (
@@ -803,7 +811,7 @@ function DevelopmentPanel({
                   type="button"
                   onClick={() => {
                     const nextRows = rows.filter((item) => item.id !== row.id);
-                    setRows(nextRows.length ? nextRows : [createDevelopmentRow()]);
+                    setRows(nextRows.length ? nextRows : [createDevelopmentRow()], true);
                   }}
                   className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
                   aria-label="Hapus lingkup"
@@ -812,7 +820,7 @@ function DevelopmentPanel({
                 </button>
               </div>
               <div className="grid items-start gap-3 xl:grid-cols-2">
-                <FieldLabel label="Item" fieldId={`development-item-${row.id}`} required>
+                <FieldLabel label="Item" fieldId={`development-item-${row.id}`} required asGroup>
                   <RichTextEditor
                     value={row.item}
                     minHeight={92}
@@ -821,7 +829,7 @@ function DevelopmentPanel({
                     }
                   />
                 </FieldLabel>
-                <FieldLabel label="Keterangan" fieldId={`development-description-${row.id}`} required>
+                <FieldLabel label="Keterangan" fieldId={`development-description-${row.id}`} required asGroup>
                   <RichTextEditor
                     value={row.description}
                     minHeight={92}
@@ -854,10 +862,10 @@ function ActivitiesPanel({
   updateDraft,
 }: {
   rows: ActivityRow[];
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: DraftUpdater;
 }) {
-  function setRows(nextRows: ActivityRow[]) {
-    updateDraft((draft) => ({ ...draft, activities: nextRows }));
+  function setRows(nextRows: ActivityRow[], recordHistory = false) {
+    updateDraft((draft) => ({ ...draft, activities: nextRows }), recordHistory);
   }
 
   return (
@@ -896,14 +904,14 @@ function ActivitiesPanel({
                 </FieldLabel>
                 <button
                   type="button"
-                  onClick={() => setRows(rows.filter((item) => item.id !== row.id))}
+                  onClick={() => setRows(rows.filter((item) => item.id !== row.id), true)}
                   className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
                   aria-label="Hapus aktivitas"
                 >
                   <Trash2 size={15} />
                 </button>
               </div>
-              <FieldLabel label="Aktivitas" fieldId={`activity-text-${row.id}`} required>
+              <FieldLabel label="Aktivitas" fieldId={`activity-text-${row.id}`} required asGroup>
                 <RichTextEditor
                   value={row.activity}
                   minHeight={92}
@@ -931,7 +939,7 @@ function ReferencePanel({
   updateDraft,
 }: {
   draft: MemoDraft;
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: DraftUpdater;
 }) {
   if (draft.metadata.memoType !== "Nasional") return null;
 
@@ -980,10 +988,10 @@ function ContactsPanel({
   updateDraft,
 }: {
   draft: MemoDraft;
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: DraftUpdater;
 }) {
-  function setRows(contacts: MemoDraft["contacts"]) {
-    updateDraft((current) => ({ ...current, contacts }));
+  function setRows(contacts: MemoDraft["contacts"], recordHistory = false) {
+    updateDraft((current) => ({ ...current, contacts }), recordHistory);
   }
 
   return (
@@ -1024,7 +1032,7 @@ function ContactsPanel({
               </FieldLabel>
               <button
                 type="button"
-                onClick={() => setRows(draft.contacts.filter((item) => item.id !== contact.id))}
+                onClick={() => setRows(draft.contacts.filter((item) => item.id !== contact.id), true)}
                 className="mt-5 flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
                 aria-label="Hapus PIC"
               >
@@ -1058,7 +1066,7 @@ function AttachmentsPanel({
 }: {
   enabled: boolean;
   attachments: string;
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: DraftUpdater;
 }) {
   return (
     <Panel>
@@ -1182,11 +1190,11 @@ function AppendixPanel({
   validationIssues,
 }: {
   rows: ScenarioRow[];
-  updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
+  updateDraft: DraftUpdater;
   validationIssues: ValidationIssue[];
 }) {
-  function setRows(nextRows: ScenarioRow[]) {
-    updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }));
+  function setRows(nextRows: ScenarioRow[], recordHistory = false) {
+    updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }), recordHistory);
   }
 
   const groups = scenarioDateGroups(rows);
@@ -1323,7 +1331,7 @@ function AppendixPanel({
                               type="button"
                               onClick={() => {
                                 const nextRows = rows.filter((item) => item.id !== row.id);
-                                setRows(nextRows.length ? nextRows : [createScenarioRow()]);
+                                setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
                               }}
                               className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
                               aria-label="Hapus skenario"
@@ -1332,7 +1340,7 @@ function AppendixPanel({
                             </button>
                           </div>
                           <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
-                            <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required>
+                            <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
                               <RichTextEditor
                                 value={row.scenario}
                                 minHeight={92}
@@ -1341,7 +1349,7 @@ function AppendixPanel({
                                 }
                               />
                             </FieldLabel>
-                            <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required>
+                            <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
                               <RichTextEditor
                                 value={row.expectedResult}
                                 minHeight={92}
@@ -1568,11 +1576,14 @@ export function MemoBuilderApp() {
     openCommentDialog(target);
   }
 
-  function updateReviewComments(updater: (comments: ReviewComment[]) => ReviewComment[]) {
+  function updateReviewComments(
+    updater: (comments: ReviewComment[]) => ReviewComment[],
+    recordHistory = false,
+  ) {
     updateDraft((current) => ({
       ...current,
       reviewComments: updater(current.reviewComments ?? []),
-    }));
+    }), recordHistory);
   }
 
   function saveReviewComment() {
@@ -1631,7 +1642,10 @@ export function MemoBuilderApp() {
   }
 
   function deleteReviewComment(comment: ReviewComment) {
-    updateReviewComments((comments) => comments.filter((item) => item.id !== comment.id));
+    updateReviewComments(
+      (comments) => comments.filter((item) => item.id !== comment.id),
+      true,
+    );
   }
 
   const unresolvedReviewCount = (draft.reviewComments ?? []).filter((comment) => !comment.resolved).length;
@@ -1693,7 +1707,12 @@ export function MemoBuilderApp() {
             <div className="mt-6">
               <RecipientList
                 recipients={draft.recipients}
-                onChange={(recipients) => updateDraft((current) => ({ ...current, recipients }))}
+                onChange={(recipients, options) =>
+                  updateDraft(
+                    (current) => ({ ...current, recipients }),
+                    options?.recordHistory,
+                  )
+                }
               />
             </div>
           </Panel>
@@ -1808,7 +1827,7 @@ export function MemoBuilderApp() {
                       updateDraft((current) => ({
                         ...current,
                         signers: current.signers.filter((item) => item.id !== signer.id),
-                      }))
+                      }), true)
                     }
                     className="mt-5 flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
                     aria-label="Hapus signer"
@@ -1838,8 +1857,15 @@ export function MemoBuilderApp() {
             <div className="mt-6">
               <RecipientList
                 recipients={draft.ccRecipients}
-                onChange={(ccRecipients) =>
-                  updateDraft((current) => ({ ...current, ccRecipients }))
+                required
+                genderRequired={false}
+                genderPlaceholder="Sapaan"
+                defaultGender=""
+                onChange={(ccRecipients, options) =>
+                  updateDraft(
+                    (current) => ({ ...current, ccRecipients }),
+                    options?.recordHistory,
+                  )
                 }
               />
             </div>

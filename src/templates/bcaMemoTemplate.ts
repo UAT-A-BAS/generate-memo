@@ -112,7 +112,7 @@ export function createInitialMemoDraft(): MemoDraft {
     attachments: "",
     contacts: [createContactRow()],
     signers: [createSignerRow()],
-    ccRecipients: [createRecipient()],
+    ccRecipients: [createRecipient({ gender: "" })],
     initials: "",
     initialsBureau: "A",
     appendixScenarios: [createScenarioRow()],

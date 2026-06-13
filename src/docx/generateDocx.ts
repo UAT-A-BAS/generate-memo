@@ -1,7 +1,6 @@
 import {
   AlignmentType,
   BorderStyle,
-  convertInchesToTwip,
   Document,
   ExternalHyperlink,
   Footer,
@@ -18,7 +17,6 @@ import {
   TableRow,
   TextRun,
   UnderlineType,
-  VerticalMergeType,
   VerticalAlign,
   WidthType,
   type FileChild,
@@ -30,13 +28,16 @@ import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination
 import {
   ACTIVITY_COLUMN_WIDTHS,
   ACTIVITY_NUMBERED_COLUMN_WIDTHS,
+  A4_HEIGHT_TWIPS,
+  A4_WIDTH_TWIPS,
+  APPENDIX_PAGE_MARGINS,
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
   BODY_COLUMN_INDENT,
   BODY_COLUMN_RIGHT_INDENT,
-  CONTINUATION_RULE_INDENT,
   DEVELOPMENT_COLUMN_WIDTHS,
   DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
+  MAIN_PAGE_MARGINS,
   TABLE_HEADER_FILL,
   WORD_INDENT_002_CM,
   WORD_LINE_MULTIPLE_108,
@@ -45,6 +46,11 @@ import {
 import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
+import { formatRecipientAttention } from "@/utils/formatRecipient";
+import {
+  consecutiveMergeState,
+  type ConsecutiveMergeState,
+} from "@/utils/tableMerge";
 import { richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
 import { spliceValidationTemplate } from "./spliceValidationTemplate";
@@ -55,11 +61,21 @@ const border = {
   color: "9CA3AF",
 };
 
+const invisibleBorder = {
+  style: BorderStyle.SINGLE,
+  size: 1,
+  color: "FFFFFF",
+};
 const noBorder = {
-  top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-  bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-  left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-  right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+  top: invisibleBorder,
+  bottom: invisibleBorder,
+  left: invisibleBorder,
+  right: invisibleBorder,
+};
+const noTableBorder = {
+  ...noBorder,
+  insideHorizontal: noBorder.top,
+  insideVertical: noBorder.top,
 };
 
 const sectionTopBorder = {
@@ -69,8 +85,14 @@ const sectionTopBorder = {
 };
 const LIST_TEXT_GAP = "      ";
 const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
-const CONTINUATION_NOTICE_INDENT = BODY_COLUMN_INDENT;
-const CONTINUATION_NOTICE_RIGHT_INDENT = BODY_COLUMN_RIGHT_INDENT;
+const MAIN_PAGE_CONTENT_WIDTH =
+  A4_WIDTH_TWIPS -
+  MAIN_PAGE_MARGINS.left -
+  MAIN_PAGE_MARGINS.right;
+const MAIN_BODY_TABLE_WIDTH =
+  MAIN_PAGE_CONTENT_WIDTH -
+  BODY_COLUMN_INDENT -
+  BODY_COLUMN_RIGHT_INDENT;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -217,13 +239,6 @@ function bodyColumnParagraph(
   });
 }
 
-function blankLine() {
-  return new Paragraph({
-    spacing: wordSpacing(),
-    children: [new TextRun({ text: "" })],
-  });
-}
-
 function dashGapParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
@@ -248,22 +263,51 @@ function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph
   });
 }
 
-function continuationRule() {
+function exactSpacer(height: number) {
   return new Paragraph({
-    includeIfEmpty: true,
-    indent: { left: CONTINUATION_RULE_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: wordSpacing({ before: 160, after: 120 }),
-    border: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
+    spacing: {
+      before: height,
+      after: 0,
+      line: 1,
+      lineRule: LineRuleType.EXACT,
     },
-    children: [new TextRun({ text: "" })],
+    children: [new TextRun({ text: "", size: 2 })],
   });
+}
+
+function bodyRuleTable(children: Paragraph[]) {
+  return bodyTable([
+    new TableRow({
+      children: [
+        new TableCell({
+          verticalAlign: VerticalAlign.TOP,
+          margins: { top: 40, bottom: 0, left: 0, right: 0 },
+          width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+            bottom: invisibleBorder,
+            left: invisibleBorder,
+            right: invisibleBorder,
+          },
+          children,
+        }),
+      ],
+    }),
+  ], [100]);
+}
+
+function continuationRule(): FileChild[] {
+  return [
+    exactSpacer(160),
+    bodyRuleTable([paragraph("\u00A0", { size: 2 })]),
+    exactSpacer(120),
+  ];
 }
 
 function sectionCell(children: FileChild[], width: number, withTopBorder: boolean) {
   return new TableCell({
     verticalAlign: VerticalAlign.TOP,
-    margins: { top: 140, bottom: 120, left: 0, right: 120 },
+    margins: { top: 180, bottom: 0, left: 0, right: 0 },
     width: { size: pct(width), type: WidthType.PERCENTAGE },
     borders: {
       top: withTopBorder ? sectionTopBorder : noBorder.top,
@@ -275,6 +319,21 @@ function sectionCell(children: FileChild[], width: number, withTopBorder: boolea
   });
 }
 
+function sectionTitleParagraph(title: string) {
+  const continuationSuffix = ", Sambungan";
+  if (!title.endsWith(continuationSuffix)) {
+    return paragraph(title, { bold: true, size: 20 });
+  }
+
+  return new Paragraph({
+    spacing: wordSpacing(),
+    children: [
+      run(title.slice(0, -continuationSuffix.length), { bold: true, size: 20 }),
+      run(continuationSuffix, { size: 20 }),
+    ],
+  });
+}
+
 function previewSection(title: string, content: FileChild[], rule: SectionRule = "content") {
   const titleHasRule = rule === "full";
   const contentHasRule = rule !== "none";
@@ -282,19 +341,22 @@ function previewSection(title: string, content: FileChild[], rule: SectionRule =
   return table([
     new TableRow({
       children: [
-        sectionCell([paragraph(title, { bold: true, size: 20 })], 22, titleHasRule),
+        sectionCell([sectionTitleParagraph(title)], 22, titleHasRule),
         sectionCell(content, 78, contentHasRule),
       ],
     }),
   ], 100, [22, 78]);
 }
 
-function cell(children: Paragraph[], width?: number, shaded = false) {
+function bodyCell(children: Paragraph[], width: number, shaded = false) {
   return new TableCell({
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 90, bottom: 90, left: 90, right: 90 },
     shading: shaded ? { fill: TABLE_HEADER_FILL } : undefined,
-    width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
+    width: {
+      size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
+      type: WidthType.DXA,
+    },
     borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
@@ -305,20 +367,71 @@ function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
     width: { size: pct(width), type: WidthType.PERCENTAGE },
     columnWidths: columnWidths?.map((columnWidth) => columnWidth * 100),
     layout: TableLayoutType.FIXED,
+    borders: noTableBorder,
     rows,
   });
 }
 
-function continuationNotice() {
-  return new Paragraph({
-    alignment: AlignmentType.RIGHT,
-    indent: { left: CONTINUATION_NOTICE_INDENT, right: CONTINUATION_NOTICE_RIGHT_INDENT },
-    spacing: wordSpacing({ before: 140 }),
-    border: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
-    },
-    children: [run("Bersambung ke halaman berikut", { italics: true, size: 20 })],
+function bodySpacerCell(width: number) {
+  return new TableCell({
+    verticalAlign: VerticalAlign.TOP,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    width: { size: width, type: WidthType.DXA },
+    borders: noBorder,
+    children: [paragraph("", { size: 2 })],
   });
+}
+
+function bodyTable(rows: TableRow[], columnWidths: number[]) {
+  for (const row of rows) {
+    row.addCellToIndex(bodySpacerCell(BODY_COLUMN_INDENT), 0);
+    row.addCellToIndex(bodySpacerCell(BODY_COLUMN_RIGHT_INDENT), row.cells.length);
+  }
+
+  return new Table({
+    width: { size: MAIN_PAGE_CONTENT_WIDTH, type: WidthType.DXA },
+    columnWidths: [
+      BODY_COLUMN_INDENT,
+      ...columnWidths.map((columnWidth) =>
+        Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
+      ),
+      BODY_COLUMN_RIGHT_INDENT,
+    ],
+    layout: TableLayoutType.FIXED,
+    borders: noTableBorder,
+    rows,
+  });
+}
+
+function mergedCell(
+  children: Paragraph[],
+  width: number,
+  merge: ConsecutiveMergeState,
+) {
+  return new TableCell({
+    rowSpan: merge.span > 1 ? merge.span : undefined,
+    verticalAlign: VerticalAlign.CENTER,
+    margins: { top: 90, bottom: 90, left: 90, right: 90 },
+    width: {
+      size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
+      type: WidthType.DXA,
+    },
+    borders: { top: border, bottom: border, left: border, right: border },
+    children,
+  });
+}
+
+function continuationNotice(): FileChild[] {
+  return [
+    exactSpacer(120),
+    bodyRuleTable([
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: wordSpacing(),
+        children: [run("Bersambung ke halaman berikut", { italics: true, size: 20 })],
+      }),
+    ]),
+  ];
 }
 
 function compactCell(
@@ -348,6 +461,21 @@ function compactSpanningCell(children: Paragraph[], span: number, shaded = false
   });
 }
 
+function mergedCompactCell(
+  children: Paragraph[],
+  width: number,
+  merge: ConsecutiveMergeState,
+) {
+  return new TableCell({
+    rowSpan: merge.span > 1 ? merge.span : undefined,
+    verticalAlign: VerticalAlign.CENTER,
+    margins: { top: 35, bottom: 35, left: 55, right: 55 },
+    width: { size: pct(width), type: WidthType.PERCENTAGE },
+    borders: { top: border, bottom: border, left: border, right: border },
+    children,
+  });
+}
+
 function appendixParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
@@ -357,10 +485,6 @@ function appendixParagraph(
     spacingAfter: options.spacingAfter ?? 0,
     line: options.line ?? WORD_LINE_MULTIPLE_108,
   });
-}
-
-function appendixRichParagraphs(doc: Parameters<typeof richTextToDocxParagraphs>[0]) {
-  return richTextToDocxParagraphs(doc, { size: 22, spacingBefore: 0, spacingAfter: 0, line: WORD_LINE_MULTIPLE_108 });
 }
 
 function closingParagraph(text: string, withTopBorder = true) {
@@ -374,10 +498,6 @@ function closingParagraph(text: string, withTopBorder = true) {
       : undefined,
     children: multilineRuns(text, { size: 22 }),
   });
-}
-
-function mergeKey(value: string) {
-  return value.trim().replace(/\s+/g, " ");
 }
 
 function header() {
@@ -423,15 +543,15 @@ function memoHeadingRecipientParagraphs(recipients: Recipient[]) {
           line: WORD_LINE_MULTIPLE_115,
         })
       : memoHeadingParagraph(recipient.position, { size: 22 });
-    const name = recipient.name?.trim()
+    const name = formatRecipientAttention(recipient)
       ? useDash
-        ? tabAlignedParagraph(`U.p. Yth. ${recipient.gender} ${recipient.name}`, {
+        ? tabAlignedParagraph(formatRecipientAttention(recipient), {
             size: 22,
             indent: { left: WORD_INDENT_002_CM },
             spacingBefore: 80,
             line: WORD_LINE_MULTIPLE_115,
           })
-        : memoHeadingParagraph(`U.p. Yth. ${recipient.gender} ${recipient.name}`, { size: 22 })
+        : memoHeadingParagraph(formatRecipientAttention(recipient), { size: 22 })
       : null;
 
     return name ? [position, name] : [position];
@@ -450,13 +570,13 @@ function ccRecipientParagraphs(recipients: Recipient[]) {
     const position = useDash
       ? dashGapParagraph(recipient.position, sharedOptions)
       : bodyColumnParagraph(recipient.position, { size: 22, spacingAfter: 70 });
-    const name = recipient.name?.trim()
+    const name = formatRecipientAttention(recipient)
       ? useDash
         ? tabAlignedParagraph(
-            `U.p. Yth. ${recipient.gender} ${recipient.name}`,
+            formatRecipientAttention(recipient),
             sharedOptions,
           )
-        : bodyColumnParagraph(`U.p. Yth. ${recipient.gender} ${recipient.name}`, {
+        : bodyColumnParagraph(formatRecipientAttention(recipient), {
             size: 22,
             spacingAfter: 70,
           })
@@ -474,19 +594,19 @@ function developmentTable(
     ? Array.from(DEVELOPMENT_COLUMN_WIDTHS)
     : Array.from(DEVELOPMENT_SINGLE_COLUMN_WIDTHS);
 
-  return table([
+  return bodyTable([
     new TableRow({
       tableHeader: true,
       children: [
         ...(numbered
-          ? [cell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true)]
+          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true)]
           : []),
-        cell(
+        bodyCell(
           [paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
           numbered ? DEVELOPMENT_COLUMN_WIDTHS[1] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
           true,
         ),
-        cell(
+        bodyCell(
           [paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
           numbered ? DEVELOPMENT_COLUMN_WIDTHS[2] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
           true,
@@ -494,24 +614,58 @@ function developmentTable(
       ],
     }),
     ...rows.map(
-      (block) =>
+      (block, index) => {
+        const itemMerge = consecutiveMergeState(
+          rows,
+          index,
+          (row) => richTextToPlainText(row.row.item),
+        );
+        const descriptionMerge = consecutiveMergeState(
+          rows,
+          index,
+          (row) => richTextToPlainText(row.row.description),
+        );
+        return (
         new TableRow({
           children: [
             ...(numbered
-              ? [cell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0])]
+              ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0])]
               : []),
-            cell(
-              richTextToDocxParagraphs(block.row.item, { size: 22 }),
-              numbered ? DEVELOPMENT_COLUMN_WIDTHS[1] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
-            ),
-            cell(
-              richTextToDocxParagraphs(block.row.description, { size: 22 }),
-              numbered ? DEVELOPMENT_COLUMN_WIDTHS[2] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
-            ),
+            ...(itemMerge.hidden
+              ? []
+              : [
+                  mergedCell(
+                    richTextToDocxParagraphs(block.row.item, {
+                      size: 22,
+                      alignment: itemMerge.span > 1 ? AlignmentType.CENTER : undefined,
+                    }),
+                    numbered
+                      ? DEVELOPMENT_COLUMN_WIDTHS[1]
+                      : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
+                    itemMerge,
+                  ),
+                ]),
+            ...(descriptionMerge.hidden
+              ? []
+              : [
+                  mergedCell(
+                    richTextToDocxParagraphs(block.row.description, {
+                      size: 22,
+                      alignment:
+                        descriptionMerge.span > 1 ? AlignmentType.CENTER : undefined,
+                    }),
+                    numbered
+                      ? DEVELOPMENT_COLUMN_WIDTHS[2]
+                      : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
+                    descriptionMerge,
+                  ),
+                ]),
           ],
-        }),
+        })
+        );
+      },
     ),
-  ], 100, columnWidths);
+  ], columnWidths);
 }
 
 function activityTable(
@@ -522,24 +676,24 @@ function activityTable(
     ? Array.from(ACTIVITY_NUMBERED_COLUMN_WIDTHS)
     : Array.from(ACTIVITY_COLUMN_WIDTHS);
 
-  return table([
+  return bodyTable([
     new TableRow({
       tableHeader: true,
       children: [
         ...(numbered
-          ? [cell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
+          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
           : []),
-        cell(
+        bodyCell(
           [paragraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })],
           numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1] : ACTIVITY_COLUMN_WIDTHS[0],
           true,
         ),
-        cell(
+        bodyCell(
           [paragraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })],
           numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2] : ACTIVITY_COLUMN_WIDTHS[1],
           true,
         ),
-        cell(
+        bodyCell(
           [paragraph("Waktu", { bold: true, size: 22, align: AlignmentType.CENTER })],
           numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
           true,
@@ -547,57 +701,95 @@ function activityTable(
       ],
     }),
     ...rows.map(
-      (block) =>
+      (block, index) => {
+        const activityMerge = consecutiveMergeState(
+          rows,
+          index,
+          (row) => richTextToPlainText(row.row.activity),
+        );
+        const ownerMerge = consecutiveMergeState(rows, index, (row) => row.row.owner);
+        const dateMerge = consecutiveMergeState(
+          rows,
+          index,
+          (row) => formatDateRangeID(row.row.startDate, row.row.endDate),
+        );
+        return (
         new TableRow({
           children: [
             ...(numbered
-              ? [cell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]
+              ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]
               : []),
-            cell(
-              richTextToDocxParagraphs(block.row.activity, { size: 22 }),
-              numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1] : ACTIVITY_COLUMN_WIDTHS[0],
-            ),
-            cell(
-              [paragraph(block.row.owner, { size: 22, align: AlignmentType.CENTER })],
-              numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2] : ACTIVITY_COLUMN_WIDTHS[1],
-            ),
-            cell(
-              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 22, align: AlignmentType.CENTER })],
-              numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
-            ),
+            ...(activityMerge.hidden
+              ? []
+              : [
+                  mergedCell(
+                    richTextToDocxParagraphs(block.row.activity, {
+                      size: 22,
+                      alignment:
+                        activityMerge.span > 1 ? AlignmentType.CENTER : undefined,
+                    }),
+                    numbered
+                      ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1]
+                      : ACTIVITY_COLUMN_WIDTHS[0],
+                    activityMerge,
+                  ),
+                ]),
+            ...(ownerMerge.hidden
+              ? []
+              : [
+                  mergedCell(
+                    [paragraph(block.row.owner, { size: 22, align: AlignmentType.CENTER })],
+                    numbered
+                      ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2]
+                      : ACTIVITY_COLUMN_WIDTHS[1],
+                    ownerMerge,
+                  ),
+                ]),
+            ...(dateMerge.hidden
+              ? []
+              : [
+                  mergedCell(
+                    [
+                      paragraph(
+                        formatDateRangeID(block.row.startDate, block.row.endDate),
+                        { size: 22, align: AlignmentType.CENTER },
+                      ),
+                    ],
+                    numbered
+                      ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3]
+                      : ACTIVITY_COLUMN_WIDTHS[2],
+                    dateMerge,
+                  ),
+                ]),
           ],
-        }),
+        })
+        );
+      },
     ),
-  ], 100, columnWidths);
+  ], columnWidths);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
-  function picMergeState(index: number) {
-    const current = rows[index];
-    const currentPic = mergeKey(current.row.pic);
-    if (!currentPic) return { hidden: false, restart: false };
-    if (
-      index > 0 &&
-      !current.meta.showDate &&
-      !current.meta.showSection &&
-      mergeKey(rows[index - 1].row.pic) === currentPic
-    ) {
-      return { hidden: true, restart: false };
-    }
-
-    let restart = false;
-    for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
-      const next = rows[cursor];
-      if (next.meta.showDate || next.meta.showSection) break;
-      if (mergeKey(next.row.pic) === currentPic) {
-        restart = true;
-        break;
-      }
-    }
-    return { hidden: false, restart };
-  }
-
   const bodyRows = rows.flatMap((block, index) => {
+    const startsGroup = (row: typeof block) => row.meta.showDate || row.meta.showSection;
+    const scenarioMerge = consecutiveMergeState(
+      rows,
+      index,
+      (row) => richTextToPlainText(row.row.scenario),
+      startsGroup,
+    );
+    const resultMerge = consecutiveMergeState(
+      rows,
+      index,
+      (row) => richTextToPlainText(row.row.expectedResult),
+      startsGroup,
+    );
+    const picMerge = consecutiveMergeState(
+      rows,
+      index,
+      (row) => row.row.pic,
+      startsGroup,
+    );
     const dateRows =
       block.meta.showDate
         ? [
@@ -631,28 +823,11 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             }),
           ]
         : [];
-    const picMerge = picMergeState(index);
-    const picCell = picMerge.hidden
-      ? new TableCell({
-          verticalMerge: VerticalMergeType.CONTINUE,
-          verticalAlign: VerticalAlign.CENTER,
-          margins: { top: 35, bottom: 35, left: 55, right: 55 },
-          borders: { top: border, bottom: border, left: border, right: border },
-          children: [appendixParagraph("", { size: 22 })],
-        })
-      : new TableCell({
-          verticalMerge: picMerge.restart ? VerticalMergeType.RESTART : undefined,
-          verticalAlign: VerticalAlign.CENTER,
-          margins: { top: 35, bottom: 35, left: 55, right: 55 },
-          width: { size: pct(APPENDIX_COLUMN_WIDTHS[3]), type: WidthType.PERCENTAGE },
-          borders: { top: border, bottom: border, left: border, right: border },
-          children: [appendixParagraph(block.row.pic, { size: 22, align: AlignmentType.CENTER })],
-        });
-
     return [
       ...dateRows,
       ...sectionRows,
       new TableRow({
+        cantSplit: true,
         children: [
           compactCell(
             [appendixParagraph(`${block.meta.number}.`, { size: 22, align: AlignmentType.CENTER })],
@@ -660,9 +835,51 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             false,
             VerticalAlign.CENTER,
           ),
-          compactCell(appendixRichParagraphs(block.row.scenario), APPENDIX_COLUMN_WIDTHS[1], false, VerticalAlign.CENTER),
-          compactCell(appendixRichParagraphs(block.row.expectedResult), APPENDIX_COLUMN_WIDTHS[2], false, VerticalAlign.CENTER),
-          picCell,
+          ...(scenarioMerge.hidden
+            ? []
+            : [
+                mergedCompactCell(
+                  richTextToDocxParagraphs(block.row.scenario, {
+                    size: 22,
+                    spacingBefore: 0,
+                    spacingAfter: 0,
+                    line: WORD_LINE_MULTIPLE_108,
+                    alignment:
+                      scenarioMerge.span > 1 ? AlignmentType.CENTER : undefined,
+                  }),
+                  APPENDIX_COLUMN_WIDTHS[1],
+                  scenarioMerge,
+                ),
+              ]),
+          ...(resultMerge.hidden
+            ? []
+            : [
+                mergedCompactCell(
+                  richTextToDocxParagraphs(block.row.expectedResult, {
+                    size: 22,
+                    spacingBefore: 0,
+                    spacingAfter: 0,
+                    line: WORD_LINE_MULTIPLE_108,
+                    alignment: resultMerge.span > 1 ? AlignmentType.CENTER : undefined,
+                  }),
+                  APPENDIX_COLUMN_WIDTHS[2],
+                  resultMerge,
+                ),
+              ]),
+          ...(picMerge.hidden
+            ? []
+            : [
+                mergedCompactCell(
+                  [
+                    appendixParagraph(block.row.pic, {
+                      size: 22,
+                      align: AlignmentType.CENTER,
+                    }),
+                  ],
+                  APPENDIX_COLUMN_WIDTHS[3],
+                  picMerge,
+                ),
+              ]),
         ],
       }),
     ];
@@ -711,19 +928,27 @@ function isSectionBlock(block: PreviewBlock) {
 }
 
 function leadingSectionSpacer(sectionRule: SectionRule): FileChild[] {
-  if (sectionRule !== "full") return [];
-
   return [
     new Paragraph({
-      spacing: wordSpacing({ before: 80, after: 0 }),
-      children: [new TextRun({ text: "" })],
+      spacing: {
+        before: sectionRule === "full" ? 300 : 240,
+        after: 0,
+        line: 1,
+        lineRule: LineRuleType.EXACT,
+      },
+      children: [new TextRun({ text: "", size: 2 })],
     }),
   ];
 }
 
 function tableBottomSpacer() {
   return new Paragraph({
-    spacing: wordSpacing({ before: 100, after: 0 }),
+    spacing: {
+      before: 120,
+      after: 0,
+      line: 1,
+      lineRule: LineRuleType.EXACT,
+    },
     children: [new TextRun({ text: "", size: 2 })],
   });
 }
@@ -737,7 +962,15 @@ function blockChildren(
   switch (block.type) {
     case "memo-heading":
       return [
-        blankLine(),
+        new Paragraph({
+          spacing: {
+            before: 600,
+            after: 0,
+            line: 1,
+            lineRule: LineRuleType.EXACT,
+          },
+          children: [new TextRun({ text: "", size: 2 })],
+        }),
         table([
           new TableRow({
             children: [
@@ -893,8 +1126,13 @@ function pageChildren(
       children.push(
         new Paragraph({
           pageBreakBefore: options.pageBreakBefore,
-          spacing: wordSpacing({ before: 0, after: 0 }),
-          children: [new TextRun({ text: "" })],
+          spacing: {
+            before: 0,
+            after: 660,
+            line: 1,
+            lineRule: LineRuleType.EXACT,
+          },
+          children: [new TextRun({ text: "", size: 2 })],
         }),
         new Paragraph({
           spacing: wordSpacing({ before: 0, after: 80 }),
@@ -904,7 +1142,7 @@ function pageChildren(
             run(", Sambungan", { size: 22, font: "Arial" }),
           ],
         }),
-        continuationRule(),
+        ...continuationRule(),
       );
     } else {
       children.push(
@@ -940,10 +1178,13 @@ function pageChildren(
       children.push(
         ...leadingSectionSpacer(sectionRule),
         previewSection(title, [
-          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, { size: 22 }),
-          developmentTable(developmentRows, draft.developmentRows.length > 1),
-          tableBottomSpacer(),
+          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, {
+            size: 22,
+            spacingAfter: 120,
+          }),
         ], sectionRule),
+        developmentTable(developmentRows, draft.developmentRows.length > 1),
+        tableBottomSpacer(),
       );
       index = nextIndex;
       continue;
@@ -959,10 +1200,13 @@ function pageChildren(
       children.push(
         ...leadingSectionSpacer(sectionRule),
         previewSection(title, [
-          paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, { size: 22 }),
-          activityTable(activityRows, draft.activities.length > 1),
-          tableBottomSpacer(),
+          paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
+            size: 22,
+            spacingAfter: 120,
+          }),
         ], sectionRule),
+        activityTable(activityRows, draft.activities.length > 1),
+        tableBottomSpacer(),
       );
       index = nextIndex;
       continue;
@@ -984,28 +1228,26 @@ function pageChildren(
   }
 
   if (page.continues && page.kind === "main") {
-    children.push(continuationNotice());
+    children.push(...continuationNotice());
   }
 
   return children;
 }
 
 function sectionProperties(orientation: PreviewOrientation) {
+  const isLandscape = orientation === "landscape";
+  const margins = isLandscape ? APPENDIX_PAGE_MARGINS : MAIN_PAGE_MARGINS;
+
   return {
     type: SectionType.NEXT_PAGE,
     page: {
       size: {
+        width: isLandscape ? A4_HEIGHT_TWIPS : A4_WIDTH_TWIPS,
+        height: isLandscape ? A4_WIDTH_TWIPS : A4_HEIGHT_TWIPS,
         orientation:
-          orientation === "landscape" ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+          isLandscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
       },
-      margin: {
-        top: convertInchesToTwip(0.65),
-        right: convertInchesToTwip(0.65),
-        bottom: convertInchesToTwip(0.65),
-        left: convertInchesToTwip(0.75),
-        header: convertInchesToTwip(0.28),
-        footer: convertInchesToTwip(0.28),
-      },
+      margin: { ...margins },
     },
   };
 }

@@ -57,10 +57,16 @@ export function isTableSectionContinuation(
   return block.index > 0 || splitPart > 1;
 }
 
-const PAGE_LIMITS: Record<PreviewOrientation, number> = {
-  portrait: 1040,
-  landscape: 620,
-};
+const FIRST_PORTRAIT_PAGE_LIMIT = 1180;
+const CONTINUATION_PORTRAIT_PAGE_LIMIT = 1150;
+const LANDSCAPE_PAGE_LIMIT = 720;
+
+function pageLimit(orientation: PreviewOrientation, pageIndex: number) {
+  if (orientation === "landscape") return LANDSCAPE_PAGE_LIMIT;
+  return pageIndex === 0
+    ? FIRST_PORTRAIT_PAGE_LIMIT
+    : CONTINUATION_PORTRAIT_PAGE_LIMIT;
+}
 
 function visualLineCount(value: string, charsPerLine: number) {
   const lines = value.split(/\r?\n/);
@@ -343,7 +349,7 @@ function packPages(
     continues: false,
   };
   let used = 0;
-  const limit = PAGE_LIMITS[options.orientation];
+  let limit = pageLimit(options.orientation, 0);
   const closingHeight = blocks
     .filter((block) => block.type === "signature" || block.type === "cc" || block.type === "initials")
     .reduce((total, block) => total + block.estimatedHeight, 0);
@@ -369,6 +375,7 @@ function packPages(
         continues: false,
       };
       used = 0;
+      limit = pageLimit(options.orientation, pages.length);
     }
 
     current.blocks.push(block);

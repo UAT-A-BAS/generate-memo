@@ -1,11 +1,11 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
-import { Extension, type Editor } from "@tiptap/core";
+import { Extension } from "@tiptap/core";
 import UnderlineExtension from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import { Bold, Italic, List, ListOrdered, Underline } from "lucide-react";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { RichTextDoc } from "@/types/richText";
 
 type RichTextEditorProps = {
@@ -14,69 +14,59 @@ type RichTextEditorProps = {
   minHeight?: number;
 };
 
-function preventToolbarDefault(event: React.SyntheticEvent) {
+function preserveEditorSelection(event: React.MouseEvent<HTMLButtonElement>) {
   event.preventDefault();
-  event.stopPropagation();
 }
-
-function toggleBoldWithStoredMark(editor: Editor) {
-  editor.view.focus();
-
-  if (!editor.state.selection.empty) {
-    editor.commands.toggleBold();
-    return;
-  }
-
-  const boldMark = editor.schema.marks.bold;
-  if (!boldMark) return;
-
-  const currentMarks = editor.state.storedMarks ?? editor.state.selection.$from.marks();
-  const transaction = boldMark.isInSet(currentMarks)
-    ? editor.state.tr.removeStoredMark(boldMark)
-    : editor.state.tr.addStoredMark(boldMark.create());
-
-  editor.view.dispatch(transaction);
-}
-
-const StoredBoldShortcut = Extension.create({
-  name: "storedBoldShortcut",
-  priority: 1100,
-  addKeyboardShortcuts() {
-    return {
-      "Mod-b": () => {
-        toggleBoldWithStoredMark(this.editor);
-        return true;
-      },
-      "Mod-B": () => {
-        toggleBoldWithStoredMark(this.editor);
-        return true;
-      },
-    };
-  },
-});
 
 const EnterWithoutMarks = Extension.create({
   name: "enterWithoutMarks",
   priority: 1000,
   addKeyboardShortcuts() {
     return {
-      Enter: () =>
-        this.editor.commands.first(({ commands }) => [
+      Enter: () => {
+        if (this.editor.isActive("bulletList") || this.editor.isActive("orderedList")) {
+          return false;
+        }
+
+        return this.editor.commands.first(({ commands }) => [
           () => commands.newlineInCode(),
           () => commands.createParagraphNear(),
           () => commands.liftEmptyBlock(),
           () => commands.splitBlock({ keepMarks: false }),
-        ]),
+        ]);
+      },
     };
   },
 });
 
 export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
+  const onChangeRef = useRef(onChange);
+  const pendingChangeRef = useRef<{ value: RichTextDoc; serialized: string } | null>(null);
+  const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastEmittedValueRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  const flushPendingChange = useCallback(() => {
+    if (changeTimerRef.current) {
+      clearTimeout(changeTimerRef.current);
+      changeTimerRef.current = null;
+    }
+
+    const pending = pendingChangeRef.current;
+    if (!pending) return;
+
+    pendingChangeRef.current = null;
+    lastEmittedValueRef.current = pending.serialized;
+    onChangeRef.current(pending.value);
+  }, []);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ underline: false }),
       UnderlineExtension,
-      StoredBoldShortcut,
       EnterWithoutMarks,
     ],
     content: value,
@@ -88,18 +78,47 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
       },
     },
     onUpdate: ({ editor: currentEditor }) => {
-      onChange(currentEditor.getJSON() as RichTextDoc);
+      const nextValue = currentEditor.getJSON() as RichTextDoc;
+      pendingChangeRef.current = {
+        value: nextValue,
+        serialized: JSON.stringify(nextValue),
+      };
+      if (changeTimerRef.current) {
+        clearTimeout(changeTimerRef.current);
+      }
+      changeTimerRef.current = setTimeout(flushPendingChange, 40);
     },
+    onBlur: flushPendingChange,
   });
 
   useEffect(() => {
     if (!editor) return;
     const current = JSON.stringify(editor.getJSON());
     const next = JSON.stringify(value);
-    if (current !== next) {
-      editor.commands.setContent(value);
+    if (current === next) {
+      if (lastEmittedValueRef.current === next) {
+        lastEmittedValueRef.current = null;
+      }
+      return;
     }
+    if (
+      lastEmittedValueRef.current === next ||
+      pendingChangeRef.current ||
+      editor.view.hasFocus()
+    ) {
+      return;
+    }
+    editor.commands.setContent(value, { emitUpdate: false });
   }, [editor, value]);
+
+  useEffect(
+    () => () => {
+      if (changeTimerRef.current) {
+        clearTimeout(changeTimerRef.current);
+      }
+    },
+    [],
+  );
 
   if (!editor) {
     return (
@@ -120,9 +139,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("bold") ? activeClass : ""}`}
-          onMouseDown={(event) => {
-            preventToolbarDefault(event);
-            toggleBoldWithStoredMark(editor);
+          onMouseDown={preserveEditorSelection}
+          onClick={() => {
+            editor.view.focus();
+            editor.commands.toggleBold();
           }}
           aria-label="Bold"
           title="Bold"
@@ -132,9 +152,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("italic") ? activeClass : ""}`}
-          onMouseDown={(event) => {
-            preventToolbarDefault(event);
-            editor.chain().focus().toggleItalic().run();
+          onMouseDown={preserveEditorSelection}
+          onClick={() => {
+            editor.view.focus();
+            editor.commands.toggleItalic();
           }}
           aria-label="Italic"
         >
@@ -143,9 +164,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("underline") ? activeClass : ""}`}
-          onMouseDown={(event) => {
-            preventToolbarDefault(event);
-            editor.chain().focus().toggleUnderline().run();
+          onMouseDown={preserveEditorSelection}
+          onClick={() => {
+            editor.view.focus();
+            editor.commands.toggleUnderline();
           }}
           aria-label="Underline"
         >
@@ -155,9 +177,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("bulletList") ? activeClass : ""}`}
-          onMouseDown={(event) => {
-            preventToolbarDefault(event);
-            editor.chain().focus().toggleBulletList().run();
+          onMouseDown={preserveEditorSelection}
+          onClick={() => {
+            editor.view.focus();
+            editor.commands.toggleBulletList();
           }}
           aria-label="Bullet list"
         >
@@ -166,9 +189,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("orderedList") ? activeClass : ""}`}
-          onMouseDown={(event) => {
-            preventToolbarDefault(event);
-            editor.chain().focus().toggleOrderedList().run();
+          onMouseDown={preserveEditorSelection}
+          onClick={() => {
+            editor.view.focus();
+            editor.commands.toggleOrderedList();
           }}
           aria-label="Numbered list"
         >
