@@ -31,13 +31,18 @@ import {
   A4_HEIGHT_TWIPS,
   A4_WIDTH_TWIPS,
   APPENDIX_PAGE_MARGINS,
+  APPENDIX_PAGE_CONTENT_WIDTH,
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
+  BODY_COLUMN_GAP,
   BODY_COLUMN_INDENT,
   BODY_COLUMN_RIGHT_INDENT,
+  BODY_TITLE_WIDTH,
   DEVELOPMENT_COLUMN_WIDTHS,
   DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
   MAIN_PAGE_MARGINS,
+  MAIN_BODY_CONTENT_WIDTH,
+  MAIN_PAGE_CONTENT_WIDTH,
   TABLE_HEADER_FILL,
   WORD_INDENT_002_CM,
   WORD_LINE_MULTIPLE_108,
@@ -84,14 +89,7 @@ const sectionTopBorder = {
 };
 const LIST_TEXT_GAP = "      ";
 const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
-const MAIN_PAGE_CONTENT_WIDTH =
-  A4_WIDTH_TWIPS -
-  MAIN_PAGE_MARGINS.left -
-  MAIN_PAGE_MARGINS.right;
-const MAIN_BODY_TABLE_WIDTH =
-  MAIN_PAGE_CONTENT_WIDTH -
-  BODY_COLUMN_INDENT -
-  BODY_COLUMN_RIGHT_INDENT;
+const MAIN_BODY_TABLE_WIDTH = MAIN_BODY_CONTENT_WIDTH;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -307,7 +305,7 @@ function sectionCell(children: FileChild[], width: number, withTopBorder: boolea
   return new TableCell({
     verticalAlign: VerticalAlign.TOP,
     margins: { top: 180, bottom: 0, left: 0, right: 0 },
-    width: { size: pct(width), type: WidthType.PERCENTAGE },
+    width: { size: width, type: WidthType.DXA },
     borders: {
       ...noBorder,
       top: withTopBorder ? sectionTopBorder : hiddenBorder,
@@ -338,11 +336,16 @@ function previewSection(title: string, content: FileChild[], rule: SectionRule =
   return table([
     new TableRow({
       children: [
-        sectionCell([sectionTitleParagraph(title)], 22, titleHasRule),
-        sectionCell(content, 78, contentHasRule),
+        sectionCell([sectionTitleParagraph(title)], BODY_TITLE_WIDTH, titleHasRule),
+        sectionCell([paragraph("", { size: 2 })], BODY_COLUMN_GAP, titleHasRule),
+        sectionCell(content, MAIN_BODY_TABLE_WIDTH, contentHasRule),
       ],
     }),
-  ], 100, [22, 78]);
+  ], MAIN_PAGE_CONTENT_WIDTH, [
+    BODY_TITLE_WIDTH,
+    BODY_COLUMN_GAP,
+    MAIN_BODY_TABLE_WIDTH,
+  ]);
 }
 
 function bodyCell(children: Paragraph[], width: number, shaded = false) {
@@ -359,47 +362,27 @@ function bodyCell(children: Paragraph[], width: number, shaded = false) {
   });
 }
 
-function table(rows: TableRow[], width = 100, columnWidths?: number[]) {
+function table(rows: TableRow[], width: number, columnWidths: number[]) {
   return new Table({
-    width: { size: pct(width), type: WidthType.PERCENTAGE },
-    columnWidths: columnWidths?.map((columnWidth) => columnWidth * 100),
+    width: { size: width, type: WidthType.DXA },
+    columnWidths,
     layout: TableLayoutType.FIXED,
     borders: noTableBorder,
     rows,
   });
 }
 
-function bodySpacerCell(width: number) {
-  return new TableCell({
-    verticalAlign: VerticalAlign.TOP,
-    margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    width: { size: width, type: WidthType.DXA },
-    borders: noBorder,
-    children: [paragraph("", { size: 2 })],
-  });
-}
-
 function bodyRow(options: ConstructorParameters<typeof TableRow>[0]) {
-  return new TableRow({
-    ...options,
-    children: [
-      bodySpacerCell(BODY_COLUMN_INDENT),
-      ...options.children,
-      bodySpacerCell(BODY_COLUMN_RIGHT_INDENT),
-    ],
-  });
+  return new TableRow(options);
 }
 
 function bodyTable(rows: TableRow[], columnWidths: number[]) {
   return new Table({
-    width: { size: MAIN_PAGE_CONTENT_WIDTH, type: WidthType.DXA },
-    columnWidths: [
-      BODY_COLUMN_INDENT,
-      ...columnWidths.map((columnWidth) =>
-        Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
-      ),
-      BODY_COLUMN_RIGHT_INDENT,
-    ],
+    width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
+    indent: { size: BODY_COLUMN_INDENT, type: WidthType.DXA },
+    columnWidths: columnWidths.map((columnWidth) =>
+      Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
+    ),
     layout: TableLayoutType.FIXED,
     borders: noTableBorder,
     rows,
@@ -630,6 +613,7 @@ function developmentTable(
         );
         return (
         bodyRow({
+          cantSplit: true,
           children: [
             ...(numbered
               ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0])]
@@ -718,6 +702,7 @@ function activityTable(
         );
         return (
         bodyRow({
+          cantSplit: true,
           children: [
             ...(numbered
               ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]
@@ -900,7 +885,9 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       ],
     }),
     ...bodyRows,
-  ], 100, Array.from(APPENDIX_COLUMN_WIDTHS));
+  ], APPENDIX_PAGE_CONTENT_WIDTH, APPENDIX_COLUMN_WIDTHS.map((columnWidth) =>
+    Math.round((APPENDIX_PAGE_CONTENT_WIDTH * columnWidth) / 100),
+  ));
 }
 
 function consumeTableRows(
@@ -1003,7 +990,9 @@ function blockChildren(
               new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
             ],
           }),
-        ], 100, [18, 3, 79]),
+        ], MAIN_PAGE_CONTENT_WIDTH, [18, 3, 79].map((columnWidth) =>
+          Math.round((MAIN_PAGE_CONTENT_WIDTH * columnWidth) / 100),
+        )),
       ];
     case "recipients":
       return [];
@@ -1245,8 +1234,8 @@ function sectionProperties(orientation: PreviewOrientation) {
     type: SectionType.NEXT_PAGE,
     page: {
       size: {
-        width: isLandscape ? A4_HEIGHT_TWIPS : A4_WIDTH_TWIPS,
-        height: isLandscape ? A4_WIDTH_TWIPS : A4_HEIGHT_TWIPS,
+        width: A4_WIDTH_TWIPS,
+        height: A4_HEIGHT_TWIPS,
         orientation:
           isLandscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
       },

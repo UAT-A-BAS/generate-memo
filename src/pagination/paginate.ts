@@ -6,6 +6,10 @@ import type {
 } from "@/types/memo";
 import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
+import {
+  A4_PORTRAIT_HEIGHT_PX,
+  MAIN_PAGE_MARGINS,
+} from "@/documentLayout";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { richTextToPlainText } from "@/utils/richText";
@@ -57,8 +61,12 @@ export function isTableSectionContinuation(
   return block.index > 0 || splitPart > 1;
 }
 
-const FIRST_PORTRAIT_PAGE_LIMIT = 1180;
-const CONTINUATION_PORTRAIT_PAGE_LIMIT = 1150;
+const TWIPS_PER_CSS_PIXEL = 15;
+const PORTRAIT_CONTENT_HEIGHT =
+  A4_PORTRAIT_HEIGHT_PX -
+  (MAIN_PAGE_MARGINS.top + MAIN_PAGE_MARGINS.bottom) / TWIPS_PER_CSS_PIXEL;
+const FIRST_PORTRAIT_PAGE_LIMIT = Math.floor(PORTRAIT_CONTENT_HEIGHT - 40);
+const CONTINUATION_PORTRAIT_PAGE_LIMIT = Math.floor(PORTRAIT_CONTENT_HEIGHT - 120);
 const LANDSCAPE_PAGE_LIMIT = 560;
 
 function pageLimit(orientation: PreviewOrientation, pageIndex: number) {
@@ -242,12 +250,34 @@ function splitDoc(doc: RichTextDoc, maxChars: number) {
 }
 
 function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
-  if (block.type === "activity-row" && block.estimatedHeight > 620) {
-    return splitDoc(block.row.activity, 880).map((activity, part) => ({
+  if (block.type === "development-row" && block.estimatedHeight > 540) {
+    const itemParts = splitDoc(block.row.item, 520);
+    const descriptionParts = splitDoc(block.row.description, 700);
+    const total = Math.max(itemParts.length, descriptionParts.length);
+
+    return Array.from({ length: total }, (_, part) => {
+      const item = itemParts[part] ?? paragraphRichText("");
+      const description = descriptionParts[part] ?? paragraphRichText("");
+      return {
+        ...block,
+        id: `${block.id}-part-${part + 1}`,
+        row: { ...block.row, item, description },
+        estimatedHeight:
+          96 +
+          Math.max(
+            richVisualBlockHeight(item, 0, 30),
+            richVisualBlockHeight(description, 0, 62),
+          ),
+      };
+    });
+  }
+
+  if (block.type === "activity-row" && block.estimatedHeight > 540) {
+    return splitDoc(block.row.activity, 650).map((activity, part) => ({
       ...block,
       id: `${block.id}-part-${part + 1}`,
       row: { ...block.row, activity },
-      estimatedHeight: 110 + richVisualBlockHeight(activity, 0, 50),
+      estimatedHeight: 96 + richVisualBlockHeight(activity, 0, 50),
     }));
   }
 

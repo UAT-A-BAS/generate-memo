@@ -116,6 +116,10 @@ async function documentXmlFrom(download: Download) {
   return parts.xml;
 }
 
+function documentTables(xml: string) {
+  return xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? [];
+}
+
 async function docxPartsFrom(download: Download) {
   const path = await download.path();
   expect(path).toBeTruthy();
@@ -520,6 +524,86 @@ test("appendix tables never overflow their preview page", async ({ page }) => {
   expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
 });
 
+test("one appendix section continues across A4 pages without a new section", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const sectionTitle = "Bagian tunggal lintas halaman";
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: Array.from({ length: 18 }, (_, index) => ({
+      ...completeDraft().appendixScenarios[0],
+      id: `single-section-${index}`,
+      dateGroupId: "single-date",
+      sectionGroupId: "single-section",
+      section: sectionTitle,
+      scenario: richText(
+        `Skenario ${index + 1} dengan langkah verifikasi yang tetap berada pada bagian yang sama.`,
+      ),
+      expectedResult: richText(
+        `Hasil ${index + 1} memastikan tabel dapat berlanjut tanpa membuat bagian baru.`,
+      ),
+    })),
+  });
+
+  const appendixPages = page.locator('aside article[data-page-kind="appendix"]');
+  await expect(appendixPages).toHaveCount(2);
+  await expect(appendixPages.getByText("A.", { exact: true })).toHaveCount(1);
+  await expect(appendixPages.getByText(sectionTitle, { exact: true })).toHaveCount(1);
+
+  const pageOverflow = await appendixPages
+    .locator("[data-preview-page-content]")
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect((xml.match(new RegExp(sectionTitle, "g")) ?? []).length).toBe(1);
+  expect((xml.match(/>Hasil\/Keterangan<\/w:t>/g) ?? []).length).toBe(2);
+});
+
+test("attachment-sized main content moves to the next A4 page instead of clipping", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const longDescription = [
+    "Pengajuan pembukaan rekening giro badan yang dilakukan melalui webform, dapat ditindaklanjuti pada aplikasi BDS Web Gen 2.",
+    "Adapun prosesnya adalah sebagai berikut:",
+    "1. PIC Badan usaha melakukan pengajuan pembukaan rekening Giro Badan melalui webform.",
+    "2. Setelah pengajuan pembukaan rekening Giro Badan selesai melalui webform, maka proses pembukaan rekening akan dilanjutkan ke proses verifikasi kelengkapan dan kesesuaian data antar dokumen pengajuan oleh Biro Customer Account and Pooling Services (APV) di aplikasi SEEDS.",
+    "3. Setelah verifikasi kelengkapan dan kesesuaian data antar dokumen selesai, maka proses pembukaan rekening akan dilanjutkan ke proses verifikasi keabsahan dokumen oleh unit Pemeriksa Dokumen Legalitas (PDL) di aplikasi BDS Web Gen 2.",
+    "4. Setelah verifikasi keabsahan dokumen selesai, maka proses pembukaan rekening akan dilanjutkan di Cabang melalui Aplikasi BDS Web Gen 2 untuk dilanjutkan ke proses verifikasi usaha badan usaha/badan hukum dan dilanjutkan hingga rekening berhasil terbentuk.",
+  ].join("\n");
+  await importDraft(page, {
+    ...completeDraft(),
+    recipients: [
+      completeDraft().recipients[0],
+      { id: "recipient-two", gender: "Ibu", name: "Praptiwi", position: "Experience Design - Loan Operations & Credit Process Bureau Head B" },
+      { id: "recipient-three", gender: "Bapak", name: "Customer Account and Pooling Services", position: "Nurmalia" },
+    ],
+    developmentRows: [{
+      id: "attachment-development",
+      item: richText("Penambahan alur pembukaan rekening giro badan pada aplikasi BDS Web Gen 2"),
+      description: richText(longDescription),
+    }],
+    activities: [{
+      ...completeDraft().activities[0],
+      activity: richText(
+        "Melakukan verifikasi transaksi sesuai dengan Skenario Pilot Implementasi BDS Web Gen 2 versi 4.3.0 terlampir",
+      ),
+      owner: "KCU Pluit, Tim PDL, Tim APV, dan UAT A",
+    }],
+  });
+
+  const mainPages = page.locator('aside article[data-page-kind="main"]');
+  expect(await mainPages.count()).toBeGreaterThan(1);
+  const pageOverflow = await mainPages
+    .locator("[data-preview-page-content]")
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+});
+
 test("uses exact continuation wording and only the floating generate button", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
@@ -592,8 +676,9 @@ test("labels split development and activity tables as continuations in preview a
   expect(plainXmlText).toContain("Lingkup Pengembangan, Sambungan");
   expect(plainXmlText).toContain("Aktivitas Cabang dan Unit Kerja, Sambungan");
   expect((xml.match(/<w:tblW w:type="dxa" w:w="9266"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
-  expect((xml.match(/<w:gridCol w:w="2100"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
-  expect((xml.match(/<w:gridCol w:w="350"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(/<w:gridCol w:w="1800"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(/<w:gridCol w:w="300"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(/<w:tblInd w:type="dxa" w:w="2100"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect(xml).toMatch(
     /<w:b\/>[\s\S]{0,300}<w:t[^>]*>Lingkup Pengembangan<\/w:t><\/w:r><w:r>[\s\S]{0,300}<w:t[^>]*>, Sambungan<\/w:t>/,
   );
@@ -753,9 +838,65 @@ test("memo and appendix preview use the exact generated A4 paper size without ch
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml).toContain('<w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/>');
+  expect(xml).toContain('<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>');
   expect(xml).toContain(
     '<w:pgMar w:top="960" w:right="1200" w:bottom="960" w:left="1440" w:header="840" w:footer="480" w:gutter="0"/>',
   );
+});
+
+test("DOCX data tables use the A4 content grid without spacer columns", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const developmentTable = documentTables(xml).find(
+    (table) =>
+      table.includes(">Pengembangan</w:t>") &&
+      table.includes(">Keterangan</w:t>"),
+  );
+
+  expect(developmentTable).toBeTruthy();
+  expect(developmentTable).toMatch(/<w:tblW w:type="dxa" w:w="7166"\/>/);
+  expect(developmentTable).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
+  expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(2);
+  expect(developmentTable).toContain('<w:gridCol w:w="2006"/>');
+  expect(developmentTable).toContain('<w:gridCol w:w="5160"/>');
+});
+
+test("DOCX continuation and section rules share the same A4 content boundary", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: Array.from({ length: 9 }, (_, index) => ({
+      id: `rule-development-${index}`,
+      item: richText(`Pengembangan ${index + 1}`),
+      description: richText(
+        "Keterangan panjang untuk membuat halaman memo berlanjut dan menampilkan garis sambungan.",
+      ),
+    })),
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const tables = documentTables(xml);
+  const continuationRule = tables.find((table) =>
+    table.includes("Bersambung ke halaman berikut"),
+  );
+  const accessSection = tables.find((table) =>
+    table.includes(`Akses Link ${completeDraft().metadata.memoType}`),
+  ) ?? tables.find((table) => table.includes("Akses Link"));
+
+  expect(continuationRule).toBeTruthy();
+  expect(continuationRule).toMatch(/<w:tblW w:type="dxa" w:w="7166"\/>/);
+  expect(continuationRule).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
+  expect(accessSection).toBeTruthy();
+  expect(accessSection).toMatch(/<w:tblW w:type="dxa" w:w="9266"\/>/);
+  expect(accessSection).toContain('<w:gridCol w:w="1800"/>');
+  expect(accessSection).toContain('<w:gridCol w:w="300"/>');
+  expect(accessSection).toContain('<w:gridCol w:w="7166"/>');
 });
 
 test("empty rich text fields start in plain text mode", async ({ page }) => {
@@ -832,6 +973,8 @@ test("collaboration syncs metadata fields between pages", async ({ browser }) =>
   await expect(first).toHaveURL(/room=/);
 
   await second.goto(first.url());
+  await expect(first.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
+  await expect(second.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
   await second.getByLabel("Nama Project").fill("Collab Nama Project");
 
   await expect(first.getByLabel("Nama Project")).toHaveValue("Collab Nama Project", {

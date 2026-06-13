@@ -30,7 +30,7 @@ export function PageContainer({ orientation, kind, children }: PageContainerProp
       className="memo-page relative mx-auto overflow-hidden bg-white text-slate-950 shadow-[0_18px_50px_rgba(15,23,42,0.16)]"
       style={{
         width,
-        minHeight: height,
+        height,
       }}
     >
       {children}
