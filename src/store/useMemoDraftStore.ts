@@ -10,15 +10,24 @@ const STORAGE_KEY = "memo-builder-fresh:blank-draft-v2";
 
 type SaveStatus = "idle" | "loaded" | "saved" | "imported" | "error";
 
+type EditCheckpoint = {
+  key: string;
+  draft: MemoDraft;
+};
+
 type MemoDraftStore = {
   draft: MemoDraft;
   history: MemoDraft[];
+  editCheckpoint?: EditCheckpoint;
   hasLoaded: boolean;
   status: SaveStatus;
   lastSavedAt?: string;
   error?: string;
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft, recordHistory?: boolean) => void;
   updateMetadata: (patch: Partial<MemoMetadata>) => void;
+  beginEditSession: (key: string) => void;
+  commitEditSession: (key?: string) => void;
+  hasActiveEditChanges: () => boolean;
   replaceDraft: (draft: MemoDraft, status?: SaveStatus) => void;
   loadFromLocal: () => void;
   saveToLocal: () => void;
@@ -36,20 +45,47 @@ function touch(draft: MemoDraft): MemoDraft {
   };
 }
 
+function comparableDraft(draft: MemoDraft) {
+  return JSON.stringify({ ...draft, updatedAt: "" });
+}
+
+function draftsMatch(first: MemoDraft, second: MemoDraft) {
+  return comparableDraft(first) === comparableDraft(second);
+}
+
+function appendHistory(history: MemoDraft[], snapshot: MemoDraft, current: MemoDraft) {
+  if (draftsMatch(snapshot, current)) return history;
+  if (history.at(-1) && draftsMatch(history.at(-1) as MemoDraft, snapshot)) {
+    return history;
+  }
+  return [...history, snapshot].slice(-HISTORY_LIMIT);
+}
+
 export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   draft: createInitialMemoDraft(),
   history: [],
+  editCheckpoint: undefined,
   hasLoaded: false,
   status: "idle",
   updateDraft: (updater, recordHistory = false) => {
-    set((state) => ({
-      draft: touch(updater(state.draft)),
-      history: recordHistory
-        ? [...state.history, state.draft].slice(-HISTORY_LIMIT)
-        : state.history,
-      status: "idle",
-      error: undefined,
-    }));
+    set((state) => {
+      const nextDraft = updater(state.draft);
+      let history = state.history;
+      if (recordHistory && state.editCheckpoint) {
+        history = appendHistory(history, state.editCheckpoint.draft, state.draft);
+      }
+      if (recordHistory) {
+        history = appendHistory(history, state.draft, nextDraft);
+      }
+
+      return {
+        draft: touch(nextDraft),
+        history,
+        editCheckpoint: recordHistory ? undefined : state.editCheckpoint,
+        status: "idle",
+        error: undefined,
+      };
+    });
   },
   updateMetadata: (patch) => {
     set((state) => {
@@ -74,10 +110,51 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
       };
     });
   },
+  beginEditSession: (key) => {
+    set((state) => {
+      if (state.editCheckpoint?.key === key) return state;
+
+      const history = state.editCheckpoint
+        ? appendHistory(state.history, state.editCheckpoint.draft, state.draft)
+        : state.history;
+
+      return {
+        ...state,
+        history,
+        editCheckpoint: { key, draft: state.draft },
+      };
+    });
+  },
+  commitEditSession: (key) => {
+    set((state) => {
+      if (!state.editCheckpoint || (key && state.editCheckpoint.key !== key)) {
+        return state;
+      }
+
+      const history = appendHistory(
+        state.history,
+        state.editCheckpoint.draft,
+        state.draft,
+      );
+      return {
+        ...state,
+        history,
+        editCheckpoint: undefined,
+      };
+    });
+  },
+  hasActiveEditChanges: () => {
+    const state = get();
+    return Boolean(
+      state.editCheckpoint &&
+        !draftsMatch(state.editCheckpoint.draft, state.draft),
+    );
+  },
   replaceDraft: (draft, status = "idle") => {
     set({
       draft,
       history: [],
+      editCheckpoint: undefined,
       status,
       error: undefined,
     });
@@ -89,6 +166,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
       set({
         draft: createInitialMemoDraft(),
         history: [],
+        editCheckpoint: undefined,
         hasLoaded: true,
         status: "idle",
         error: undefined,
@@ -122,6 +200,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
     set({
       draft: normalizeMemoDraft(payload as Partial<MemoDraft>),
       history: [],
+      editCheckpoint: undefined,
       status: "imported",
       error: undefined,
     });
@@ -130,19 +209,24 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
     set({
       draft: createInitialMemoDraft(),
       history: [],
+      editCheckpoint: undefined,
       status: "idle",
       error: undefined,
     });
   },
   undo: () => {
     set((state) => {
-      const previous = state.history.at(-1);
+      const history = state.editCheckpoint
+        ? appendHistory(state.history, state.editCheckpoint.draft, state.draft)
+        : state.history;
+      const previous = history.at(-1);
       if (!previous) return state;
 
       return {
         ...state,
         draft: previous,
-        history: state.history.slice(0, -1),
+        history: history.slice(0, -1),
+        editCheckpoint: undefined,
         status: "idle",
         error: undefined,
       };

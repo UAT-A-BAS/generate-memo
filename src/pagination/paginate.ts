@@ -59,7 +59,7 @@ export function isTableSectionContinuation(
 
 const FIRST_PORTRAIT_PAGE_LIMIT = 1180;
 const CONTINUATION_PORTRAIT_PAGE_LIMIT = 1150;
-const LANDSCAPE_PAGE_LIMIT = 720;
+const LANDSCAPE_PAGE_LIMIT = 560;
 
 function pageLimit(orientation: PreviewOrientation, pageIndex: number) {
   if (orientation === "landscape") return LANDSCAPE_PAGE_LIMIT;
@@ -114,12 +114,114 @@ function appendixRowContentHeight(row: ScenarioRow) {
   return 8 + Math.max(24, scenarioHeight, expectedHeight, picHeight);
 }
 
+function splitTextAtBudget(text: string, maxChars: number) {
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > maxChars) {
+    const searchFrom = Math.max(1, Math.floor(maxChars * 0.6));
+    const whitespace = remaining.lastIndexOf(" ", maxChars);
+    const splitAt = whitespace >= searchFrom ? whitespace + 1 : maxChars;
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function splitInlineContent(content: RichTextNode[], maxChars: number) {
+  const chunks: RichTextNode[][] = [[]];
+  let used = 0;
+
+  for (const node of content) {
+    if (typeof node.text !== "string") {
+      const nodeLength = Math.max(
+        1,
+        richTextToPlainText({ type: "doc", content: [node] }).length,
+      );
+      if (used && used + nodeLength > maxChars) {
+        chunks.push([]);
+        used = 0;
+      }
+      chunks.at(-1)?.push(JSON.parse(JSON.stringify(node)) as RichTextNode);
+      used += nodeLength;
+      continue;
+    }
+
+    for (const piece of splitTextAtBudget(node.text, maxChars)) {
+      if (used && used + piece.length > maxChars) {
+        chunks.push([]);
+        used = 0;
+      }
+      chunks.at(-1)?.push({ ...node, text: piece });
+      used += piece.length;
+    }
+  }
+
+  return chunks.filter((chunk) => chunk.length);
+}
+
+function splitOversizedNode(node: RichTextNode, maxChars: number) {
+  const nodeText = richTextToPlainText({ type: "doc", content: [node] });
+  if (nodeText.length <= maxChars || !node.content?.length) {
+    return [JSON.parse(JSON.stringify(node)) as RichTextNode];
+  }
+
+  if (node.type === "paragraph" || node.type === "heading") {
+    return splitInlineContent(node.content, maxChars).map((content) => ({
+      ...node,
+      content,
+    }));
+  }
+
+  if (node.type === "bulletList" || node.type === "orderedList") {
+    const chunks: RichTextNode[][] = [];
+    let current: RichTextNode[] = [];
+    let currentLength = 0;
+
+    for (const item of node.content) {
+      const itemLength = Math.max(
+        1,
+        richTextToPlainText({ type: "doc", content: [item] }).length,
+      );
+      if (current.length && currentLength + itemLength > maxChars) {
+        chunks.push(current);
+        current = [];
+        currentLength = 0;
+      }
+      current.push(JSON.parse(JSON.stringify(item)) as RichTextNode);
+      currentLength += itemLength;
+    }
+    if (current.length) chunks.push(current);
+
+    const start = Number(node.attrs?.start ?? 1);
+    let consumed = 0;
+    return chunks.map((content) => {
+      const next = {
+        ...node,
+        attrs:
+          node.type === "orderedList"
+            ? { ...node.attrs, start: start + consumed }
+            : node.attrs,
+        content,
+      };
+      consumed += content.length;
+      return next;
+    });
+  }
+
+  return [JSON.parse(JSON.stringify(node)) as RichTextNode];
+}
+
 function splitDoc(doc: RichTextDoc, maxChars: number) {
   const chunks: RichTextNode[][] = [];
   let current: RichTextNode[] = [];
   let currentLength = 0;
 
-  for (const node of doc.content) {
+  const nodes = doc.content.flatMap((node) => splitOversizedNode(node, maxChars));
+
+  for (const node of nodes) {
     const nodeText = richTextToPlainText({ type: "doc", content: [node] });
     const nodeLength = Math.max(1, nodeText.length);
 

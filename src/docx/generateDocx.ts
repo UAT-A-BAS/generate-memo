@@ -57,25 +57,24 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 1,
-  color: "9CA3AF",
+  size: 6,
+  color: "0F172A",
 };
 
-const invisibleBorder = {
-  style: BorderStyle.SINGLE,
-  size: 1,
-  color: "FFFFFF",
+const hiddenBorder = {
+  style: BorderStyle.NONE,
+  size: 0,
 };
 const noBorder = {
-  top: invisibleBorder,
-  bottom: invisibleBorder,
-  left: invisibleBorder,
-  right: invisibleBorder,
+  top: hiddenBorder,
+  bottom: hiddenBorder,
+  left: hiddenBorder,
+  right: hiddenBorder,
 };
 const noTableBorder = {
   ...noBorder,
-  insideHorizontal: noBorder.top,
-  insideVertical: noBorder.top,
+  insideHorizontal: hiddenBorder,
+  insideVertical: hiddenBorder,
 };
 
 const sectionTopBorder = {
@@ -277,17 +276,17 @@ function exactSpacer(height: number) {
 
 function bodyRuleTable(children: Paragraph[]) {
   return bodyTable([
-    new TableRow({
+    bodyRow({
       children: [
         new TableCell({
           verticalAlign: VerticalAlign.TOP,
           margins: { top: 40, bottom: 0, left: 0, right: 0 },
           width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
           borders: {
-            top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-            bottom: invisibleBorder,
-            left: invisibleBorder,
-            right: invisibleBorder,
+            top: sectionTopBorder,
+            bottom: hiddenBorder,
+            left: hiddenBorder,
+            right: hiddenBorder,
           },
           children,
         }),
@@ -310,10 +309,8 @@ function sectionCell(children: FileChild[], width: number, withTopBorder: boolea
     margins: { top: 180, bottom: 0, left: 0, right: 0 },
     width: { size: pct(width), type: WidthType.PERCENTAGE },
     borders: {
-      top: withTopBorder ? sectionTopBorder : noBorder.top,
-      bottom: noBorder.bottom,
-      left: noBorder.left,
-      right: noBorder.right,
+      ...noBorder,
+      top: withTopBorder ? sectionTopBorder : hiddenBorder,
     },
     children,
   });
@@ -382,12 +379,18 @@ function bodySpacerCell(width: number) {
   });
 }
 
-function bodyTable(rows: TableRow[], columnWidths: number[]) {
-  for (const row of rows) {
-    row.addCellToIndex(bodySpacerCell(BODY_COLUMN_INDENT), 0);
-    row.addCellToIndex(bodySpacerCell(BODY_COLUMN_RIGHT_INDENT), row.cells.length);
-  }
+function bodyRow(options: ConstructorParameters<typeof TableRow>[0]) {
+  return new TableRow({
+    ...options,
+    children: [
+      bodySpacerCell(BODY_COLUMN_INDENT),
+      ...options.children,
+      bodySpacerCell(BODY_COLUMN_RIGHT_INDENT),
+    ],
+  });
+}
 
+function bodyTable(rows: TableRow[], columnWidths: number[]) {
   return new Table({
     width: { size: MAIN_PAGE_CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [
@@ -595,7 +598,7 @@ function developmentTable(
     : Array.from(DEVELOPMENT_SINGLE_COLUMN_WIDTHS);
 
   return bodyTable([
-    new TableRow({
+    bodyRow({
       tableHeader: true,
       children: [
         ...(numbered
@@ -626,7 +629,7 @@ function developmentTable(
           (row) => richTextToPlainText(row.row.description),
         );
         return (
-        new TableRow({
+        bodyRow({
           children: [
             ...(numbered
               ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0])]
@@ -677,7 +680,7 @@ function activityTable(
     : Array.from(ACTIVITY_COLUMN_WIDTHS);
 
   return bodyTable([
-    new TableRow({
+    bodyRow({
       tableHeader: true,
       children: [
         ...(numbered
@@ -714,7 +717,7 @@ function activityTable(
           (row) => formatDateRangeID(row.row.startDate, row.row.endDate),
         );
         return (
-        new TableRow({
+        bodyRow({
           children: [
             ...(numbered
               ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]

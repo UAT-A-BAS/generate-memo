@@ -801,7 +801,7 @@ function DevelopmentPanel({
       <div className="mt-4">
         <DragDropList
           items={rows}
-          onReorder={setRows}
+          onReorder={(nextRows) => setRows(nextRows, true)}
           itemLabel={(_, index) => `lingkup ${index + 1}`}
           renderItem={(row, index) => (
             <div className="grid gap-3">
@@ -848,7 +848,7 @@ function DevelopmentPanel({
         />
       </div>
       <div className="mt-3 flex justify-end">
-        <IconButton onClick={() => setRows([...rows, createDevelopmentRow()])}>
+        <IconButton onClick={() => setRows([...rows, createDevelopmentRow()], true)}>
           <Plus size={16} />
           Row
         </IconButton>
@@ -874,7 +874,7 @@ function ActivitiesPanel({
       <div className="mt-4">
         <DragDropList
           items={rows}
-          onReorder={setRows}
+          onReorder={(nextRows) => setRows(nextRows, true)}
           itemLabel={(row, index) => row.owner || `aktivitas ${index + 1}`}
           renderItem={(row) => (
             <div className="grid gap-3">
@@ -885,7 +885,12 @@ function ActivitiesPanel({
                     startDate={row.startDate}
                     endDate={row.endDate}
                     onChange={(value) =>
-                      setRows(rows.map((item) => (item.id === row.id ? { ...item, ...value } : item)))
+                      setRows(
+                        rows.map((item) =>
+                          item.id === row.id ? { ...item, ...value } : item,
+                        ),
+                        true,
+                      )
                     }
                   />
                 </FieldLabel>
@@ -925,7 +930,7 @@ function ActivitiesPanel({
         />
       </div>
       <div className="mt-3 flex justify-end">
-        <IconButton onClick={() => setRows([...rows, createActivityRow()])}>
+        <IconButton onClick={() => setRows([...rows, createActivityRow()], true)}>
           <Plus size={16} />
           Aktivitas
         </IconButton>
@@ -1000,7 +1005,7 @@ function ContactsPanel({
       <div className="mt-4">
         <DragDropList
           items={draft.contacts}
-          onReorder={setRows}
+          onReorder={(contacts) => setRows(contacts, true)}
           itemLabel={(contact, index) => contact.name || `PIC ${index + 1}`}
           renderItem={(contact) => (
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_40px]">
@@ -1048,7 +1053,7 @@ function ContactsPanel({
             updateDraft((current) => ({
               ...current,
               contacts: [...current.contacts, createContactRow()],
-            }))
+            }), true)
           }
         >
           <Plus size={16} />
@@ -1207,6 +1212,7 @@ function AppendixPanel({
           ? { ...row, dateGroupId: group.id, startDate: value.startDate, endDate: value.endDate }
           : row,
       ),
+      true,
     );
   }
 
@@ -1220,7 +1226,7 @@ function AppendixPanel({
       return nextSectionRows;
     });
 
-    setRows(nextRows.length ? nextRows : [createScenarioRow()]);
+    setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
   }
 
   function updateSectionTitle(section: ScenarioSectionGroup, title: string) {
@@ -1247,7 +1253,7 @@ function AppendixPanel({
       ...rows.slice(0, lastIndex + 1),
       nextRow,
       ...rows.slice(lastIndex + 1),
-    ]);
+    ], true);
   }
 
   function addSectionToGroup(group: ScenarioDateGroup) {
@@ -1267,7 +1273,7 @@ function AppendixPanel({
       ...rows.slice(0, lastIndex + 1),
       nextRow,
       ...rows.slice(lastIndex + 1),
-    ]);
+    ], true);
   }
 
   function addDateAfterGroup(group: ScenarioDateGroup) {
@@ -1281,7 +1287,7 @@ function AppendixPanel({
       ...rows.slice(0, lastIndex + 1),
       createScenarioRow({ dateGroupId: createId("scenario-date") }),
       ...rows.slice(lastIndex + 1),
-    ]);
+    ], true);
   }
 
   return (
@@ -1319,7 +1325,9 @@ function AppendixPanel({
                   <div className="mt-3">
                     <DragDropList
                       items={section.rows}
-                      onReorder={(nextSectionRows) => replaceSectionRows(section, nextSectionRows)}
+                      onReorder={(nextSectionRows) =>
+                        replaceSectionRows(section, nextSectionRows)
+                      }
                       itemLabel={(_, index) => `skenario ${index + 1}`}
                       renderItem={(row, rowIndex) => (
                         <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -1424,6 +1432,8 @@ function AppendixPanel({
 export function MemoBuilderApp() {
   const appRootRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
+  const editControlIndexRef = useRef(0);
   const [isExporting, setIsExporting] = useState(false);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -1441,6 +1451,11 @@ export function MemoBuilderApp() {
   const importDraft = useMemoDraftStore((state) => state.importDraft);
   const resetDraft = useMemoDraftStore((state) => state.resetDraft);
   const undo = useMemoDraftStore((state) => state.undo);
+  const beginEditSession = useMemoDraftStore((state) => state.beginEditSession);
+  const commitEditSession = useMemoDraftStore((state) => state.commitEditSession);
+  const hasActiveEditChanges = useMemoDraftStore(
+    (state) => state.hasActiveEditChanges,
+  );
   const collaboration = useMemoCollaboration(draft, replaceDraft);
 
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
@@ -1472,12 +1487,26 @@ export function MemoBuilderApp() {
       }
 
       const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
+      const nativeInputTypes = new Set([
+        "text",
+        "search",
+        "email",
+        "url",
+        "tel",
+        "password",
+        "number",
+        "date",
+        "datetime-local",
+        "month",
+        "time",
+        "week",
+      ]);
+      const usesNativeUndo =
+        (target instanceof HTMLInputElement && nativeInputTypes.has(target.type)) ||
         target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement && target.closest(".ProseMirror"))
-      ) {
+        (target instanceof HTMLElement &&
+          (target.isContentEditable || target.closest(".ProseMirror")));
+      if (usesNativeUndo && hasActiveEditChanges()) {
         return;
       }
 
@@ -1487,7 +1516,38 @@ export function MemoBuilderApp() {
 
     window.addEventListener("keydown", handleUndo);
     return () => window.removeEventListener("keydown", handleUndo);
-  }, [undo]);
+  }, [hasActiveEditChanges, undo]);
+
+  function editControlFromTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return null;
+    return target.closest<HTMLElement>(
+      'input:not([type="file"]), textarea, select, .ProseMirror',
+    );
+  }
+
+  function editKeyForControl(control: HTMLElement) {
+    const existing = editControlKeysRef.current.get(control);
+    if (existing) return existing;
+
+    const fieldId = control.closest<HTMLElement>("[data-field-id]")?.dataset.fieldId;
+    const key = fieldId
+      ? `${fieldId}:${control.tagName.toLowerCase()}`
+      : `editable-${++editControlIndexRef.current}`;
+    editControlKeysRef.current.set(control, key);
+    return key;
+  }
+
+  function handleEditFocus(event: React.FocusEvent<HTMLElement>) {
+    const control = editControlFromTarget(event.target);
+    if (control) beginEditSession(editKeyForControl(control));
+  }
+
+  function handleEditBlur(event: React.FocusEvent<HTMLElement>) {
+    const control = editControlFromTarget(event.target);
+    if (!control) return;
+    const key = editKeyForControl(control);
+    queueMicrotask(() => commitEditSession(key));
+  }
 
   function saveDraftData() {
     downloadBlob(
@@ -1664,6 +1724,8 @@ export function MemoBuilderApp() {
     <main
       ref={appRootRef}
       onClickCapture={handleReviewTargetClick}
+      onFocusCapture={handleEditFocus}
+      onBlurCapture={handleEditBlur}
       className="min-h-dvh bg-slate-100 text-slate-950"
     >
       <input
@@ -1735,7 +1797,7 @@ export function MemoBuilderApp() {
                   startDate={draft.pilotSchedule.startDate}
                   endDate={draft.pilotSchedule.endDate}
                   onChange={(pilotSchedule) =>
-                    updateDraft((current) => ({ ...current, pilotSchedule }))
+                    updateDraft((current) => ({ ...current, pilotSchedule }), true)
                   }
                 />
               </FieldLabel>
@@ -1843,7 +1905,7 @@ export function MemoBuilderApp() {
                   updateDraft((current) => ({
                     ...current,
                     signers: [...current.signers, createSignerRow()],
-                  }))
+                  }), true)
                 }
               >
                 <Plus size={16} />

@@ -17,7 +17,7 @@ type RecipientListProps = {
 
 const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
 const fieldClass =
-  "h-10 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10";
+  "h-10 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10";
 
 function RequiredMark() {
   return <span className="text-red-600">*</span>;
@@ -48,7 +48,9 @@ export function RecipientList({
     <div className="grid min-w-0 gap-3">
       <DragDropList
         items={recipients}
-        onReorder={onChange}
+        onReorder={(nextRecipients) =>
+          onChange(nextRecipients, { recordHistory: true })
+        }
         itemLabel={(recipient, index) => recipient.name || recipient.position || `penerima ${index + 1}`}
         renderItem={(recipient) => (
           <div className="grid min-w-0 gap-3">
@@ -61,7 +63,7 @@ export function RecipientList({
                 <input
                   value={recipient.position}
                   onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
-                  className={fieldClass}
+                  className={`${fieldClass} text-slate-900`}
                 />
               </label>
               <label
@@ -76,11 +78,19 @@ export function RecipientList({
                       gender: event.target.value as Recipient["gender"],
                     })
                   }
-                  className={fieldClass}
+                  className={`${fieldClass} ${
+                    recipient.gender ? "text-slate-900" : "text-slate-400"
+                  }`}
                 >
-                  {genderPlaceholder ? <option value="">{genderPlaceholder}</option> : null}
+                  {genderPlaceholder ? (
+                    <option value="" disabled hidden>
+                      {genderPlaceholder}
+                    </option>
+                  ) : null}
                   {genderOptions.map((option) => (
-                    <option key={option} value={option}>{option}</option>
+                    <option key={option} value={option} className="text-slate-900">
+                      {option}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -93,7 +103,7 @@ export function RecipientList({
                   value={recipient.name ?? ""}
                   onChange={(event) => updateRecipient(recipient.id, { name: event.target.value })}
                   placeholder="Nama penerima"
-                  className={fieldClass}
+                  className={`${fieldClass} text-slate-900 placeholder:text-slate-400`}
                 />
               </label>
               <button
@@ -110,7 +120,12 @@ export function RecipientList({
       />
       <button
         type="button"
-        onClick={() => onChange([...recipients, createRecipient({ gender: defaultGender })])}
+        onClick={() =>
+          onChange(
+            [...recipients, createRecipient({ gender: defaultGender })],
+            { recordHistory: true },
+          )
+        }
         className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
       >
         <Plus size={16} />

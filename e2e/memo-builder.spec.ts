@@ -351,6 +351,37 @@ test("bold toolbar button toggles bold and paragraph toolbar button is removed",
   await expect(page.getByRole("button", { name: "Paragraph" })).toHaveCount(0);
 });
 
+test("bold toolbar applies to typing in an empty editor", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const editor = page.locator(".ProseMirror").first();
+  const editorShell = editor.locator("..").locator("..");
+  await editor.click();
+  await editorShell.getByRole("button", { name: "Bold" }).click();
+  await page.keyboard.type("Tebal dari awal");
+
+  expect(await editor.evaluate((node) => node.innerHTML)).toContain(
+    "<p><strong>Tebal dari awal</strong></p>",
+  );
+});
+
+test("bold toolbar applies after clearing all editor content", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const editor = page.locator(".ProseMirror").first();
+  const editorShell = editor.locator("..").locator("..");
+  await editor.click();
+  await page.keyboard.type("Isi lama");
+  await page.keyboard.press("Control+a");
+  await page.keyboard.press("Backspace");
+  await editorShell.getByRole("button", { name: "Bold" }).click();
+  await page.keyboard.type("Tebal pengganti");
+
+  expect(await editor.evaluate((node) => node.innerHTML)).toContain(
+    "<p><strong>Tebal pengganti</strong></p>",
+  );
+});
+
 test("toolbar formatting works from the keyboard without another editor click", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
@@ -425,15 +456,22 @@ test("Ctrl+Z restores a deleted row", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Hapus lingkup" })).toHaveCount(2);
 });
 
-test("typing does not pollute structural undo history", async ({ page }) => {
+test("Ctrl+Z restores the previous value after leaving any field", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const projectName = page.getByLabel("Nama Project");
+  const bureau = page.getByLabel("Bureau UAT");
 
-  await projectName.fill("Input tetap");
-  await page.getByRole("heading", { name: "Memo Generator" }).click();
+  await projectName.fill("Nilai awal");
+  await projectName.press("Tab");
+  await projectName.fill("Nilai baru");
+  await projectName.press("Tab");
   await page.keyboard.press("Control+Z");
+  await expect(projectName).toHaveValue("Nilai awal");
 
-  await expect(projectName).toHaveValue("Input tetap");
+  await bureau.selectOption("B");
+  await bureau.press("Tab");
+  await page.keyboard.press("Control+Z");
+  await expect(bureau).toHaveValue("A");
 });
 
 test("calendar popup escapes sortable row clipping", async ({ page }) => {
@@ -451,6 +489,35 @@ test("appendix section lettering restarts for each date and fills available page
 
   await expect(page.locator("aside table").getByText("A.", { exact: true })).toHaveCount(3);
   await expect(page.locator("aside").getByText(/Lampiran - Skenario .*Sambungan/)).toHaveCount(0);
+});
+
+test("appendix tables never overflow their preview page", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...denseAppendixDraft(),
+    appendixScenarios: Array.from({ length: 2 }, (_, index) => ({
+      ...denseAppendixDraft().appendixScenarios[index],
+      id: `overflow-scenario-${index}`,
+      dateGroupId: "overflow-date",
+      sectionGroupId: "overflow-section",
+      section: "Bagian overflow",
+      scenario: richText(
+        `Skenario ${index + 1} ${"dengan uraian panjang ".repeat(180)}`,
+      ),
+      expectedResult: richText(
+        `Hasil ${index + 1} ${"dengan keterangan panjang ".repeat(180)}`,
+      ),
+    })),
+  });
+
+  const pageOverflow = await page
+    .locator('aside article[data-page-kind="appendix"] [data-preview-page-content]')
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+
+  expect(pageOverflow.length).toBeGreaterThan(1);
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
 });
 
 test("uses exact continuation wording and only the floating generate button", async ({ page }) => {
@@ -568,7 +635,14 @@ test("tembusan shows mandatory markers", async ({ page }) => {
 
   await expect(ccPanel).toContainText("Jabatan / Unit *");
   await expect(ccPanel).not.toContainText("Sapaan *");
-  await expect(ccPanel.getByRole("option", { name: "Sapaan" })).toHaveValue("");
+  const salutation = ccPanel.getByLabel("Sapaan");
+  const placeholder = salutation.locator('option[value=""]');
+  await expect(placeholder).toHaveAttribute("disabled", "");
+  await expect(placeholder).toHaveAttribute("hidden", "");
+  await expect(salutation).toHaveClass(/text-slate-400/);
+
+  await salutation.selectOption("Bapak");
+  await expect(salutation).toHaveClass(/text-slate-900/);
 });
 
 test("tembusan can be generated without a salutation", async ({ page }) => {
@@ -653,6 +727,9 @@ test("consecutive duplicate table values merge and center in preview and DOCX", 
   const xml = await documentXmlFrom(await downloadPromise);
   expect((xml.match(/<w:vMerge w:val="restart"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
   expect((xml.match(/<w:vMerge w:val="continue"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
+  expect(xml).not.toContain('w:val="single" w:color="FFFFFF"');
+  expect(xml).not.toContain('w:val="nil"');
+  expect(xml).toContain('w:color="0F172A"');
 });
 
 test("memo and appendix preview use the exact generated A4 paper size without changing validation", async ({ page }) => {
