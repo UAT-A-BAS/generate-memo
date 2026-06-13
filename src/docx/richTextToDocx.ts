@@ -56,10 +56,12 @@ function paragraphFromNode(
   node: RichTextNode,
   options: RichTextDocxOptions,
   prefix = "",
+  depth = 0,
 ): Paragraph {
   const runs = textRunsFromNode(node, options);
 
   return new Paragraph({
+    indent: depth > 0 ? { left: depth * 360, hanging: prefix ? 180 : 0 } : undefined,
     spacing: {
       before: options.spacingBefore ?? 0,
       after: options.spacingAfter ?? 0,
@@ -75,10 +77,37 @@ function paragraphFromNode(
   });
 }
 
-function listItemParagraphs(node: RichTextNode, options: RichTextDocxOptions) {
-  return (node.content ?? []).map((item, index) =>
-    paragraphFromNode(item, options, node.type === "orderedList" ? `${index + 1}. ` : "\u2022 "),
-  );
+function listNodeParagraphs(
+  node: RichTextNode,
+  options: RichTextDocxOptions,
+  depth = 0,
+): Paragraph[] {
+  const start = Number(node.attrs?.start ?? 1);
+
+  return (node.content ?? []).flatMap((item, itemIndex) => {
+    const prefix = node.type === "orderedList" ? `${start + itemIndex}. ` : "\u2022 ";
+    const children = item.content ?? [];
+    const paragraphs: Paragraph[] = [];
+    let hasPrimaryParagraph = false;
+
+    for (const child of children) {
+      if (child.type === "bulletList" || child.type === "orderedList") {
+        paragraphs.push(...listNodeParagraphs(child, options, depth + 1));
+        continue;
+      }
+
+      paragraphs.push(
+        paragraphFromNode(child, options, hasPrimaryParagraph ? "" : prefix, depth),
+      );
+      hasPrimaryParagraph = true;
+    }
+
+    if (!hasPrimaryParagraph) {
+      paragraphs.unshift(paragraphFromNode(item, options, prefix, depth));
+    }
+
+    return paragraphs;
+  });
 }
 
 export function richTextToDocxParagraphs(
@@ -101,7 +130,7 @@ export function richTextToDocxParagraphs(
 
   return doc.content.flatMap((node) => {
     if (node.type === "bulletList" || node.type === "orderedList") {
-      return listItemParagraphs(node, options);
+      return listNodeParagraphs(node, options);
     }
 
     return [paragraphFromNode(node, options)];

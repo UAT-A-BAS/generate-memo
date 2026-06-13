@@ -50,9 +50,16 @@ export type PreviewPage = {
   continues: boolean;
 };
 
+export function isTableSectionContinuation(
+  block: Extract<PreviewBlock, { type: "development-row" | "activity-row" }>,
+) {
+  const splitPart = Number(block.id.match(/-part-(\d+)$/)?.[1] ?? "1");
+  return block.index > 0 || splitPart > 1;
+}
+
 const PAGE_LIMITS: Record<PreviewOrientation, number> = {
   portrait: 1040,
-  landscape: 720,
+  landscape: 620,
 };
 
 function visualLineCount(value: string, charsPerLine: number) {
@@ -98,7 +105,7 @@ function appendixRowContentHeight(row: ScenarioRow) {
   const expectedHeight = compactRichHeight(row.expectedResult, 50);
   const picHeight = compactTextHeight(row.pic, 18);
 
-  return 20 + Math.max(34, scenarioHeight, expectedHeight, picHeight);
+  return 8 + Math.max(24, scenarioHeight, expectedHeight, picHeight);
 }
 
 function splitDoc(doc: RichTextDoc, maxChars: number) {
@@ -266,10 +273,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       number: 0,
       isSplitContinuation: false,
     },
-    estimatedHeight: Math.max(
-      54,
-      appendixRowContentHeight(row),
-    ),
+    estimatedHeight: Math.max(32, appendixRowContentHeight(row)),
   })).flatMap(expandLargeAppendixBlock) as Extract<PreviewBlock, { type: "appendix-row" }>[];
 
   return blocks.map((block) => {
@@ -278,10 +282,17 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate);
     const sectionTitle = block.row.section.trim();
     const showDate = !isSplitContinuation && dateLabel !== "-" && dateLabel !== previousDate;
+
+    if (showDate) {
+      previousDate = dateLabel;
+      previousSection = "";
+      sectionIndex = -1;
+      numberInSection = 0;
+    }
+
     const showSection = !isSplitContinuation && Boolean(sectionTitle) && sectionTitle !== previousSection;
 
     if (!isSplitContinuation) {
-      if (showDate) previousDate = dateLabel;
       if (showSection) {
         sectionIndex += 1;
         previousSection = sectionTitle;
@@ -333,12 +344,16 @@ function packPages(
   };
   let used = 0;
   const limit = PAGE_LIMITS[options.orientation];
+  const closingHeight = blocks
+    .filter((block) => block.type === "signature" || block.type === "cc" || block.type === "initials")
+    .reduce((total, block) => total + block.estimatedHeight, 0);
 
   for (const block of blocks) {
     const isClosingBlock = block.type === "signature" || block.type === "cc" || block.type === "initials";
     const currentHasClosing = current.blocks.some((item) => item.type === "signature");
     const hasContent = current.blocks.length > 0;
-    const shouldStartClosingPage = block.type === "signature" && hasContent;
+    const shouldStartClosingPage =
+      block.type === "signature" && hasContent && used + closingHeight > limit;
     const wouldOverflow = used + block.estimatedHeight > limit;
     const shouldBreakForOverflow = wouldOverflow && hasContent && !(isClosingBlock && currentHasClosing);
 

@@ -12,6 +12,7 @@ type SaveStatus = "idle" | "loaded" | "saved" | "imported" | "error";
 
 type MemoDraftStore = {
   draft: MemoDraft;
+  history: MemoDraft[];
   hasLoaded: boolean;
   status: SaveStatus;
   lastSavedAt?: string;
@@ -23,7 +24,10 @@ type MemoDraftStore = {
   saveToLocal: () => void;
   importDraft: (payload: unknown) => void;
   resetDraft: () => void;
+  undo: () => void;
 };
+
+const HISTORY_LIMIT = 100;
 
 function touch(draft: MemoDraft): MemoDraft {
   return {
@@ -34,11 +38,13 @@ function touch(draft: MemoDraft): MemoDraft {
 
 export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   draft: createInitialMemoDraft(),
+  history: [],
   hasLoaded: false,
   status: "idle",
   updateDraft: (updater) => {
     set((state) => ({
       draft: touch(updater(state.draft)),
+      history: [...state.history, state.draft].slice(-HISTORY_LIMIT),
       status: "idle",
       error: undefined,
     }));
@@ -60,6 +66,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
           ...state.draft,
           metadata: nextMetadata,
         }),
+        history: [...state.history, state.draft].slice(-HISTORY_LIMIT),
         status: "idle",
         error: undefined,
       };
@@ -68,6 +75,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   replaceDraft: (draft, status = "idle") => {
     set({
       draft,
+      history: [],
       status,
       error: undefined,
     });
@@ -78,6 +86,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
     try {
       set({
         draft: createInitialMemoDraft(),
+        history: [],
         hasLoaded: true,
         status: "idle",
         error: undefined,
@@ -110,6 +119,7 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   importDraft: (payload) => {
     set({
       draft: normalizeMemoDraft(payload as Partial<MemoDraft>),
+      history: [],
       status: "imported",
       error: undefined,
     });
@@ -117,8 +127,23 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   resetDraft: () => {
     set({
       draft: createInitialMemoDraft(),
+      history: [],
       status: "idle",
       error: undefined,
+    });
+  },
+  undo: () => {
+    set((state) => {
+      const previous = state.history.at(-1);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        draft: previous,
+        history: state.history.slice(0, -1),
+        status: "idle",
+        error: undefined,
+      };
     });
   },
 }));

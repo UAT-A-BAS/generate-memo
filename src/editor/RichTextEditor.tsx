@@ -2,12 +2,10 @@
 
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Extension, type Editor } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
-import BoldExtension from "@tiptap/extension-bold";
 import UnderlineExtension from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
-import { Bold, Italic, List, ListOrdered, Pilcrow, Underline } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { Bold, Italic, List, ListOrdered, Underline } from "lucide-react";
+import { useEffect } from "react";
 import type { RichTextDoc } from "@/types/richText";
 
 type RichTextEditorProps = {
@@ -16,12 +14,44 @@ type RichTextEditorProps = {
   minHeight?: number;
 };
 
-const ManualBold = BoldExtension.extend({
-  addInputRules() {
-    return [];
-  },
-  addPasteRules() {
-    return [];
+function preventToolbarDefault(event: React.SyntheticEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function toggleBoldWithStoredMark(editor: Editor) {
+  editor.view.focus();
+
+  if (!editor.state.selection.empty) {
+    editor.commands.toggleBold();
+    return;
+  }
+
+  const boldMark = editor.schema.marks.bold;
+  if (!boldMark) return;
+
+  const currentMarks = editor.state.storedMarks ?? editor.state.selection.$from.marks();
+  const transaction = boldMark.isInSet(currentMarks)
+    ? editor.state.tr.removeStoredMark(boldMark)
+    : editor.state.tr.addStoredMark(boldMark.create());
+
+  editor.view.dispatch(transaction);
+}
+
+const StoredBoldShortcut = Extension.create({
+  name: "storedBoldShortcut",
+  priority: 1100,
+  addKeyboardShortcuts() {
+    return {
+      "Mod-b": () => {
+        toggleBoldWithStoredMark(this.editor);
+        return true;
+      },
+      "Mod-B": () => {
+        toggleBoldWithStoredMark(this.editor);
+        return true;
+      },
+    };
   },
 });
 
@@ -41,81 +71,16 @@ const EnterWithoutMarks = Extension.create({
   },
 });
 
-const PlainSelection = Extension.create({
-  name: "plainSelection",
-  priority: 1200,
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        props: {
-          handleDoubleClick: () => {
-            removeStoredBoldMark(this.editor);
-            return false;
-          },
-          handleClick: () => {
-            removeStoredBoldMark(this.editor);
-            return false;
-          },
-        },
-      }),
-    ];
-  },
-});
-
-function clearStoredBoldMark(currentEditor: Editor) {
-  currentEditor.commands.unsetBold();
-  removeStoredBoldMark(currentEditor);
-}
-
-function removeStoredBoldMark(currentEditor: Editor) {
-  const boldMark = currentEditor.schema.marks.bold;
-  if (boldMark) {
-    currentEditor.view.dispatch(currentEditor.state.tr.removeStoredMark(boldMark));
-  }
-}
-
 export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
-  const manualBoldRef = useRef(false);
-  const ctrlBoldShortcut = useMemo(
-    () =>
-      Extension.create({
-        name: "manualCtrlBold",
-        priority: 1100,
-        addKeyboardShortcuts() {
-          return {
-            "Mod-b": () => {
-              const willEnableBold = !this.editor.isActive("bold");
-              this.editor.commands.toggleBold();
-              manualBoldRef.current = willEnableBold;
-              return true;
-            },
-            "Mod-B": () => {
-              const willEnableBold = !this.editor.isActive("bold");
-              this.editor.commands.toggleBold();
-              manualBoldRef.current = willEnableBold;
-              return true;
-            },
-          };
-        },
-      }),
-    [],
-  );
-
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ bold: false, underline: false }),
-      ManualBold,
+      StarterKit.configure({ underline: false }),
       UnderlineExtension,
-      ctrlBoldShortcut,
+      StoredBoldShortcut,
       EnterWithoutMarks,
-      PlainSelection,
     ],
     content: value,
     immediatelyRender: false,
-    onFocus: ({ editor: currentEditor }) => {
-      manualBoldRef.current = false;
-      clearStoredBoldMark(currentEditor);
-    },
     editorProps: {
       attributes: {
         class:
@@ -133,7 +98,6 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
     const next = JSON.stringify(value);
     if (current !== next) {
       editor.commands.setContent(value);
-      clearStoredBoldMark(editor);
     }
   }, [editor, value]);
 
@@ -156,20 +120,22 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("bold") ? activeClass : ""}`}
-          onClick={() => {
-            editor.chain().focus().run();
-            clearStoredBoldMark(editor);
-            manualBoldRef.current = false;
+          onMouseDown={(event) => {
+            preventToolbarDefault(event);
+            toggleBoldWithStoredMark(editor);
           }}
           aria-label="Bold"
-          title="Bold hanya lewat Ctrl+B"
+          title="Bold"
         >
           <Bold size={15} />
         </button>
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("italic") ? activeClass : ""}`}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
+          onMouseDown={(event) => {
+            preventToolbarDefault(event);
+            editor.chain().focus().toggleItalic().run();
+          }}
           aria-label="Italic"
         >
           <Italic size={15} />
@@ -177,7 +143,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("underline") ? activeClass : ""}`}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          onMouseDown={(event) => {
+            preventToolbarDefault(event);
+            editor.chain().focus().toggleUnderline().run();
+          }}
           aria-label="Underline"
         >
           <Underline size={15} />
@@ -186,7 +155,10 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("bulletList") ? activeClass : ""}`}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          onMouseDown={(event) => {
+            preventToolbarDefault(event);
+            editor.chain().focus().toggleBulletList().run();
+          }}
           aria-label="Bullet list"
         >
           <List size={15} />
@@ -194,40 +166,19 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
         <button
           type="button"
           className={`${buttonClass} ${editor.isActive("orderedList") ? activeClass : ""}`}
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          onMouseDown={(event) => {
+            preventToolbarDefault(event);
+            editor.chain().focus().toggleOrderedList().run();
+          }}
           aria-label="Numbered list"
         >
           <ListOrdered size={15} />
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={() => editor.chain().focus().setParagraph().run()}
-          aria-label="Paragraph"
-        >
-          <Pilcrow size={15} />
         </button>
       </div>
       <EditorContent
         editor={editor}
         className="px-3 py-2"
         style={{ minHeight }}
-        onKeyDown={(event) => {
-          if (
-            event.key.length === 1 &&
-            !event.ctrlKey &&
-            !event.metaKey &&
-            !event.altKey &&
-            editor.isActive("bold") &&
-            !manualBoldRef.current
-          ) {
-            clearStoredBoldMark(editor);
-          }
-
-          if (event.key === "Enter") {
-            manualBoldRef.current = false;
-          }
-        }}
       />
     </div>
   );

@@ -1,14 +1,17 @@
 import { Fragment } from "react";
 import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
-import { paginateMemoDraft } from "@/pagination/paginate";
+import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
 import { memoAttachmentItems } from "@/utils/attachments";
 import {
+  ACTIVITY_COLUMN_WIDTHS,
+  ACTIVITY_NUMBERED_COLUMN_WIDTHS,
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
   DEVELOPMENT_COLUMN_WIDTHS,
+  DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
   TABLE_HEADER_FILL,
 } from "@/documentLayout";
 import { HeaderFooterRenderer } from "./HeaderFooterRenderer";
@@ -18,6 +21,9 @@ const VALIDATION_BLUE = "#1F497D";
 const APPENDIX_COLUMN_WIDTH_PERCENTAGES = APPENDIX_COLUMN_WIDTHS.map((width) => `${width}%`);
 const APPENDIX_HEADER_BACKGROUND = `#${APPENDIX_HEADER_FILL}`;
 const DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES = DEVELOPMENT_COLUMN_WIDTHS.map((width) => `${width}%`);
+const DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES = DEVELOPMENT_SINGLE_COLUMN_WIDTHS.map((width) => `${width}%`);
+const ACTIVITY_COLUMN_WIDTH_PERCENTAGES = ACTIVITY_COLUMN_WIDTHS.map((width) => `${width}%`);
+const ACTIVITY_NUMBERED_COLUMN_WIDTH_PERCENTAGES = ACTIVITY_NUMBERED_COLUMN_WIDTHS.map((width) => `${width}%`);
 const TABLE_HEADER_BACKGROUND = `#${TABLE_HEADER_FILL}`;
 
 type SectionRule = "full" | "content" | "none";
@@ -72,21 +78,16 @@ function PreviewSection({
   );
 }
 
-function DashTabLine({ children }: { children: React.ReactNode }) {
+function BulletAlignedLine({
+  children,
+  bullet = true,
+}: {
+  children: React.ReactNode;
+  bullet?: boolean;
+}) {
   return (
-    <p className="grid grid-cols-[auto_2rem_minmax(0,1fr)]">
-      <span>-</span>
-      <span aria-hidden="true"> </span>
-      <span>{children}</span>
-    </p>
-  );
-}
-
-function TabAlignedLine({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="grid grid-cols-[auto_2rem_minmax(0,1fr)]">
-      <span />
-      <span />
+    <p className="grid grid-cols-[1.25rem_minmax(0,1fr)]">
+      <span>{bullet ? "- " : ""}</span>
       <span>{children}</span>
     </p>
   );
@@ -94,11 +95,63 @@ function TabAlignedLine({ children }: { children: React.ReactNode }) {
 
 function recipientLine(recipient: Recipient, index: number, total: number) {
   const name = recipient.name?.trim() ? `U.p. Yth. ${recipient.gender} ${recipient.name}` : "";
-  const prefix = total > 1 ? "- " : "";
+  const useBullet = total > 1;
+
   return (
     <div className="grid gap-[5px]" key={recipient.id}>
-      <p>{prefix}{recipient.position}</p>
-      {name ? <p className="pl-5">{name}</p> : null}
+      {useBullet ? <BulletAlignedLine>{recipient.position}</BulletAlignedLine> : <p>{recipient.position}</p>}
+      {name ? (
+        useBullet ? <BulletAlignedLine bullet={false}>{name}</BulletAlignedLine> : <p>{name}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function AttachmentContent({ items }: { items: string[] }) {
+  if (items.length === 1) {
+    return <p>Bersama dengan memo ini dilampirkan {items[0].replace(/[.\s]+$/, "")}.</p>;
+  }
+
+  return (
+    <>
+      <p>Bersama dengan memo ini dilampirkan:</p>
+      <div className="mt-1 grid gap-0.5">
+        {items.map((item, index) => (
+          <BulletAlignedLine key={`${item}-${index}`}>{item}</BulletAlignedLine>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ContactLine({
+  children,
+  single,
+}: {
+  children: React.ReactNode;
+  single: boolean;
+}) {
+  return single ? <p>{children}</p> : <BulletAlignedLine>{children}</BulletAlignedLine>;
+}
+
+function CcRecipientLine({ recipient, total }: { recipient: Recipient; total: number }) {
+  const name = recipient.name?.trim()
+    ? `U.p. Yth. ${recipient.gender} ${recipient.name}`
+    : "";
+
+  if (total === 1) {
+    return (
+      <div className="grid gap-0.5">
+        <p>{recipient.position}</p>
+        {name ? <p>{name}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-0.5">
+      <BulletAlignedLine>{recipient.position}</BulletAlignedLine>
+      {name ? <BulletAlignedLine bullet={false}>{name}</BulletAlignedLine> : null}
     </div>
   );
 }
@@ -115,7 +168,7 @@ function MemoTable({
   compact?: boolean;
 }) {
   return (
-    <table className={`memo-preview-table w-full table-fixed border-collapse text-[14.67px] ${compact ? "leading-[1.08]" : "leading-[1.15]"}`}>
+    <table className={`memo-preview-table w-full table-fixed border-collapse text-[14.67px] ${compact ? "leading-[1.08]" : "mb-2 leading-[1.15]"}`}>
       {columnWidths ? (
         <colgroup>
           {columnWidths.map((width, index) => (
@@ -267,12 +320,7 @@ function renderBlock(
     case "attachments":
       return (
         <PreviewSection title="Lampiran" rule={sectionRule}>
-          <p>Bersama dengan memo ini dilampirkan:</p>
-          <div className="mt-1 grid gap-0.5">
-            {memoAttachmentItems(draft.attachments).map((item, index) => (
-              <DashTabLine key={`${item}-${index}`}>{item}</DashTabLine>
-            ))}
-          </div>
+          <AttachmentContent items={memoAttachmentItems(draft.attachments)} />
         </PreviewSection>
       );
     case "contacts":
@@ -281,9 +329,9 @@ function renderBlock(
           <p>PIC yang dapat dihubungi sehubungan dengan {draft.metadata.perihal} adalah:</p>
           <div className="mt-1 grid gap-0.5">
             {draft.contacts.map((contact) => (
-              <DashTabLine key={contact.id}>
+              <ContactLine key={contact.id} single={draft.contacts.length === 1}>
                 {contact.name} – {contact.email}
-              </DashTabLine>
+              </ContactLine>
             ))}
           </div>
         </PreviewSection>
@@ -291,7 +339,7 @@ function renderBlock(
     case "signature":
       return (
         <div
-          className={`ml-[140px] max-w-[575px] text-[14.67px] leading-[1.08] ${
+          className={`ml-[140px] text-[14.67px] leading-[1.08] ${
             options.continuationMainPage ? "mt-0" : "mt-7 border-t border-slate-800 pt-5"
           }`}
         >
@@ -307,16 +355,15 @@ function renderBlock(
       );
     case "cc":
       return (
-        <div className="ml-[140px] mt-6 max-w-[575px] text-[14.67px] leading-[1.08]">
+        <div className="ml-[140px] mt-6 text-[14.67px] leading-[1.08]">
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
             {draft.ccRecipients.map((recipient) => (
-              <div key={recipient.id}>
-                <DashTabLine>{recipient.position}</DashTabLine>
-                {recipient.name ? (
-                  <TabAlignedLine>U.p. Yth. {recipient.gender} {recipient.name}</TabAlignedLine>
-                ) : null}
-              </div>
+              <CcRecipientLine
+                key={recipient.id}
+                recipient={recipient}
+                total={draft.ccRecipients.length}
+              />
             ))}
           </div>
         </div>
@@ -408,13 +455,23 @@ function renderGroupedBlocks(
 
     if (block.type === "development-row") {
       const { rows, nextIndex } = consumeRows(blocks, index, "development-row");
+      const developmentRows = rows as Extract<PreviewBlock, { type: "development-row" }>[];
+      const numbered = draft.developmentRows.length > 1;
+      const title = isTableSectionContinuation(developmentRows[0])
+        ? "Lingkup Pengembangan, Sambungan"
+        : "Lingkup Pengembangan";
       rendered.push(
-        <PreviewSection title="Lingkup Pengembangan" rule={nextSectionRule()} key={`development-${index}`}>
+        <PreviewSection title={title} rule={nextSectionRule()} key={`development-${index}`}>
           <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.perihal}:</p>
-          <MemoTable headers={["No.", "Pengembangan", "Keterangan"]} columnWidths={DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES}>
-            {(rows as Extract<PreviewBlock, { type: "development-row" }>[]).map((item) => (
+          <MemoTable
+            headers={numbered ? ["No.", "Pengembangan", "Keterangan"] : ["Pengembangan", "Keterangan"]}
+            columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
+          >
+            {developmentRows.map((item) => (
               <tr key={item.id}>
-                <td className="w-12 border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
+                {numbered ? (
+                  <td className="w-12 border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
+                ) : null}
                 <td className="border border-slate-900 px-2 py-1 align-middle">
                   <RichTextView html={richTextToHtml(item.row.item)} />
                 </td>
@@ -432,12 +489,23 @@ function renderGroupedBlocks(
 
     if (block.type === "activity-row") {
       const { rows, nextIndex } = consumeRows(blocks, index, "activity-row");
+      const activityRows = rows as Extract<PreviewBlock, { type: "activity-row" }>[];
+      const numbered = draft.activities.length > 1;
+      const title = isTableSectionContinuation(activityRows[0])
+        ? "Aktivitas Cabang dan Unit Kerja, Sambungan"
+        : "Aktivitas Cabang dan Unit Kerja";
       rendered.push(
-        <PreviewSection title="Aktivitas Cabang dan Unit Kerja" rule={nextSectionRule()} key={`activity-${index}`}>
+        <PreviewSection title={title} rule={nextSectionRule()} key={`activity-${index}`}>
           <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
-          <MemoTable headers={["Aktivitas", "PIC", "Waktu"]} columnWidths={["66%", "16%", "18%"]}>
-            {(rows as Extract<PreviewBlock, { type: "activity-row" }>[]).map((item) => (
+          <MemoTable
+            headers={numbered ? ["No.", "Aktivitas", "PIC", "Waktu"] : ["Aktivitas", "PIC", "Waktu"]}
+            columnWidths={numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTH_PERCENTAGES : ACTIVITY_COLUMN_WIDTH_PERCENTAGES}
+          >
+            {activityRows.map((item) => (
               <tr key={item.id}>
+                {numbered ? (
+                  <td className="border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
+                ) : null}
                 <td className="border border-slate-900 px-2 py-1 align-middle">
                   <RichTextView html={richTextToHtml(item.row.activity)} />
                 </td>
@@ -540,7 +608,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
               <strong className="font-[Arial] text-[16px]">{draft.metadata.perihal}</strong>
               <span className="font-[Arial] text-[14.67px]">, Sambungan</span>
             </h2>
-            <div className="ml-[120px] mt-5 h-px w-[560px] bg-slate-800" />
+            <div className="ml-[140px] mt-5 h-px bg-slate-800" />
           </div>
         )
       ) : page.kind === "appendix" ? (
@@ -553,8 +621,8 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
         Boolean(page.continuationTitle && page.kind === "main"),
       )}
       {page.continues && page.kind === "main" ? (
-        <p className="ml-[120px] mt-3 w-[560px] border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
-          Bersambung ke halaman berikutnya
+        <p className="ml-[140px] mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
+          Bersambung ke halaman berikut
         </p>
       ) : null}
     </div>

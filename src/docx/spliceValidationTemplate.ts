@@ -10,6 +10,7 @@ const REL_TYPES = {
   header: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
   hyperlink: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
   image: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+  customXml: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
 };
 
 const VALIDATION_BLUE = "1F497D";
@@ -233,6 +234,50 @@ function addContentType(contentTypesXml: string, partName: string, contentType: 
   return contentTypesXml.replace("</Types>", `${override}</Types>`);
 }
 
+function mergeCustomXmlContentTypes(outputXml: string, templateXml: string) {
+  const entries = [...templateXml.matchAll(/<(?:Default|Override)\b[^>]*\/>/g)]
+    .map((match) => match[0])
+    .filter((entry) => /customXml|customXmlProperties/i.test(entry));
+
+  return entries.reduce((current, entry) => {
+    const partName = getAttr(entry, "PartName");
+    const extension = getAttr(entry, "Extension");
+    const exists =
+      (partName && current.includes(`PartName="${partName}"`)) ||
+      (extension && current.includes(`Extension="${extension}"`));
+    return exists ? current : current.replace("</Types>", `${entry}</Types>`);
+  }, outputXml);
+}
+
+async function validationMemoHeaderXml(templateZip: JSZip) {
+  const candidates: string[] = [];
+
+  for (const name of Object.keys(templateZip.files).filter((path) => /^word\/header\d+\.xml$/.test(path))) {
+    const xml = await templateZip.file(name)?.async("text");
+    if (
+      xml?.includes('<w:alias w:val="Nomor"/>') &&
+      xml.includes('<w:alias w:val="TanggalRelease"/>') &&
+      !xml.includes("WordPictureWatermark")
+    ) {
+      candidates.push(xml);
+    }
+  }
+
+  return candidates.sort((first, second) => first.length - second.length)[0] ?? "";
+}
+
+async function replaceGeneratedMemoHeaders(outputZip: JSZip, templateZip: JSZip) {
+  const sourceHeader = await validationMemoHeaderXml(templateZip);
+  if (!sourceHeader) return;
+
+  for (const name of Object.keys(outputZip.files).filter((path) => /^word\/header\d+\.xml$/.test(path))) {
+    const current = await outputZip.file(name)?.async("text");
+    if (current?.includes("[No Memo]")) {
+      outputZip.file(name, sourceHeader);
+    }
+  }
+}
+
 function normalizePctWidthAttributes(xml: string) {
   return xml
     .replace(/(w:type="pct"\s+w:w=")(\d+)%"/g, "$1$2\"")
@@ -287,6 +332,7 @@ export async function spliceValidationTemplate(
   const outputStyles = outputZip.file("word/styles.xml");
   const templateStyles = templateZip.file("word/styles.xml");
   const contentTypes = outputZip.file("[Content_Types].xml");
+  const templateContentTypes = templateZip.file("[Content_Types].xml");
 
   if (!outputDocument || !outputRels || !templateDocument || !templateRels || !contentTypes) {
     return generatedDocx;
@@ -295,6 +341,9 @@ export async function spliceValidationTemplate(
   let outputDocumentXml = await outputDocument.async("text");
   let outputRelsXml = await outputRels.async("text");
   let contentTypesXml = await contentTypes.async("text");
+  const templateContentTypesXml = templateContentTypes
+    ? await templateContentTypes.async("text")
+    : "";
   let outputStylesXml = outputStyles ? await outputStyles.async("text") : "";
   const templateDocumentXml = await templateDocument.async("text");
   const templateStylesXml = templateStyles ? await templateStyles.async("text") : "";
@@ -307,14 +356,18 @@ export async function spliceValidationTemplate(
   const newRelationships: string[] = [];
   let nextRelId = maxRelationshipId(outputRelsXml) + 1;
 
+  await replaceGeneratedMemoHeaders(outputZip, templateZip);
+
   for (const rel of parseRelationships(templateRelsXml)) {
+    const isCustomXml = rel.type === REL_TYPES.customXml;
     const shouldCopy =
       rel.type === REL_TYPES.header ||
       rel.type === REL_TYPES.footer ||
       rel.type === REL_TYPES.hyperlink ||
-      rel.type === REL_TYPES.image;
+      rel.type === REL_TYPES.image ||
+      isCustomXml;
 
-    if (!shouldCopy || !templateBody.includes(`r:id="${rel.id}"`)) continue;
+    if (!shouldCopy || (!isCustomXml && !templateBody.includes(`r:id="${rel.id}"`))) continue;
 
     const nextId = `rId${nextRelId}`;
     nextRelId += 1;
@@ -340,6 +393,10 @@ export async function spliceValidationTemplate(
         contentTypesXml = addContentType(contentTypesXml, `/${targetPath}`, CONTENT_TYPES.footer);
       }
     }
+  }
+
+  if (templateContentTypesXml) {
+    contentTypesXml = mergeCustomXmlContentTypes(contentTypesXml, templateContentTypesXml);
   }
 
   for (const [previousId, nextId] of idMap) {

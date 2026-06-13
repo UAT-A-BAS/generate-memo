@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatDateRangeID, todayInputValue } from "@/utils/formatDateRangeID";
 
 type DateRangeValue = { startDate: string; endDate: string };
@@ -88,6 +89,8 @@ export function DateRangePicker({
   const [mode, setMode] = useState<DatePickerMode>("day");
   const [selectingEnd, setSelectingEnd] = useState(Boolean(startDate && !endDate));
   const anchorRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 });
   const start = parseInputDate(startDate);
   const end = parseInputDate(endDate);
   const initial = start ?? end ?? parseInputDate(todayInputValue()) ?? new Date();
@@ -97,6 +100,53 @@ export function DateRangePicker({
   const days = useMemo(() => calendarDays(viewYear, viewMonth), [viewYear, viewMonth]);
   const displayValue = startDate || endDate ? formatDateRangeID(startDate, endDate) : "";
   const yearStart = Math.floor(viewYear / 16) * 16;
+
+  const updatePopupPosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const popupWidth = 292;
+    const popupHeight = popupRef.current?.offsetHeight ?? 420;
+    const viewportPadding = 8;
+    const left = Math.min(
+      Math.max(viewportPadding, rect.left),
+      Math.max(viewportPadding, window.innerWidth - popupWidth - viewportPadding),
+    );
+    const below = rect.bottom + 8;
+    const above = rect.top - popupHeight - 8;
+    const top =
+      below + popupHeight <= window.innerHeight - viewportPadding || above < viewportPadding
+        ? below
+        : above;
+
+    setPopupPosition({ left, top: Math.max(viewportPadding, top) });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) updatePopupPosition();
+  }, [mode, open, updatePopupPosition, viewMonth, viewYear]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const reposition = () => updatePopupPosition();
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (anchorRef.current?.contains(target) || popupRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open, updatePopupPosition]);
 
   function moveMonth(delta: number) {
     const next = new Date(viewYear, viewMonth + delta, 1);
@@ -137,7 +187,8 @@ export function DateRangePicker({
   }
 
   return (
-    <div ref={anchorRef} className={`relative ${compact ? "" : "max-w-md"}`}>
+    <>
+      <div ref={anchorRef} className={`relative ${compact ? "" : "max-w-md"}`}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -148,9 +199,15 @@ export function DateRangePicker({
         </span>
         <span className="text-[#0a67b1]">▾</span>
       </button>
+      </div>
 
-      {open ? (
-        <div className="absolute left-0 top-12 z-50 w-[292px] rounded-2xl border border-[#c6d3e1] bg-white p-3 text-[#0f2d4a] shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
+      {open && typeof document !== "undefined" ? createPortal(
+        <div
+          ref={popupRef}
+          data-date-range-popup
+          className="fixed z-[100] w-[292px] rounded-2xl border border-[#c6d3e1] bg-white p-3 text-[#0f2d4a] shadow-[0_18px_50px_rgba(15,23,42,0.18)]"
+          style={popupPosition}
+        >
           <div className="mb-4 flex items-center justify-between">
             <button
               type="button"
@@ -281,9 +338,10 @@ export function DateRangePicker({
               Done
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
-    </div>
+    </>
   );
 }
 

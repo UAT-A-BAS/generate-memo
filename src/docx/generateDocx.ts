@@ -28,18 +28,21 @@ import {
 import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination/paginate";
 import {
+  ACTIVITY_COLUMN_WIDTHS,
+  ACTIVITY_NUMBERED_COLUMN_WIDTHS,
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
   BODY_COLUMN_INDENT,
   BODY_COLUMN_RIGHT_INDENT,
   CONTINUATION_RULE_INDENT,
   DEVELOPMENT_COLUMN_WIDTHS,
+  DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
   TABLE_HEADER_FILL,
   WORD_INDENT_002_CM,
   WORD_LINE_MULTIPLE_108,
   WORD_LINE_MULTIPLE_115,
 } from "@/documentLayout";
-import { paginateMemoDraft } from "@/pagination/paginate";
+import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/paginate";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { richTextToPlainText } from "@/utils/richText";
@@ -67,7 +70,7 @@ const sectionTopBorder = {
 const LIST_TEXT_GAP = "      ";
 const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
 const CONTINUATION_NOTICE_INDENT = BODY_COLUMN_INDENT;
-const CONTINUATION_NOTICE_RIGHT_INDENT = 0;
+const CONTINUATION_NOTICE_RIGHT_INDENT = BODY_COLUMN_RIGHT_INDENT;
 
 type SectionRule = "full" | "content" | "none";
 
@@ -235,26 +238,6 @@ function tabAlignedParagraph(
   return paragraph(`${LIST_TEXT_ALIGNMENT_GAP}${text}`, options);
 }
 
-function memoHeadingItemParagraph(item: string) {
-  const normalized = item.trimStart();
-
-  if (normalized.startsWith("- ")) {
-    return dashGapParagraph(normalized.slice(2), {
-      size: 22,
-      indent: { left: WORD_INDENT_002_CM },
-      spacingBefore: 80,
-      line: WORD_LINE_MULTIPLE_115,
-    });
-  }
-
-  return tabAlignedParagraph(normalized, {
-    size: 22,
-    indent: { left: WORD_INDENT_002_CM },
-    spacingBefore: 80,
-    line: WORD_LINE_MULTIPLE_115,
-  });
-}
-
 function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph>[1] = {}) {
   return paragraph(text, {
     ...options,
@@ -334,7 +317,7 @@ function continuationNotice() {
     border: {
       top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 1 },
     },
-    children: [run("Bersambung ke halaman berikutnya", { italics: true, size: 20 })],
+    children: [run("Bersambung ke halaman berikut", { italics: true, size: 20 })],
   });
 }
 
@@ -428,63 +411,164 @@ function footer() {
   });
 }
 
-function recipientsText(recipients: Recipient[], options: { dashSingle?: boolean } = {}) {
-  const useDash = options.dashSingle || recipients.length > 1;
+function memoHeadingRecipientParagraphs(recipients: Recipient[]) {
+  const useDash = recipients.length > 1;
+
   return recipients.flatMap((recipient) => {
+    const position = useDash
+      ? dashGapParagraph(recipient.position, {
+          size: 22,
+          indent: { left: WORD_INDENT_002_CM },
+          spacingBefore: 80,
+          line: WORD_LINE_MULTIPLE_115,
+        })
+      : memoHeadingParagraph(recipient.position, { size: 22 });
     const name = recipient.name?.trim()
-      ? [`  U.p. Yth. ${recipient.gender} ${recipient.name}`]
-      : [];
-    return [`${useDash ? "- " : ""}${recipient.position}`, ...name];
+      ? useDash
+        ? tabAlignedParagraph(`U.p. Yth. ${recipient.gender} ${recipient.name}`, {
+            size: 22,
+            indent: { left: WORD_INDENT_002_CM },
+            spacingBefore: 80,
+            line: WORD_LINE_MULTIPLE_115,
+          })
+        : memoHeadingParagraph(`U.p. Yth. ${recipient.gender} ${recipient.name}`, { size: 22 })
+      : null;
+
+    return name ? [position, name] : [position];
   });
 }
 
-function developmentTable(rows: Extract<PreviewBlock, { type: "development-row" }>[]) {
-  return table([
-    new TableRow({
-      tableHeader: true,
-      children: [
-        cell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true),
-        cell([paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[1], true),
-        cell([paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[2], true),
-      ],
-    }),
-    ...rows.map(
-      (block) =>
-        new TableRow({
-          children: [
-            cell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0]),
-            cell(richTextToDocxParagraphs(block.row.item, { size: 22 }), DEVELOPMENT_COLUMN_WIDTHS[1]),
-            cell(richTextToDocxParagraphs(block.row.description, { size: 22 }), DEVELOPMENT_COLUMN_WIDTHS[2]),
-          ],
-        }),
-    ),
-  ], 100, Array.from(DEVELOPMENT_COLUMN_WIDTHS));
+function ccRecipientParagraphs(recipients: Recipient[]) {
+  const useDash = recipients.length > 1;
+
+  return recipients.flatMap((recipient) => {
+    const sharedOptions = {
+      size: 22,
+      spacingAfter: 70,
+      indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    };
+    const position = useDash
+      ? dashGapParagraph(recipient.position, sharedOptions)
+      : bodyColumnParagraph(recipient.position, { size: 22, spacingAfter: 70 });
+    const name = recipient.name?.trim()
+      ? useDash
+        ? tabAlignedParagraph(
+            `U.p. Yth. ${recipient.gender} ${recipient.name}`,
+            sharedOptions,
+          )
+        : bodyColumnParagraph(`U.p. Yth. ${recipient.gender} ${recipient.name}`, {
+            size: 22,
+            spacingAfter: 70,
+          })
+      : null;
+
+    return name ? [position, name] : [position];
+  });
 }
 
-function activityTable(rows: Extract<PreviewBlock, { type: "activity-row" }>[]) {
+function developmentTable(
+  rows: Extract<PreviewBlock, { type: "development-row" }>[],
+  numbered: boolean,
+) {
+  const columnWidths = numbered
+    ? Array.from(DEVELOPMENT_COLUMN_WIDTHS)
+    : Array.from(DEVELOPMENT_SINGLE_COLUMN_WIDTHS);
+
   return table([
     new TableRow({
       tableHeader: true,
       children: [
-        cell([paragraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })], 56, true),
-        cell([paragraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })], 22, true),
-        cell([paragraph("Waktu", { bold: true, size: 22, align: AlignmentType.CENTER })], 22, true),
+        ...(numbered
+          ? [cell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true)]
+          : []),
+        cell(
+          [paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? DEVELOPMENT_COLUMN_WIDTHS[1] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
+          true,
+        ),
+        cell(
+          [paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? DEVELOPMENT_COLUMN_WIDTHS[2] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
+          true,
+        ),
       ],
     }),
     ...rows.map(
       (block) =>
         new TableRow({
           children: [
-            cell(richTextToDocxParagraphs(block.row.activity, { size: 22 }), 56),
-            cell([paragraph(block.row.owner, { size: 22, align: AlignmentType.CENTER })], 22),
+            ...(numbered
+              ? [cell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0])]
+              : []),
             cell(
-              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 22, align: AlignmentType.CENTER })],
-              22,
+              richTextToDocxParagraphs(block.row.item, { size: 22 }),
+              numbered ? DEVELOPMENT_COLUMN_WIDTHS[1] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
+            ),
+            cell(
+              richTextToDocxParagraphs(block.row.description, { size: 22 }),
+              numbered ? DEVELOPMENT_COLUMN_WIDTHS[2] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
             ),
           ],
         }),
     ),
-  ], 100, [56, 22, 22]);
+  ], 100, columnWidths);
+}
+
+function activityTable(
+  rows: Extract<PreviewBlock, { type: "activity-row" }>[],
+  numbered: boolean,
+) {
+  const columnWidths = numbered
+    ? Array.from(ACTIVITY_NUMBERED_COLUMN_WIDTHS)
+    : Array.from(ACTIVITY_COLUMN_WIDTHS);
+
+  return table([
+    new TableRow({
+      tableHeader: true,
+      children: [
+        ...(numbered
+          ? [cell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
+          : []),
+        cell(
+          [paragraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1] : ACTIVITY_COLUMN_WIDTHS[0],
+          true,
+        ),
+        cell(
+          [paragraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2] : ACTIVITY_COLUMN_WIDTHS[1],
+          true,
+        ),
+        cell(
+          [paragraph("Waktu", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
+          true,
+        ),
+      ],
+    }),
+    ...rows.map(
+      (block) =>
+        new TableRow({
+          children: [
+            ...(numbered
+              ? [cell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]
+              : []),
+            cell(
+              richTextToDocxParagraphs(block.row.activity, { size: 22 }),
+              numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1] : ACTIVITY_COLUMN_WIDTHS[0],
+            ),
+            cell(
+              [paragraph(block.row.owner, { size: 22, align: AlignmentType.CENTER })],
+              numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2] : ACTIVITY_COLUMN_WIDTHS[1],
+            ),
+            cell(
+              [paragraph(formatDateRangeID(block.row.startDate, block.row.endDate), { size: 22, align: AlignmentType.CENTER })],
+              numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
+            ),
+          ],
+        }),
+    ),
+  ], 100, columnWidths);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -637,6 +721,13 @@ function leadingSectionSpacer(sectionRule: SectionRule): FileChild[] {
   ];
 }
 
+function tableBottomSpacer() {
+  return new Paragraph({
+    spacing: wordSpacing({ before: 100, after: 0 }),
+    children: [new TextRun({ text: "", size: 2 })],
+  });
+}
+
 function blockChildren(
   draft: MemoDraft,
   block: PreviewBlock,
@@ -652,7 +743,7 @@ function blockChildren(
             children: [
               new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Kepada", { size: 22 })] }),
               new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: recipientsText(draft.recipients).map(memoHeadingItemParagraph) }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: memoHeadingRecipientParagraphs(draft.recipients) }),
             ],
           }),
           new TableRow({
@@ -719,22 +810,33 @@ function blockChildren(
         ], sectionRule),
       ];
     case "attachments":
+      const attachmentItems = memoAttachmentItems(draft.attachments);
       return [
         ...leadingSectionSpacer(sectionRule),
-        previewSection("Lampiran", [
-          paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
-          ...memoAttachmentItems(draft.attachments).map((item) =>
-            dashGapParagraph(item, { size: 22 }),
-          ),
-        ], sectionRule),
+        previewSection(
+          "Lampiran",
+          attachmentItems.length === 1
+            ? [
+                paragraph(
+                  `Bersama dengan memo ini dilampirkan ${attachmentItems[0].replace(/[.\s]+$/, "")}.`,
+                  { size: 22 },
+                ),
+              ]
+            : [
+                paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
+                ...attachmentItems.map((item) => dashGapParagraph(item, { size: 22 })),
+              ],
+          sectionRule,
+        ),
       ];
     case "contacts":
+      const contactParagraph = draft.contacts.length === 1 ? paragraph : dashGapParagraph;
       return [
         ...leadingSectionSpacer(sectionRule),
         previewSection("PIC yang Dapat Dihubungi", [
           paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) =>
-            dashGapParagraph(`${contact.name} – ${contact.email}`, {
+            contactParagraph(`${contact.name} – ${contact.email}`, {
               size: 22,
             }),
           ),
@@ -760,19 +862,7 @@ function blockChildren(
     case "cc":
       return [
         bodyColumnParagraph("Tembusan:", { size: 22, spacingBefore: 260, spacingAfter: 70 }),
-        ...recipientsText(draft.ccRecipients, { dashSingle: true }).map((item) =>
-          item.startsWith("- ")
-            ? dashGapParagraph(item.slice(2), {
-                size: 22,
-                spacingAfter: 70,
-                indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-              })
-            : tabAlignedParagraph(item.trimStart(), {
-                size: 22,
-                spacingAfter: 70,
-                indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-              }),
-        ),
+        ...ccRecipientParagraphs(draft.ccRecipients),
       ];
     case "initials":
       return [bodyColumnParagraph(initialsText(draft), { size: 20, spacingBefore: 260 })];
@@ -842,12 +932,17 @@ function pageChildren(
 
     if (block.type === "development-row") {
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "development-row");
+      const developmentRows = rows as Extract<PreviewBlock, { type: "development-row" }>[];
       const sectionRule = nextSectionRule();
+      const title = isTableSectionContinuation(developmentRows[0])
+        ? "Lingkup Pengembangan, Sambungan"
+        : "Lingkup Pengembangan";
       children.push(
         ...leadingSectionSpacer(sectionRule),
-        previewSection("Lingkup Pengembangan", [
+        previewSection(title, [
           paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, { size: 22 }),
-          developmentTable(rows as Extract<PreviewBlock, { type: "development-row" }>[]),
+          developmentTable(developmentRows, draft.developmentRows.length > 1),
+          tableBottomSpacer(),
         ], sectionRule),
       );
       index = nextIndex;
@@ -856,12 +951,17 @@ function pageChildren(
 
     if (block.type === "activity-row") {
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "activity-row");
+      const activityRows = rows as Extract<PreviewBlock, { type: "activity-row" }>[];
       const sectionRule = nextSectionRule();
+      const title = isTableSectionContinuation(activityRows[0])
+        ? "Aktivitas Cabang dan Unit Kerja, Sambungan"
+        : "Aktivitas Cabang dan Unit Kerja";
       children.push(
         ...leadingSectionSpacer(sectionRule),
-        previewSection("Aktivitas Cabang dan Unit Kerja", [
+        previewSection(title, [
           paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, { size: 22 }),
-          activityTable(rows as Extract<PreviewBlock, { type: "activity-row" }>[]),
+          activityTable(activityRows, draft.activities.length > 1),
+          tableBottomSpacer(),
         ], sectionRule),
       );
       index = nextIndex;
@@ -953,6 +1053,7 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
 export function memoDocxFileName(draft: MemoDraft) {
   const safeProject = draft.metadata.projectName
     .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\./g, " ")
     .replace(/\s+/g, " ")
     .trim();
 

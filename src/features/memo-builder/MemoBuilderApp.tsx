@@ -1179,14 +1179,10 @@ function scenarioSectionGroups(rows: ScenarioRow[]) {
 function AppendixPanel({
   rows,
   updateDraft,
-  onGenerateDocx,
-  isExporting,
   validationIssues,
 }: {
   rows: ScenarioRow[];
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft) => void;
-  onGenerateDocx: () => void;
-  isExporting: boolean;
   validationIssues: ValidationIssue[];
 }) {
   function setRows(nextRows: ScenarioRow[]) {
@@ -1395,13 +1391,6 @@ function AppendixPanel({
           </section>
         ))}
       </div>
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4">
-        <span />
-        <IconButton onClick={onGenerateDocx} disabled={isExporting} variant="word">
-          <Download size={16} />
-          Generate Docx
-        </IconButton>
-      </div>
       {validationIssues.length ? (
         <div
           className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
@@ -1443,6 +1432,7 @@ export function MemoBuilderApp() {
   const saveToLocal = useMemoDraftStore((state) => state.saveToLocal);
   const importDraft = useMemoDraftStore((state) => state.importDraft);
   const resetDraft = useMemoDraftStore((state) => state.resetDraft);
+  const undo = useMemoDraftStore((state) => state.undo);
   const collaboration = useMemoCollaboration(draft, replaceDraft);
 
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
@@ -1461,6 +1451,35 @@ export function MemoBuilderApp() {
     document.body.classList.toggle("is-review-commenting", commentMode);
     return () => document.body.classList.remove("is-review-commenting");
   }, [commentMode]);
+
+  useEffect(() => {
+    const handleUndo = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "z" ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.closest(".ProseMirror"))
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      undo();
+    };
+
+    window.addEventListener("keydown", handleUndo);
+    return () => window.removeEventListener("keydown", handleUndo);
+  }, [undo]);
 
   function saveDraftData() {
     downloadBlob(
@@ -1860,8 +1879,6 @@ export function MemoBuilderApp() {
           <AppendixPanel
             rows={draft.appendixScenarios}
             updateDraft={updateDraft}
-            onGenerateDocx={exportDocx}
-            isExporting={isExporting}
             validationIssues={validationIssues}
           />
         </div>
