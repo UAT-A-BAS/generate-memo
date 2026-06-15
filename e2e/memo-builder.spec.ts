@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import JSZip from "jszip";
 
+const LOCAL_DRAFT_STORAGE_KEY = "memo-builder-fresh:blank-draft-v2";
+
 function richText(text: string) {
   return {
     type: "doc",
@@ -159,6 +161,152 @@ test("uses Memo Generator as the browser title", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await expect(page).toHaveTitle("Memo Generator");
+});
+
+test("autosaves and restores the local draft after reload", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.evaluate((storageKey) => localStorage.removeItem(storageKey), LOCAL_DRAFT_STORAGE_KEY);
+  await page.reload();
+
+  const projectName = page.getByLabel("Nama Project");
+  await projectName.fill("Draft lokal tersimpan");
+
+  await expect(page.locator("[data-save-status]")).toContainText("Tersimpan");
+  await expect
+    .poll(() =>
+      page.evaluate((storageKey) => {
+        const stored = localStorage.getItem(storageKey);
+        if (!stored) return "";
+        return JSON.parse(stored).metadata?.projectName ?? "";
+      }, LOCAL_DRAFT_STORAGE_KEY),
+    )
+    .toBe("Draft lokal tersimpan");
+
+  await page.reload();
+  await expect(page.getByLabel("Nama Project")).toHaveValue("Draft lokal tersimpan");
+});
+
+test("recovers from corrupt local draft data without crashing", async ({ page }) => {
+  await page.addInitScript((storageKey) => {
+    localStorage.setItem(storageKey, "{draft-rusak");
+  }, LOCAL_DRAFT_STORAGE_KEY);
+
+  await page.goto("http://localhost:3002");
+  await expect(page.getByRole("heading", { name: "Memo Generator" })).toBeVisible();
+  await expect(page.getByLabel("Nama Project")).toHaveValue("");
+  await expect(page.locator("[data-save-status]")).toContainText("Tersimpan");
+});
+
+test("validates email and URL formats after leaving the field", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const email = page.getByLabel("Email").first();
+  await email.fill("alamat-email-salah");
+  await email.press("Tab");
+  await expect(page.locator('[data-field-id^="contact-email-"]').first()).toHaveAttribute(
+    "data-field-invalid",
+    "true",
+  );
+  await expect(page.getByText("Gunakan format email yang valid.")).toBeVisible();
+
+  const accessPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Akses Link" }) })
+    .first();
+  await accessPanel.getByLabel("Ya").check();
+  const url = accessPanel.getByLabel("URL Akses");
+  await url.fill("alamat-url-salah");
+  await url.press("Tab");
+  await expect(page.locator('[data-field-id="accessLink"]')).toHaveAttribute(
+    "data-field-invalid",
+    "true",
+  );
+  await expect(page.getByText("Gunakan URL lengkap, misalnya https://contoh.id.")).toBeVisible();
+});
+
+test("remembers local input suggestions and can duplicate recipient rows", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.evaluate(() => localStorage.removeItem("memo-generator:input-preferences-v1"));
+  await page.reload();
+
+  const projectName = page.getByLabel("Nama Project");
+  await projectName.fill("Project Saran Lokal");
+  await projectName.press("Tab");
+  await expect(
+    page.locator('datalist[data-suggestion-category="projectNames"] option'),
+  ).toHaveAttribute("value", "Project Saran Lokal");
+  await page.reload();
+  await expect(
+    page.locator('datalist[data-suggestion-category="projectNames"] option'),
+  ).toHaveAttribute("value", "Project Saran Lokal");
+
+  await importDraft(page, completeDraft());
+  const recipientPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Kepada" }) })
+    .first();
+  await expect(recipientPanel.getByRole("button", { name: "Duplikat penerima" })).toHaveCount(1);
+  await recipientPanel.getByRole("button", { name: "Duplikat penerima" }).click();
+  await expect(recipientPanel.getByRole("button", { name: "Duplikat penerima" })).toHaveCount(2);
+  await expect(
+    recipientPanel.getByLabel("Jabatan / Unit").nth(1),
+  ).toHaveValue("Kepala Operasi Cabang Pluit");
+});
+
+test("completion bar jumps to the next incomplete field", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  await expect(page.getByText(/field masih perlu dilengkapi/)).toBeVisible();
+  await page.getByRole("button", { name: "Ke field berikutnya" }).click();
+  await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(
+    /validation-jump-highlight/,
+  );
+});
+
+test("saves and reapplies a reusable local input profile", async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem("memo-generator:input-preferences-v1"));
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  await page.getByRole("button", { name: "Rekam profil input" }).click();
+  await expect(page.getByText(/Profil input tersimpan/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Reset" }).click();
+  await expect(page.getByLabel("Nama Project")).toHaveValue("");
+  await page.getByRole("button", { name: "Isi dari profil" }).click();
+
+  const recipientPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Kepada" }) })
+    .first();
+  await expect(recipientPanel.getByLabel("Jabatan / Unit")).toHaveValue(
+    "Kepala Operasi Cabang Pluit",
+  );
+  await expect(page.getByLabel("Email").first()).toHaveValue("pic@example.com");
+  await expect(page.getByText(/Profil input diterapkan/)).toBeVisible();
+});
+
+test("new activities inherit the pilot schedule and previous PIC", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const activityPanel = page
+    .locator("section")
+    .filter({
+      has: page.getByRole("heading", {
+        name: "Aktivitas Cabang dan Unit Kerja",
+      }),
+    })
+    .first();
+  await activityPanel.getByRole("button", { name: "Aktivitas", exact: true }).click();
+
+  await expect(activityPanel.getByLabel("PIC").nth(1)).toHaveValue("Tim APV");
+  await expect(
+    activityPanel.locator('[data-field-id^="activity-date-"]').nth(1),
+  ).toContainText("7");
+  await expect(
+    activityPanel.locator('[data-field-id^="activity-date-"]').nth(1),
+  ).toContainText("21");
 });
 
 test("shows memo generator credit at page end", async ({ page }) => {

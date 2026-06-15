@@ -1,9 +1,11 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import type { Recipient } from "@/types/memo";
 import { createRecipient } from "@/templates/bcaMemoTemplate";
 import { DragDropList } from "./DragDropList";
+import { GuidedField } from "./GuidedField";
+import { InputSuggestionList } from "./InputSuggestionList";
 
 type RecipientListProps = {
   recipients: Recipient[];
@@ -18,10 +20,6 @@ type RecipientListProps = {
 const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
 const fieldClass =
   "h-10 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10";
-
-function RequiredMark() {
-  return <span className="text-red-600">*</span>;
-}
 
 export function RecipientList({
   recipients,
@@ -44,6 +42,16 @@ export function RecipientList({
     );
   }
 
+  function duplicateRecipient(id: string) {
+    const index = recipients.findIndex((recipient) => recipient.id === id);
+    if (index < 0) return;
+    const { id: sourceId, ...seed } = recipients[index];
+    void sourceId;
+    const next = [...recipients];
+    next.splice(index + 1, 0, createRecipient(seed));
+    onChange(next, { recordHistory: true });
+  }
+
   return (
     <div className="grid min-w-0 gap-3">
       <DragDropList
@@ -54,23 +62,28 @@ export function RecipientList({
         itemLabel={(recipient, index) => recipient.name || recipient.position || `penerima ${index + 1}`}
         renderItem={(recipient) => (
           <div className="grid min-w-0 gap-3">
-            <div className="grid min-w-0 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(96px,0.42fr)] xl:grid-cols-[minmax(0,1.1fr)_minmax(96px,0.42fr)_minmax(0,1fr)_40px]">
-              <label
-                className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
-                data-field-id={`recipient-${recipient.id}`}
+            <div className="grid min-w-0 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(110px,0.45fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(110px,0.42fr)_minmax(0,1fr)_84px]">
+              <GuidedField
+                label="Jabatan / Unit"
+                required={required}
+                fieldId={`recipient-${recipient.id}`}
+                className="min-w-0"
+                helper="Masukkan jabatan atau unit tujuan memo."
               >
-                <span>Jabatan / Unit {required ? <RequiredMark /> : null}</span>
-                <input
+                <InputSuggestionList
+                  category="positions"
                   value={recipient.position}
-                  onChange={(event) => updateRecipient(recipient.id, { position: event.target.value })}
-                  className={`${fieldClass} text-slate-900`}
+                  onValueChange={(position) => updateRecipient(recipient.id, { position })}
+                  placeholder="Contoh: Kepala Operasi Cabang Pluit"
+                  className={`${fieldClass} text-slate-900 placeholder:text-slate-400`}
                 />
-              </label>
-              <label
-                className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
-                data-field-id={`recipient-gender-${recipient.id}`}
+              </GuidedField>
+              <GuidedField
+                label="Sapaan"
+                required={genderRequired}
+                fieldId={`recipient-gender-${recipient.id}`}
+                className="min-w-0"
               >
-                <span>Sapaan {genderRequired ? <RequiredMark /> : null}</span>
                 <select
                   value={recipient.gender}
                   onChange={(event) =>
@@ -94,27 +107,40 @@ export function RecipientList({
                     </option>
                   ))}
                 </select>
-              </label>
-              <label
-                className="grid min-w-0 gap-1 text-xs font-medium text-slate-600"
-                data-field-id={`recipient-name-${recipient.id}`}
+              </GuidedField>
+              <GuidedField
+                label="Nama opsional"
+                fieldId={`recipient-name-${recipient.id}`}
+                className="min-w-0"
+                helper="Kosongkan bila memo ditujukan ke unit atau tim."
               >
-                <span>Nama opsional</span>
-                <input
+                <InputSuggestionList
+                  category="recipientNames"
                   value={recipient.name ?? ""}
-                  onChange={(event) => updateRecipient(recipient.id, { name: event.target.value })}
+                  onValueChange={(name) => updateRecipient(recipient.id, { name })}
                   placeholder="Nama penerima"
                   className={`${fieldClass} text-slate-900 placeholder:text-slate-400`}
                 />
-              </label>
-              <button
-                type="button"
-                onClick={() => removeRecipient(recipient.id)}
-                className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20 sm:self-end"
-                aria-label="Hapus penerima"
-              >
-                <Trash2 size={16} />
-              </button>
+              </GuidedField>
+              <div className="flex gap-1 sm:self-end">
+                <button
+                  type="button"
+                  onClick={() => duplicateRecipient(recipient.id)}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  aria-label="Duplikat penerima"
+                  title="Duplikat baris"
+                >
+                  <Copy size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeRecipient(recipient.id)}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  aria-label="Hapus penerima"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           </div>
         )}

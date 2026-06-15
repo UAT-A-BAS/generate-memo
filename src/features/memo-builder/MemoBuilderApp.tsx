@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
 import {
   Check,
   Copy,
@@ -31,6 +30,13 @@ import type {
 } from "@/types/memo";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { DragDropList } from "@/components/DragDropList";
+import { FormCompletionBar } from "@/components/FormCompletionBar";
+import {
+  GuidedField,
+  GuidedFieldValidationProvider,
+  type GuidedFieldIssue,
+} from "@/components/GuidedField";
+import { InputSuggestionList } from "@/components/InputSuggestionList";
 import { RecipientList } from "@/components/RecipientList";
 import { SectionTitle } from "@/components/SectionTitle";
 import { RichTextEditor } from "@/editor/RichTextEditor";
@@ -40,6 +46,7 @@ import {
   createActivityRow,
   createContactRow,
   createDevelopmentRow,
+  createRecipient,
   createScenarioRow,
   createSignerRow,
 } from "@/templates/bcaMemoTemplate";
@@ -54,6 +61,10 @@ import {
   saveCollaboratorIdentity,
 } from "@/collaboration/collaboratorIdentity";
 import { createId } from "@/utils/ids";
+import {
+  getLocalInputProfile,
+  saveLocalInputProfile,
+} from "@/input-ux/localInputPreferences";
 
 const memoTypes: MemoType[] = [
   "Pilot",
@@ -99,26 +110,25 @@ function FieldLabel({
   required = false,
   fieldId,
   asGroup = false,
+  helper,
 }: {
   label: string;
   children: React.ReactNode;
   required?: boolean;
   fieldId?: string;
   asGroup?: boolean;
+  helper?: string;
 }) {
-  const Root = asGroup ? "div" : "label";
-
   return (
-    <Root
-      className="grid content-start gap-1 text-[13px] font-semibold text-slate-700"
-      data-field-id={fieldId}
+    <GuidedField
+      label={label}
+      required={required}
+      fieldId={fieldId}
+      asGroup={asGroup}
+      helper={helper}
     >
-      <span>
-        {label}
-        {required ? <span className="text-red-600"> *</span> : null}
-      </span>
       {children}
-    </Root>
+    </GuidedField>
   );
 }
 
@@ -127,10 +137,7 @@ type DraftUpdater = (
   recordHistory?: boolean,
 ) => void;
 
-type ValidationIssue = {
-  id: string;
-  label: string;
-};
+type ValidationIssue = GuidedFieldIssue;
 
 function hasText(value?: string) {
   return Boolean(value?.trim());
@@ -140,9 +147,23 @@ function hasRichText(value: Parameters<typeof richTextToPlainText>[0]) {
   return hasText(richTextToPlainText(value));
 }
 
+function hasValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function hasValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const add = (id: string, label: string) => issues.push({ id, label });
+  const add = (id: string, label: string, message = "Field ini wajib diisi.") =>
+    issues.push({ id, label, message });
 
   if (!hasText(draft.metadata.memoType)) add("memoType", "Jenis Implementasi");
   if (!hasText(draft.metadata.bureau)) add("bureau", "Bureau UAT");
@@ -179,11 +200,28 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
 
   if (draft.metadata.accessLinkEnabled && !hasText(draft.metadata.accessLink)) {
     add("accessLink", "URL Akses");
+  } else if (
+    draft.metadata.accessLinkEnabled &&
+    !hasValidHttpUrl(draft.metadata.accessLink)
+  ) {
+    add(
+      "accessLink",
+      "URL Akses",
+      "Gunakan URL lengkap, misalnya https://contoh.id.",
+    );
   }
 
   draft.contacts.forEach((contact, index) => {
     if (!hasText(contact.name)) add(`contact-name-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Nama`);
-    if (!hasText(contact.email)) add(`contact-email-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Email`);
+    if (!hasText(contact.email)) {
+      add(`contact-email-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Email`);
+    } else if (!hasValidEmail(contact.email)) {
+      add(
+        `contact-email-${contact.id}`,
+        `PIC yang Dapat Dihubungi ${index + 1}: Email`,
+        "Gunakan format email yang valid.",
+      );
+    }
   });
 
   draft.signers.forEach((signer, index) => {
@@ -205,6 +243,23 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
   });
 
   return issues;
+}
+
+function requiredFieldCount(draft: MemoDraft) {
+  return (
+    4 +
+    draft.recipients.length * 2 +
+    (draft.metadata.memoType === "Nasional" && draft.referenceEnabled ? 1 : 0) +
+    draft.developmentRows.length * 2 +
+    1 +
+    draft.activities.length * 3 +
+    (draft.metadata.accessLinkEnabled ? 1 : 0) +
+    draft.contacts.length * 2 +
+    draft.signers.length * 2 +
+    draft.ccRecipients.length +
+    2 +
+    draft.appendixScenarios.length * 5
+  );
 }
 
 function jumpToValidationIssue(issues: ValidationIssue[]) {
@@ -729,7 +784,8 @@ function ReviewCommentDialog({
               value={text}
               rows={4}
               onChange={(event) => onTextChange(event.target.value)}
-              className="min-h-28 resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              placeholder={state.mode === "reply" ? "Tulis balasan..." : "Tulis komentar review..."}
+              className="min-h-28 resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               autoFocus
             />
           </FieldLabel>
@@ -816,39 +872,20 @@ function MetadataPanel({
   metadata: MemoMetadata;
   updateMetadata: (patch: Partial<MemoMetadata>) => void;
 }) {
-  const { register, reset } = useForm<MemoMetadata>({
-    defaultValues: metadata,
-  });
-
-  useEffect(() => {
-    reset(metadata);
-  }, [metadata, reset]);
-
-  function registerField<K extends keyof MemoMetadata>(name: K) {
-    const field = register(name);
-    return {
-      ...field,
-      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        field.onChange(event);
-        const target = event.target;
-        const value =
-          target instanceof HTMLInputElement && target.type === "checkbox"
-            ? target.checked
-            : target.value;
-
-        updateMetadata({ [name]: value } as Partial<MemoMetadata>);
-      },
-    };
-  }
-
   return (
     <Panel>
-      <SectionTitle title="Metadata" />
+      <SectionTitle
+        title="Metadata"
+        description="Isi identitas memo lebih dulu agar perihal dan preview terbentuk otomatis."
+      />
       <div className="mt-5 grid gap-5">
         <div className="grid gap-3 md:grid-cols-2">
           <FieldLabel label="Jenis Implementasi" fieldId="memoType" required>
             <select
-              {...registerField("memoType")}
+              value={metadata.memoType}
+              onChange={(event) =>
+                updateMetadata({ memoType: event.target.value as MemoType })
+              }
               className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             >
               {memoTypes.map((type) => (
@@ -858,7 +895,10 @@ function MetadataPanel({
           </FieldLabel>
           <FieldLabel label="Bureau UAT" fieldId="bureau" required>
             <select
-              {...registerField("bureau")}
+              value={metadata.bureau}
+              onChange={(event) =>
+                updateMetadata({ bureau: event.target.value as Bureau })
+              }
               className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             >
               {bureaus.map((bureau) => (
@@ -867,17 +907,28 @@ function MetadataPanel({
             </select>
           </FieldLabel>
         </div>
-        <FieldLabel label="Nama Project" fieldId="projectName" required>
-          <input
-            {...registerField("projectName")}
-            className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+        <FieldLabel
+          label="Nama Project"
+          fieldId="projectName"
+          required
+          helper="Gunakan nama dan versi yang akan tampil pada perihal memo."
+        >
+          <InputSuggestionList
+            category="projectNames"
+            value={metadata.projectName}
+            onValueChange={(projectName) => updateMetadata({ projectName })}
+            placeholder="Contoh: BDS Web Gen 2 versi 4.3.0"
+            className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </FieldLabel>
         <div className="grid gap-2">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
-              {...registerField("autoPerihal")}
+              checked={metadata.autoPerihal}
+              onChange={(event) =>
+                updateMetadata({ autoPerihal: event.target.checked })
+              }
               className="h-4 w-4 rounded border-slate-400 text-slate-900 focus:ring-slate-900"
             />
             Perihal otomatis
@@ -889,7 +940,11 @@ function MetadataPanel({
           ) : (
             <FieldLabel label="Perihal" fieldId="perihal" required>
               <input
-                {...registerField("perihal")}
+                value={metadata.perihal}
+                onChange={(event) =>
+                  updateMetadata({ perihal: event.target.value })
+                }
+                placeholder="Tulis perihal memo"
                 className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
             </FieldLabel>
@@ -923,23 +978,46 @@ function DevelopmentPanel({
             <div className="grid gap-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-slate-900">Baris {index + 1}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextRows = rows.filter((item) => item.id !== row.id);
-                    setRows(nextRows.length ? nextRows : [createDevelopmentRow()], true);
-                  }}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                  aria-label="Hapus lingkup"
-                >
-                  <Trash2 size={15} />
-                </button>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextRows = [...rows];
+                      nextRows.splice(
+                        index + 1,
+                        0,
+                        createDevelopmentRow({
+                          item: row.item,
+                          description: row.description,
+                        }),
+                      );
+                      setRows(nextRows, true);
+                    }}
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
+                    aria-label="Duplikat lingkup"
+                    title="Duplikat baris"
+                  >
+                    <Copy size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextRows = rows.filter((item) => item.id !== row.id);
+                      setRows(nextRows.length ? nextRows : [createDevelopmentRow()], true);
+                    }}
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                    aria-label="Hapus lingkup"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
               <div className="grid items-start gap-3 xl:grid-cols-2">
                 <FieldLabel label="Item" fieldId={`development-item-${row.id}`} required asGroup>
                   <RichTextEditor
                     value={row.item}
                     minHeight={92}
+                    placeholder="Nama fitur atau lingkup pengembangan"
                     onChange={(value) =>
                       setRows(rows.map((item) => (item.id === row.id ? { ...item, item: value } : item)))
                     }
@@ -949,6 +1027,7 @@ function DevelopmentPanel({
                   <RichTextEditor
                     value={row.description}
                     minHeight={92}
+                    placeholder="Jelaskan perubahan, alur, dan dampaknya"
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>
@@ -976,9 +1055,11 @@ function DevelopmentPanel({
 function ActivitiesPanel({
   rows,
   updateDraft,
+  pilotSchedule,
 }: {
   rows: ActivityRow[];
   updateDraft: DraftUpdater;
+  pilotSchedule: MemoDraft["pilotSchedule"];
 }) {
   function setRows(nextRows: ActivityRow[], recordHistory = false) {
     updateDraft((draft) => ({ ...draft, activities: nextRows }), recordHistory);
@@ -992,9 +1073,9 @@ function ActivitiesPanel({
           items={rows}
           onReorder={(nextRows) => setRows(nextRows, true)}
           itemLabel={(row, index) => row.owner || `aktivitas ${index + 1}`}
-          renderItem={(row) => (
+          renderItem={(row, index) => (
             <div className="grid gap-3">
-              <div className="grid items-end gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_38px]">
+              <div className="grid items-end gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_78px]">
                 <FieldLabel label="Tanggal" fieldId={`activity-date-${row.id}`} required>
                   <DateRangePicker
                     compact
@@ -1010,32 +1091,63 @@ function ActivitiesPanel({
                     }
                   />
                 </FieldLabel>
-                <FieldLabel label="PIC" fieldId={`activity-owner-${row.id}`} required>
-                  <input
+                <FieldLabel
+                  label="PIC"
+                  fieldId={`activity-owner-${row.id}`}
+                  required
+                >
+                  <InputSuggestionList
+                    category="activityOwners"
                     value={row.owner}
-                    onChange={(event) =>
+                    onValueChange={(owner) =>
                       setRows(
                         rows.map((item) =>
-                          item.id === row.id ? { ...item, owner: event.target.value } : item,
+                          item.id === row.id ? { ...item, owner } : item,
                         ),
                       )
                     }
-                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                    placeholder="Nama PIC atau unit"
+                    className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                   />
                 </FieldLabel>
-                <button
-                  type="button"
-                  onClick={() => setRows(rows.filter((item) => item.id !== row.id), true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                  aria-label="Hapus aktivitas"
-                >
-                  <Trash2 size={15} />
-                </button>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextRows = [...rows];
+                      nextRows.splice(
+                        index + 1,
+                        0,
+                        createActivityRow({
+                          startDate: row.startDate,
+                          endDate: row.endDate,
+                          owner: row.owner,
+                          activity: row.activity,
+                        }),
+                      );
+                      setRows(nextRows, true);
+                    }}
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
+                    aria-label="Duplikat aktivitas"
+                    title="Duplikat baris"
+                  >
+                    <Copy size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRows(rows.filter((item) => item.id !== row.id), true)}
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                    aria-label="Hapus aktivitas"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
               <FieldLabel label="Aktivitas" fieldId={`activity-text-${row.id}`} required asGroup>
                 <RichTextEditor
                   value={row.activity}
                   minHeight={92}
+                  placeholder="Jelaskan aktivitas yang harus dilakukan"
                   onChange={(value) =>
                     setRows(rows.map((item) => (item.id === row.id ? { ...item, activity: value } : item)))
                   }
@@ -1046,7 +1158,21 @@ function ActivitiesPanel({
         />
       </div>
       <div className="mt-3 flex justify-end">
-        <IconButton onClick={() => setRows([...rows, createActivityRow()], true)}>
+        <IconButton
+          onClick={() =>
+            setRows(
+              [
+                ...rows,
+                createActivityRow({
+                  startDate: pilotSchedule.startDate,
+                  endDate: pilotSchedule.endDate,
+                  owner: rows.at(-1)?.owner ?? "",
+                }),
+              ],
+              true,
+            )
+          }
+        >
           <Plus size={16} />
           Aktivitas
         </IconButton>
@@ -1087,6 +1213,7 @@ function ReferencePanel({
             <FieldLabel label="Daftar Referensi" fieldId="reference" required>
               <textarea
                 value={richTextToPlainText(draft.reference)}
+                placeholder="Satu referensi per baris"
                 onChange={(event) =>
                   updateDraft((current) => ({
                     ...current,
@@ -1124,41 +1251,71 @@ function ContactsPanel({
           onReorder={(contacts) => setRows(contacts, true)}
           itemLabel={(contact, index) => contact.name || `PIC ${index + 1}`}
           renderItem={(contact) => (
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_40px]">
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_84px]">
               <FieldLabel label="Nama" fieldId={`contact-name-${contact.id}`} required>
-                <input
+                <InputSuggestionList
+                  category="contactNames"
                   value={contact.name}
-                  onChange={(event) =>
+                  onValueChange={(name) =>
                     setRows(
                       draft.contacts.map((item) =>
-                        item.id === contact.id ? { ...item, name: event.target.value } : item,
+                        item.id === contact.id ? { ...item, name } : item,
                       ),
                     )
                   }
-                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  placeholder="Nama PIC"
+                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
-              <FieldLabel label="Email" fieldId={`contact-email-${contact.id}`} required>
-                <input
-                  value={contact.email}
-                  onChange={(event) =>
-                    setRows(
-                      draft.contacts.map((item) =>
-                        item.id === contact.id ? { ...item, email: event.target.value } : item,
-                      ),
-                    )
-                  }
-                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                />
-              </FieldLabel>
-              <button
-                type="button"
-                onClick={() => setRows(draft.contacts.filter((item) => item.id !== contact.id), true)}
-                className="mt-5 flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                aria-label="Hapus PIC"
+              <FieldLabel
+                label="Email"
+                fieldId={`contact-email-${contact.id}`}
+                required
+                helper="Contoh: nama@bca.co.id"
               >
-                <Trash2 size={15} />
-              </button>
+                <InputSuggestionList
+                  category="contactEmails"
+                  value={contact.email}
+                  type="email"
+                  onValueChange={(email) =>
+                    setRows(
+                      draft.contacts.map((item) =>
+                        item.id === contact.id ? { ...item, email } : item,
+                      ),
+                    )
+                  }
+                  placeholder="nama@bca.co.id"
+                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </FieldLabel>
+              <div className="mt-5 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const index = draft.contacts.findIndex((item) => item.id === contact.id);
+                    const next = [...draft.contacts];
+                    next.splice(
+                      index + 1,
+                      0,
+                      createContactRow({ name: contact.name, email: contact.email }),
+                    );
+                    setRows(next, true);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
+                  aria-label="Duplikat PIC"
+                  title="Duplikat baris"
+                >
+                  <Copy size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRows(draft.contacts.filter((item) => item.id !== contact.id), true)}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                  aria-label="Hapus PIC"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </div>
           )}
         />
@@ -1222,6 +1379,7 @@ function AttachmentsPanel({
             <textarea
               value={attachments}
               rows={5}
+              placeholder="Satu nama lampiran per baris"
               onChange={(event) =>
                 updateDraft((current) => ({ ...current, attachments: event.target.value }))
               }
@@ -1249,9 +1407,11 @@ type ScenarioSectionGroup = {
 };
 
 function scenarioDateKey(row: ScenarioRow) {
-  return row.startDate || row.endDate
-    ? `date:${row.startDate}:${row.endDate}`
-    : `group:${row.dateGroupId ?? row.id}`;
+  return row.dateGroupId
+    ? `group:${row.dateGroupId}`
+    : row.startDate || row.endDate
+      ? `date:${row.startDate}:${row.endDate}`
+      : `row:${row.id}`;
 }
 
 function scenarioDateGroups(rows: ScenarioRow[]) {
@@ -1309,10 +1469,12 @@ function AppendixPanel({
   rows,
   updateDraft,
   validationIssues,
+  pilotSchedule,
 }: {
   rows: ScenarioRow[];
   updateDraft: DraftUpdater;
   validationIssues: ValidationIssue[];
+  pilotSchedule: MemoDraft["pilotSchedule"];
 }) {
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }), recordHistory);
@@ -1401,9 +1563,35 @@ function AppendixPanel({
 
     setRows([
       ...rows.slice(0, lastIndex + 1),
-      createScenarioRow({ dateGroupId: createId("scenario-date") }),
+      createScenarioRow({
+        dateGroupId: createId("scenario-date"),
+        startDate: pilotSchedule.startDate,
+        endDate: pilotSchedule.endDate,
+      }),
       ...rows.slice(lastIndex + 1),
     ], true);
+  }
+
+  function duplicateScenario(row: ScenarioRow) {
+    const index = rows.findIndex((item) => item.id === row.id);
+    if (index < 0) return;
+    const next = [...rows];
+    next.splice(
+      index + 1,
+      0,
+      createScenarioRow({
+        dateGroupId: row.dateGroupId,
+        sectionGroupId: row.sectionGroupId,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        section: row.section,
+        scenario: row.scenario,
+        expectedResult: row.expectedResult,
+        pic: row.pic,
+        notes: row.notes,
+      }),
+    );
+    setRows(next, true);
   }
 
   return (
@@ -1433,6 +1621,7 @@ function AppendixPanel({
                       <textarea
                         value={section.title}
                         rows={1}
+                        placeholder="Nama bagian skenario"
                         onChange={(event) => updateSectionTitle(section, event.target.value)}
                         className="min-h-10 resize-y border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
                       />
@@ -1451,23 +1640,35 @@ function AppendixPanel({
                             <p className="text-sm font-semibold text-slate-900">
                               Skenario {rowIndex + 1}
                             </p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextRows = rows.filter((item) => item.id !== row.id);
-                                setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
-                              }}
-                              className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
-                              aria-label="Hapus skenario"
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => duplicateScenario(row)}
+                                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                                aria-label="Duplikat skenario"
+                                title="Duplikat baris"
+                              >
+                                <Copy size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextRows = rows.filter((item) => item.id !== row.id);
+                                  setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                                aria-label="Hapus skenario"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           </div>
                           <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
                             <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
                               <RichTextEditor
                                 value={row.scenario}
                                 minHeight={92}
+                                placeholder="Langkah atau skenario pengujian"
                                 onChange={(value) =>
                                   setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
                                 }
@@ -1477,6 +1678,7 @@ function AppendixPanel({
                               <RichTextEditor
                                 value={row.expectedResult}
                                 minHeight={92}
+                                placeholder="Hasil yang diharapkan"
                                 onChange={(value) =>
                                   setRows(
                                     rows.map((item) =>
@@ -1490,6 +1692,7 @@ function AppendixPanel({
                               <textarea
                                 value={row.pic}
                                 rows={5}
+                                placeholder="Nama PIC atau unit"
                                 onChange={(event) =>
                                   setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
                                 }
@@ -1552,6 +1755,10 @@ export function MemoBuilderApp() {
   const editControlIndexRef = useRef(0);
   const [isExporting, setIsExporting] = useState(false);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
+  const [touchedFieldIds, setTouchedFieldIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [showAllValidation, setShowAllValidation] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [commentMode, setCommentMode] = useState(false);
   const [commentDialog, setCommentDialog] = useState<CommentDialogState | null>(null);
@@ -1560,13 +1767,19 @@ export function MemoBuilderApp() {
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const [identityDialog, setIdentityDialog] = useState<IdentityDialogState | null>(null);
   const [identityInput, setIdentityInput] = useState("");
+  const [profileAvailable, setProfileAvailable] = useState(false);
+  const [profileNotice, setProfileNotice] = useState("");
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
   const updateMetadata = useMemoDraftStore((state) => state.updateMetadata);
   const replaceDraft = useMemoDraftStore((state) => state.replaceDraft);
   const loadFromLocal = useMemoDraftStore((state) => state.loadFromLocal);
+  const markSaving = useMemoDraftStore((state) => state.markSaving);
   const saveToLocal = useMemoDraftStore((state) => state.saveToLocal);
+  const saveStatus = useMemoDraftStore((state) => state.status);
+  const lastSavedAt = useMemoDraftStore((state) => state.lastSavedAt);
+  const saveError = useMemoDraftStore((state) => state.error);
   const importDraft = useMemoDraftStore((state) => state.importDraft);
   const resetDraft = useMemoDraftStore((state) => state.resetDraft);
   const undo = useMemoDraftStore((state) => state.undo);
@@ -1578,10 +1791,24 @@ export function MemoBuilderApp() {
   const collaboration = useMemoCollaboration(draft, replaceDraft, collaboratorName);
 
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
+  const allValidationIssues = useMemo(() => validateMemoDraft(draft), [draft]);
+  const totalRequiredFields = useMemo(() => requiredFieldCount(draft), [draft]);
+  const completedRequiredFields = Math.max(
+    0,
+    totalRequiredFields - allValidationIssues.length,
+  );
 
   useEffect(() => {
     loadFromLocal();
   }, [loadFromLocal]);
+
+  useEffect(() => {
+    if (!hasLoaded) return;
+    const timer = window.setTimeout(() => {
+      setProfileAvailable(Boolean(getLocalInputProfile()));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hasLoaded]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1606,9 +1833,10 @@ export function MemoBuilderApp() {
 
   useEffect(() => {
     if (!hasLoaded) return;
-    const timer = window.setInterval(saveToLocal, 3000);
-    return () => window.clearInterval(timer);
-  }, [hasLoaded, saveToLocal]);
+    markSaving();
+    const timer = window.setTimeout(saveToLocal, 700);
+    return () => window.clearTimeout(timer);
+  }, [draft.updatedAt, hasLoaded, markSaving, saveToLocal]);
 
   useEffect(() => {
     document.body.classList.toggle("is-review-commenting", commentMode);
@@ -1686,7 +1914,19 @@ export function MemoBuilderApp() {
     const control = editControlFromTarget(event.target);
     if (!control) return;
     const key = editKeyForControl(control);
-    queueMicrotask(() => commitEditSession(key));
+    const fieldId = control.closest<HTMLElement>("[data-field-id]")?.dataset.fieldId;
+    if (fieldId) {
+      setTouchedFieldIds((current) => {
+        if (current.has(fieldId)) return current;
+        const next = new Set(current);
+        next.add(fieldId);
+        return next;
+      });
+    }
+    queueMicrotask(() => {
+      commitEditSession(key);
+      setValidationIssues(validateMemoDraft(useMemoDraftStore.getState().draft));
+    });
   }
 
   function saveDraftData() {
@@ -1705,6 +1945,47 @@ export function MemoBuilderApp() {
     }
     resetDraft();
     setValidationIssues([]);
+    setTouchedFieldIds(new Set());
+    setShowAllValidation(false);
+  }
+
+  function handleSaveInputProfile() {
+    saveLocalInputProfile(draft);
+    setProfileAvailable(true);
+    setProfileNotice("Profil input tersimpan di browser ini.");
+  }
+
+  function handleApplyInputProfile() {
+    const profile = getLocalInputProfile();
+    if (!profile) return;
+
+    updateDraft(
+      (current) => ({
+        ...current,
+        metadata: {
+          ...current.metadata,
+          bureau: profile.bureau,
+        },
+        recipients: profile.recipients.map((recipient) =>
+          createRecipient(recipient),
+        ),
+        contacts: profile.contacts.map((contact) => createContactRow(contact)),
+        signers: profile.signers.map((signer) => createSignerRow(signer)),
+        ccRecipients: profile.ccRecipients.map((recipient) =>
+          createRecipient(recipient),
+        ),
+        initials: profile.initials,
+        initialsBureau: profile.initialsBureau,
+      }),
+      true,
+    );
+    setProfileNotice("Profil input diterapkan.");
+  }
+
+  function jumpToNextIncompleteField() {
+    setValidationIssues(allValidationIssues);
+    setShowAllValidation(true);
+    window.requestAnimationFrame(() => jumpToValidationIssue(allValidationIssues));
   }
 
   async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
@@ -1718,12 +1999,15 @@ export function MemoBuilderApp() {
 
     importDraft(mapped);
     setValidationIssues([]);
+    setTouchedFieldIds(new Set());
+    setShowAllValidation(false);
     event.target.value = "";
   }
 
   async function exportDocx() {
     const issues = validateMemoDraft(draft);
     setValidationIssues(issues);
+    setShowAllValidation(true);
     if (issues.length) {
       window.requestAnimationFrame(() => jumpToValidationIssue(issues));
       return;
@@ -2056,7 +2340,12 @@ export function MemoBuilderApp() {
   }
 
   return (
-    <main
+    <GuidedFieldValidationProvider
+      issues={validationIssues}
+      touchedFieldIds={touchedFieldIds}
+      showAll={showAllValidation}
+    >
+      <main
       ref={appRootRef}
       onClickCapture={handleReviewTargetClick}
       onFocusCapture={handleEditFocus}
@@ -2080,6 +2369,33 @@ export function MemoBuilderApp() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
+            <div
+              className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${
+                saveStatus === "error"
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : saveStatus === "saving"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+              data-save-status
+              title={saveError || (lastSavedAt ? `Terakhir tersimpan ${new Date(lastSavedAt).toLocaleTimeString("id-ID")}` : undefined)}
+              aria-live="polite"
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  saveStatus === "error"
+                    ? "bg-rose-500"
+                    : saveStatus === "saving"
+                      ? "animate-pulse bg-amber-500"
+                      : "bg-emerald-500"
+                }`}
+              />
+              {saveStatus === "error"
+                ? "Gagal menyimpan"
+                : saveStatus === "saving"
+                  ? "Menyimpan..."
+                  : "Tersimpan"}
+            </div>
             <CollaborationPanel
               collaboration={collaboration}
               onStart={requestStartCollaboration}
@@ -2102,6 +2418,16 @@ export function MemoBuilderApp() {
 
       <div className="grid w-full gap-3 px-3 py-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:px-4">
         <div className="grid min-w-0 content-start gap-3">
+          <FormCompletionBar
+            completed={completedRequiredFields}
+            total={totalRequiredFields}
+            issueCount={allValidationIssues.length}
+            profileAvailable={profileAvailable}
+            profileNotice={profileNotice}
+            onJumpToNext={jumpToNextIncompleteField}
+            onSaveProfile={handleSaveInputProfile}
+            onApplyProfile={handleApplyInputProfile}
+          />
           <Panel>
             <SectionTitle title="Kepada" />
             <div className="mt-6">
@@ -2142,7 +2468,11 @@ export function MemoBuilderApp() {
             </div>
           </Panel>
 
-          <ActivitiesPanel rows={draft.activities} updateDraft={updateDraft} />
+          <ActivitiesPanel
+            rows={draft.activities}
+            updateDraft={updateDraft}
+            pilotSchedule={draft.pilotSchedule}
+          />
 
           <Panel>
             <SectionTitle title="Akses Link" />
@@ -2169,12 +2499,20 @@ export function MemoBuilderApp() {
                   ))}
                 </div>
               </fieldset>
-              <FieldLabel label="URL Akses" fieldId="accessLink" required={draft.metadata.accessLinkEnabled}>
-                <input
+              <FieldLabel
+                label="URL Akses"
+                fieldId="accessLink"
+                required={draft.metadata.accessLinkEnabled}
+                helper="Gunakan alamat lengkap dengan http:// atau https://."
+              >
+                <InputSuggestionList
+                  category="accessLinks"
                   value={draft.metadata.accessLink}
                   disabled={!draft.metadata.accessLinkEnabled}
-                  onChange={(event) => updateMetadata({ accessLink: event.target.value })}
-                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-100 disabled:text-slate-400"
+                  type="url"
+                  onValueChange={(accessLink) => updateMetadata({ accessLink })}
+                  placeholder="https://contoh.id"
+                  className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </FieldLabel>
             </div>
@@ -2192,48 +2530,74 @@ export function MemoBuilderApp() {
             <SectionTitle title="Signature" />
             <div className="mt-6 grid gap-3">
               {draft.signers.map((signer) => (
-                <div key={signer.id} className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_1fr_40px]">
+                <div key={signer.id} className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_1fr_84px]">
                   <FieldLabel label="Nama" fieldId={`signer-name-${signer.id}`} required>
-                    <input
+                    <InputSuggestionList
+                      category="signerNames"
                       value={signer.name}
-                      onChange={(event) =>
+                      onValueChange={(name) =>
                         updateDraft((current) => ({
                           ...current,
                           signers: current.signers.map((item) =>
-                            item.id === signer.id ? { ...item, name: event.target.value } : item,
+                            item.id === signer.id ? { ...item, name } : item,
                           ),
                         }))
                       }
-                      className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                      placeholder="Nama penandatangan"
+                      className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                     />
                   </FieldLabel>
                   <FieldLabel label="Jabatan" fieldId={`signer-title-${signer.id}`} required>
-                    <input
+                    <InputSuggestionList
+                      category="signerTitles"
                       value={signer.title}
-                      onChange={(event) =>
+                      onValueChange={(title) =>
                         updateDraft((current) => ({
                           ...current,
                           signers: current.signers.map((item) =>
-                            item.id === signer.id ? { ...item, title: event.target.value } : item,
+                            item.id === signer.id ? { ...item, title } : item,
                           ),
                         }))
                       }
-                      className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                      placeholder="Jabatan penandatangan"
+                      className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                     />
                   </FieldLabel>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateDraft((current) => ({
-                        ...current,
-                        signers: current.signers.filter((item) => item.id !== signer.id),
-                      }), true)
-                    }
-                    className="mt-5 flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                    aria-label="Hapus signer"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  <div className="mt-5 flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateDraft((current) => {
+                          const index = current.signers.findIndex((item) => item.id === signer.id);
+                          const signers = [...current.signers];
+                          signers.splice(
+                            index + 1,
+                            0,
+                            createSignerRow({ name: signer.name, title: signer.title }),
+                          );
+                          return { ...current, signers };
+                        }, true)
+                      }
+                      className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
+                      aria-label="Duplikat signer"
+                      title="Duplikat baris"
+                    >
+                      <Copy size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateDraft((current) => ({
+                          ...current,
+                          signers: current.signers.filter((item) => item.id !== signer.id),
+                        }), true)
+                      }
+                      className="flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                      aria-label="Hapus signer"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -2275,12 +2639,14 @@ export function MemoBuilderApp() {
             <SectionTitle title="Inisial" />
             <div className="mt-6 grid items-end gap-3 md:grid-cols-[1fr_140px]">
               <FieldLabel label="Inisial" fieldId="initials" required>
-                <input
+                <InputSuggestionList
+                  category="initials"
                   value={draft.initials}
-                  onChange={(event) =>
-                    updateDraft((current) => ({ ...current, initials: event.target.value }))
+                  onValueChange={(initials) =>
+                    updateDraft((current) => ({ ...current, initials }))
                   }
-                  className="h-10 w-full rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                  placeholder="Contoh: VYN/yat-a"
+                  className="h-10 w-full rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
               </FieldLabel>
               <FieldLabel label="UAT" fieldId="initialsBureau" required>
@@ -2306,6 +2672,7 @@ export function MemoBuilderApp() {
             rows={draft.appendixScenarios}
             updateDraft={updateDraft}
             validationIssues={validationIssues}
+            pilotSchedule={draft.pilotSchedule}
           />
         </div>
 
@@ -2390,6 +2757,7 @@ export function MemoBuilderApp() {
           ) : null}
         </button>
       </div>
-    </main>
+      </main>
+    </GuidedFieldValidationProvider>
   );
 }

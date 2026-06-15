@@ -34,6 +34,15 @@ textarea {
   line-height: 1.45;
 }
 
+.ProseMirror[data-placeholder] p:only-child:has(> br.ProseMirror-trailingBreak)::before {
+  color: #94a3b8;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  font-weight: 400;
+}
+
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
@@ -89,6 +98,18 @@ textarea {
   outline: 3px solid #dc2626;
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgb(220 38 38 / 0.12);
+}
+
+[data-field-invalid="true"] input,
+[data-field-invalid="true"] select,
+[data-field-invalid="true"] textarea,
+[data-field-invalid="true"] .ProseMirror {
+  border-color: #e11d48;
+}
+
+[data-field-invalid="true"] > div:has(.ProseMirror) {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 3px rgb(225 29 72 / 0.1);
 }
 
 .review-target-highlight {

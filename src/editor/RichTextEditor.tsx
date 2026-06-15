@@ -12,10 +12,20 @@ type RichTextEditorProps = {
   value: RichTextDoc;
   onChange: (value: RichTextDoc) => void;
   minHeight?: number;
+  placeholder?: string;
 };
 
 function preserveEditorSelection(event: React.MouseEvent<HTMLButtonElement>) {
   event.preventDefault();
+}
+
+function runToolbarFromKeyboard(
+  event: React.KeyboardEvent<HTMLButtonElement>,
+  command: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  command();
 }
 
 const EnterWithoutMarks = Extension.create({
@@ -39,7 +49,12 @@ const EnterWithoutMarks = Extension.create({
   },
 });
 
-export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEditorProps) {
+export function RichTextEditor({
+  value,
+  onChange,
+  minHeight = 120,
+  placeholder = "Mulai mengetik...",
+}: RichTextEditorProps) {
   const onChangeRef = useRef(onChange);
   const pendingChangeRef = useRef<{ value: RichTextDoc; serialized: string } | null>(null);
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,6 +90,7 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
       attributes: {
         class:
           "prose prose-sm max-w-none outline-none text-slate-950 prose-p:my-1 prose-ul:my-1 prose-ol:my-1",
+        "data-placeholder": placeholder,
       },
     },
     onUpdate: ({ editor: currentEditor }) => {
@@ -140,6 +156,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
           type="button"
           className={`${buttonClass} ${editor.isActive("bold") ? activeClass : ""}`}
           onMouseDown={preserveEditorSelection}
+          onKeyDown={(event) =>
+            runToolbarFromKeyboard(event, () => {
+              editor.view.focus();
+              editor.commands.toggleBold();
+            })
+          }
           onClick={() => {
             editor.view.focus();
             editor.commands.toggleBold();
@@ -153,6 +175,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
           type="button"
           className={`${buttonClass} ${editor.isActive("italic") ? activeClass : ""}`}
           onMouseDown={preserveEditorSelection}
+          onKeyDown={(event) =>
+            runToolbarFromKeyboard(event, () => {
+              editor.view.focus();
+              editor.commands.toggleItalic();
+            })
+          }
           onClick={() => {
             editor.view.focus();
             editor.commands.toggleItalic();
@@ -165,6 +193,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
           type="button"
           className={`${buttonClass} ${editor.isActive("underline") ? activeClass : ""}`}
           onMouseDown={preserveEditorSelection}
+          onKeyDown={(event) =>
+            runToolbarFromKeyboard(event, () => {
+              editor.view.focus();
+              editor.commands.toggleUnderline();
+            })
+          }
           onClick={() => {
             editor.view.focus();
             editor.commands.toggleUnderline();
@@ -178,6 +212,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
           type="button"
           className={`${buttonClass} ${editor.isActive("bulletList") ? activeClass : ""}`}
           onMouseDown={preserveEditorSelection}
+          onKeyDown={(event) =>
+            runToolbarFromKeyboard(event, () => {
+              editor.view.focus();
+              editor.commands.toggleBulletList();
+            })
+          }
           onClick={() => {
             editor.view.focus();
             editor.commands.toggleBulletList();
@@ -190,6 +230,12 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
           type="button"
           className={`${buttonClass} ${editor.isActive("orderedList") ? activeClass : ""}`}
           onMouseDown={preserveEditorSelection}
+          onKeyDown={(event) =>
+            runToolbarFromKeyboard(event, () => {
+              editor.view.focus();
+              editor.commands.toggleOrderedList();
+            })
+          }
           onClick={() => {
             editor.view.focus();
             editor.commands.toggleOrderedList();

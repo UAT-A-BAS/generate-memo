@@ -8,7 +8,7 @@ import { generatePerihal } from "@/utils/generatePerihal";
 
 const STORAGE_KEY = "memo-builder-fresh:blank-draft-v2";
 
-type SaveStatus = "idle" | "loaded" | "saved" | "imported" | "error";
+type SaveStatus = "idle" | "loading" | "loaded" | "saving" | "saved" | "imported" | "error";
 
 type EditCheckpoint = {
   key: string;
@@ -30,6 +30,7 @@ type MemoDraftStore = {
   hasActiveEditChanges: () => boolean;
   replaceDraft: (draft: MemoDraft, status?: SaveStatus) => void;
   loadFromLocal: () => void;
+  markSaving: () => void;
   saveToLocal: () => void;
   importDraft: (payload: unknown) => void;
   resetDraft: () => void;
@@ -162,22 +163,41 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
   loadFromLocal: () => {
     if (typeof window === "undefined") return;
 
+    set({ status: "loading", error: undefined });
+
     try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      const draft = stored
+        ? normalizeMemoDraft(JSON.parse(stored) as Partial<MemoDraft>)
+        : createInitialMemoDraft();
+
+      set({
+        draft,
+        history: [],
+        editCheckpoint: undefined,
+        hasLoaded: true,
+        status: "loaded",
+        error: undefined,
+      });
+    } catch (error) {
+      window.localStorage.removeItem(STORAGE_KEY);
       set({
         draft: createInitialMemoDraft(),
         history: [],
         editCheckpoint: undefined,
         hasLoaded: true,
-        status: "idle",
-        error: undefined,
-      });
-    } catch (error) {
-      set({
-        hasLoaded: true,
         status: "error",
-        error: error instanceof Error ? error.message : "Gagal memuat draft lokal",
+        error:
+          error instanceof Error
+            ? `Draft lokal rusak dan telah direset: ${error.message}`
+            : "Draft lokal rusak dan telah direset",
       });
     }
+  },
+  markSaving: () => {
+    set((state) => ({
+      status: state.status === "error" ? state.status : "saving",
+    }));
   },
   saveToLocal: () => {
     if (typeof window === "undefined") return;
@@ -206,6 +226,9 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
     });
   },
   resetDraft: () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
     set({
       draft: createInitialMemoDraft(),
       history: [],
