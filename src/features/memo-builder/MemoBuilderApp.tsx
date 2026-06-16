@@ -241,7 +241,7 @@ function Panel({
   className?: string;
 }) {
   return (
-    <section className={`min-w-0 rounded-lg border border-[#c6d3e1] bg-white p-3 shadow-sm xl:p-4 ${className}`}>
+    <section className={`min-w-0 rounded-[22px] border border-[#c9d3df] bg-white/95 p-4 shadow-[0_18px_40px_rgba(31,45,61,0.08)] xl:p-5 ${className}`}>
       {children}
     </section>
   );
@@ -259,10 +259,10 @@ function IconButton({
   disabled?: boolean;
 }) {
   const variants = {
-    primary: "border-slate-900 bg-slate-900 text-white hover:bg-slate-800",
-    secondary: "border-slate-400 bg-white text-slate-700 hover:bg-slate-50",
+    primary: "border-[#1b4d78] bg-[#1b4d78] text-white shadow-[0_10px_24px_rgba(27,77,120,0.18)] hover:bg-[#163754]",
+    secondary: "border-[#c9d3df] bg-[#eef4fa] text-[#1b4d78] hover:bg-[#e3edf7]",
     danger: "border-rose-200 bg-white text-rose-600 hover:bg-rose-50",
-    word: "border-[#185abd] bg-[#185abd] text-white hover:bg-[#124078]",
+    word: "border-[#1b4d78] bg-[#1b4d78] text-white hover:bg-[#163754]",
   };
 
   return (
@@ -270,7 +270,7 @@ function IconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`}
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/15 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`}
     >
       {children}
     </button>
@@ -290,11 +290,11 @@ function AppleToolbarButton({
 }) {
   const tones = {
     default:
-      "border-white/70 bg-white/70 text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_rgba(15,23,42,0.06)] hover:bg-white",
+      "border-white/25 bg-white/10 text-white shadow-none hover:bg-white/16",
     primary:
-      "border-[#007aff]/20 bg-[#007aff]/10 text-[#0057b8] shadow-[0_1px_2px_rgba(0,122,255,0.08),0_8px_24px_rgba(0,122,255,0.08)] hover:bg-[#007aff]/15",
+      "border-white/70 bg-white/92 text-[#1b4d78] shadow-none hover:bg-white",
     danger:
-      "border-rose-200/80 bg-rose-50/80 text-rose-700 shadow-[0_1px_2px_rgba(190,18,60,0.06),0_8px_24px_rgba(190,18,60,0.06)] hover:bg-rose-100/90",
+      "border-white/25 bg-white/10 text-white shadow-none hover:bg-white/16",
   };
 
   return (
@@ -302,7 +302,7 @@ function AppleToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-full border px-4 text-[13px] font-semibold leading-none backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-4 text-[13px] font-semibold leading-none backdrop-blur transition duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-white/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45 ${tones[tone]}`}
     >
       {children}
     </button>
@@ -317,7 +317,7 @@ function SyncPill({
   tone?: "neutral" | "live" | "saved" | "syncing" | "offline";
 }) {
   const toneClass = {
-    neutral: "border-white/70 bg-white/55 text-slate-600",
+    neutral: "border-white/18 bg-white/10 text-white/88",
     live: "border-emerald-200/80 bg-emerald-50/80 text-emerald-800",
     saved: "border-emerald-200/80 bg-emerald-50/80 text-emerald-800",
     syncing: "border-amber-200/80 bg-amber-50/85 text-amber-800",
@@ -333,7 +333,7 @@ function SyncPill({
 
   return (
     <span
-      className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-[12px] font-semibold leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl ${toneClass}`}
+      className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-3.5 text-[12px] font-semibold leading-none shadow-none backdrop-blur ${toneClass}`}
       role="status"
       aria-live="polite"
     >
@@ -367,7 +367,7 @@ function CollaborationPanel({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-[22px] border border-white/70 bg-white/45 p-1.5 shadow-[0_12px_36px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-2xl"
+      className="flex flex-wrap items-center gap-2 rounded-[16px] border border-white/18 bg-white/10 p-1.5 shadow-none backdrop-blur"
       aria-label="Kolaborasi realtime"
       data-review-ignore
     >
@@ -2047,8 +2047,8 @@ export function MemoBuilderApp() {
 
   if (!hasLoaded) {
     return (
-      <main className="grid min-h-dvh place-items-center bg-slate-100">
-        <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-600 shadow-sm">
+      <main className="grid min-h-dvh place-items-center" data-suite-ui>
+        <div className="rounded-[22px] border border-[#c9d3df] bg-white px-5 py-4 text-sm font-medium text-[#5b6778] shadow-[0_18px_40px_rgba(31,45,61,0.08)]">
           Memuat draft lokal...
         </div>
       </main>
@@ -2062,6 +2062,7 @@ export function MemoBuilderApp() {
       onFocusCapture={handleEditFocus}
       onBlurCapture={handleEditBlur}
       className="min-h-dvh bg-slate-100 text-slate-950"
+      data-suite-ui
     >
       <input
         ref={fileInputRef}
@@ -2070,7 +2071,7 @@ export function MemoBuilderApp() {
         className="hidden"
         onChange={handleImport}
       />
-      <header className="sticky top-0 z-30 border-b border-[#d8e2ec] bg-white/95 backdrop-blur">
+      <header className="sticky z-30 border-b border-[#d8e2ec] bg-white/95 backdrop-blur">
         <div className="flex w-full flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between xl:px-6">
           <div>
             <h1 className="text-[32px] font-bold leading-tight tracking-tight text-[#0f2d4a]">Memo Generator</h1>
@@ -2100,8 +2101,8 @@ export function MemoBuilderApp() {
         </div>
       </header>
 
-      <div className="grid w-full gap-3 px-3 py-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:px-4">
-        <div className="grid min-w-0 content-start gap-3">
+      <div className="grid w-full gap-4 px-3 py-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:px-4">
+        <div className="grid min-w-0 content-start gap-4">
           <Panel>
             <SectionTitle title="Kepada" />
             <div className="mt-6">
@@ -2310,14 +2311,14 @@ export function MemoBuilderApp() {
         </div>
 
         <aside
-          className="sticky top-[76px] max-h-[calc(100dvh-92px)] min-w-0 self-start overflow-hidden rounded-lg border border-[#d8e2ec] bg-[#edf4fb]"
+          className="sticky top-[112px] max-h-[calc(100dvh-128px)] min-w-0 self-start overflow-hidden rounded-[22px] border border-[#c9d3df] bg-[#f7f9fc] shadow-[0_18px_40px_rgba(31,45,61,0.08)]"
         >
-          <div className="max-h-[calc(100dvh-92px)] overflow-auto">
-            <div className="flex items-center justify-between border-b border-[#d8e2ec] bg-white px-5 py-3">
+          <div className="max-h-[calc(100dvh-128px)] overflow-auto">
+            <div className="flex items-center justify-between border-b border-[#c9d3df] bg-white px-5 py-3">
               <div>
                 <h2 className="text-sm font-bold text-[#0f2d4a]">Preview</h2>
               </div>
-              <span className="inline-flex items-center gap-2 rounded-md bg-[#edf4fb] px-2.5 py-1 text-xs font-medium text-[#0f2d4a] ring-1 ring-[#c6d3e1]">
+              <span className="inline-flex items-center gap-2 rounded-[12px] bg-[#d9e8f5] px-2.5 py-1 text-xs font-medium text-[#0f2d4a] ring-1 ring-[#c9d3df]">
                 <FileText size={14} />
                 {pages.length} pages
               </span>

@@ -6,9 +6,9 @@ type SectionTitleProps = {
 
 export function SectionTitle({ title, action }: SectionTitleProps) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-3">
+    <div className="flex items-start justify-between gap-4 border-b border-[#c9d3df] pb-3">
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-900">
+        <h2 className="text-[1.05rem] font-bold text-[#1c2734]">
           {title}
         </h2>
       </div>

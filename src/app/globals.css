@@ -1,21 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+  --background: #eef3f8;
+  --foreground: #1c2734;
+  --suite-surface: #ffffff;
+  --suite-surface-muted: #f7f9fc;
+  --suite-ink: #1c2734;
+  --suite-ink-soft: #5b6778;
+  --suite-line: #c9d3df;
+  --suite-accent: #1b4d78;
+  --suite-accent-dark: #163754;
+  --suite-danger: #b3261e;
+  --suite-shadow: 0 18px 40px rgba(31, 45, 61, 0.08);
+  --suite-radius: 22px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Times New Roman", Times, serif;
+  --font-sans: Aptos, Calibri, "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Code", "Segoe UI Mono", monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: "Times New Roman", Times, serif;
+  font-family: Aptos, Calibri, "Segoe UI", system-ui, sans-serif;
 }
 
 button,
@@ -37,8 +47,90 @@ textarea {
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
-  color: #0f172a;
+  color: var(--suite-ink);
   font-weight: 600;
+}
+
+/* ponytail: suite theme overrides shared UI without rewriting every Tailwind class. */
+main[data-suite-ui] {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top left, rgba(27, 77, 120, 0.08), transparent 34%),
+    linear-gradient(180deg, #f4f7fb 0%, #eaf0f6 100%);
+  color: var(--suite-ink);
+  font-family: Aptos, Calibri, "Segoe UI", system-ui, sans-serif;
+}
+
+main[data-suite-ui] > header {
+  top: 12px;
+  margin: 16px 16px 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 30px;
+  background:
+    linear-gradient(135deg, rgba(27, 77, 120, 0.97), rgba(19, 42, 69, 0.96)),
+    #163754;
+  box-shadow: var(--suite-shadow);
+  color: #fff;
+}
+
+main[data-suite-ui] > header h1 {
+  color: #fff;
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  letter-spacing: 0;
+}
+
+main[data-suite-ui] > header :where(button, span[role="status"]) {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+main[data-suite-ui] :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  min-height: 42px;
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 14px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+main[data-suite-ui] :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea)::placeholder {
+  color: rgba(91, 103, 120, 0.5);
+  opacity: 1;
+}
+
+main[data-suite-ui] :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
+  border-color: rgba(27, 77, 120, 0.72) !important;
+  box-shadow: 0 0 0 4px rgba(27, 77, 120, 0.12) !important;
+  outline: none;
+}
+
+main[data-suite-ui] :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):disabled {
+  background: #eef2f7 !important;
+  color: #7a8596 !important;
+  cursor: not-allowed;
+}
+
+main[data-suite-ui] :where(label, legend) {
+  color: var(--suite-ink-soft);
+  font-weight: 700;
+}
+
+main[data-suite-ui] :where(button) {
+  border-radius: 14px;
+  letter-spacing: 0;
+}
+
+main[data-suite-ui] :where(button):focus-visible {
+  outline: 3px solid rgba(27, 77, 120, 0.24);
+  outline-offset: 2px;
+}
+
+main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich-text, .memo-preview-table) {
+  font-family: "Times New Roman", Times, serif;
 }
 
 .ProseMirror ul,
