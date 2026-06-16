@@ -528,95 +528,114 @@ function ReviewCommentsPopup({
     if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
   });
+  const [filter, setFilter] = useState<"all" | "unresolved" | "resolved">("all");
+  const unresolvedCount = comments.filter((comment) => !comment.resolved).length;
+  const visibleComments = sortedComments.filter((comment) => {
+    if (filter === "unresolved") return !comment.resolved;
+    if (filter === "resolved") return comment.resolved;
+    return true;
+  });
 
   return (
     <div data-review-ignore>
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[96px] right-4 z-50 grid max-h-[70dvh] w-[min(640px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#c6d3e1] bg-white shadow-2xl"
+          className="fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(620px,calc(100dvh-110px))] w-[min(390px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-[#b9c9dc]/95 bg-white/95 p-3 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
           aria-labelledby="review-comments-title"
         >
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 id="review-comments-title" className="text-sm font-bold text-[#0f2d4a]">
+              <h2 id="review-comments-title" className="text-sm font-bold text-[#1c2734]">
                 Komentar Review
               </h2>
-              <p className="text-xs font-semibold text-slate-500">
-                {comments.length} komentar
+              <p className="mt-0.5 text-xs font-extrabold text-[#5b6778]">
+                {unresolvedCount} unresolved
               </p>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onToggleCommentMode}
-                aria-pressed={commentMode}
-                className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-slate-900/10 ${
-                  commentMode
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <MessageSquare size={15} />
-                Add Comment
-              </button>
-              <button
-                type="button"
-                onClick={onToggleOpen}
-                className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
-                aria-label="Tutup komentar review"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onToggleOpen}
+              className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#5b6778] shadow-sm transition hover:bg-[#f7f9fc] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+              aria-label="Tutup komentar review"
+              title="Tutup komentar"
+            >
+              <X size={16} />
+            </button>
           </div>
 
-          <div className="overflow-auto p-3">
-            {sortedComments.length ? (
+          <div className="grid grid-cols-[1fr_minmax(118px,auto)] items-center gap-2">
+            <button
+              type="button"
+              onClick={onToggleCommentMode}
+              aria-pressed={commentMode}
+              className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 ${
+                commentMode
+                  ? "border-[#2563eb] bg-[#1b4d78] text-white shadow-[0_10px_22px_rgba(27,77,120,0.18)]"
+                  : "border-[#c9d3df] bg-[#1b4d78] text-white hover:bg-[#163754]"
+              }`}
+            >
+              <MessageSquare size={15} />
+              Add Comment
+            </button>
+            <select
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as "all" | "unresolved" | "resolved")}
+              aria-label="Filter komentar"
+              className="min-h-9 rounded-md border border-[#c9d3df] bg-white px-3 text-xs font-extrabold text-[#1c2734] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            >
+              <option value="all">All</option>
+              <option value="unresolved">Unresolved</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
+
+          <div className="min-h-0 overflow-auto">
+            {visibleComments.length ? (
               <div className="grid gap-2">
-                {sortedComments.map((comment) => (
+                {visibleComments.map((comment) => (
                   <article
                     key={comment.id}
-                    className={`min-w-0 rounded-md border p-3 ${
+                    className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 rounded-lg border border-[#b9c9dc] border-l-[5px] p-3 max-[720px]:grid-cols-1 ${
                       comment.resolved
-                        ? "border-slate-200 bg-slate-50 text-slate-500"
-                        : "border-[#c6d3e1] bg-white text-slate-900"
+                        ? "border-l-[#1f7a4d] bg-[#f7f9fc] text-[#5b6778] opacity-75 shadow-[0_6px_16px_rgba(31,45,61,0.08)]"
+                        : "border-l-[#2563eb] bg-gradient-to-b from-white to-[#f8fbff] text-[#1c2734] shadow-[0_12px_28px_rgba(27,77,120,0.14)]"
                     }`}
                   >
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wide">
-                      <span className={comment.resolved ? "text-slate-500" : "text-emerald-700"}>
+                    <div className="col-start-1 flex min-w-0 flex-wrap items-center gap-2 text-xs font-extrabold text-[#163754]">
+                      <span className={`inline-flex min-h-[22px] items-center rounded-full px-2 text-[11px] font-black ${
+                        comment.resolved ? "bg-[#e7f6ee] text-[#1f7a4d]" : "bg-[#fff200] text-[#5c4300]"
+                      }`}>
                         {comment.resolved ? "Resolved" : "Unresolved"}
                       </span>
-                      <span className="text-slate-400">/</span>
                       <span>{comment.author || "Reviewer"}</span>
-                      <span className="text-slate-400">/</span>
                       <span>{formatCommentTime(comment.updatedAt || comment.createdAt)}</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => onFocus(comment)}
-                      className="mt-2 text-left text-sm font-bold text-[#185abd] underline-offset-2 hover:underline"
+                      className="col-start-1 w-fit rounded-full bg-[#d9e8f5] px-2.5 py-1 text-left text-xs font-black text-[#163754] transition hover:bg-[#c8deef]"
                     >
                       Lihat field: {comment.targetLabel}
                     </button>
                     <p
                       data-review-comment-body
-                      className="mt-2 whitespace-pre-wrap break-words text-sm leading-5 [overflow-wrap:anywhere]"
+                      className="col-start-1 m-0 whitespace-pre-wrap break-words text-[13px] leading-[1.35] text-[#1c2734] [overflow-wrap:anywhere]"
                     >
                       {comment.text}
                     </p>
                     {comment.replies.length ? (
-                      <div className="mt-3 grid gap-2 border-l-2 border-sky-200 pl-3">
+                      <div className="col-start-1 grid gap-2 border-l-2 border-[#c8deef] pl-3">
                         {comment.replies.map((reply) => (
-                          <div key={reply.id} className="rounded-md bg-sky-50/70 px-3 py-2">
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
-                              <span className="text-[#185abd]">{reply.author || "Reviewer"}</span>
+                          <div key={reply.id} className="rounded-md bg-[#eef6ff] px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-extrabold text-[#5b6778]">
+                              <span className="text-[#163754]">{reply.author || "Reviewer"}</span>
                               <span>/</span>
                               <span>{formatCommentTime(reply.createdAt)}</span>
                             </div>
                             <p
                               data-review-reply-body
-                              className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-800 [overflow-wrap:anywhere]"
+                              className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-[1.35] text-[#1c2734] [overflow-wrap:anywhere]"
                             >
                               {reply.text}
                             </p>
@@ -624,20 +643,20 @@ function ReviewCommentsPopup({
                         ))}
                       </div>
                     ) : null}
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="col-start-2 row-start-1 row-span-3 flex items-center justify-end gap-1.5 max-[720px]:col-start-1 max-[720px]:row-start-auto max-[720px]:justify-start">
                       <button
                         type="button"
                         onClick={() => onReply(comment)}
-                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sky-200 px-2.5 text-xs font-bold text-[#185abd] hover:bg-sky-50"
+                        className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc]"
                         aria-label="Balas komentar"
+                        title="Balas komentar"
                       >
                         <MessageSquare size={14} />
-                        Reply
                       </button>
                       <button
                         type="button"
                         onClick={() => onToggleResolve(comment)}
-                        className="grid h-8 w-8 place-items-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc]"
                         aria-label={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
                         title={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
                       >
@@ -646,7 +665,7 @@ function ReviewCommentsPopup({
                       <button
                         type="button"
                         onClick={() => onEdit(comment)}
-                        className="grid h-8 w-8 place-items-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc]"
                         aria-label={comment.resolved ? "Follow up komentar" : "Edit komentar"}
                         title={comment.resolved ? "Follow up komentar" : "Edit komentar"}
                       >
@@ -655,7 +674,7 @@ function ReviewCommentsPopup({
                       <button
                         type="button"
                         onClick={() => onDelete(comment)}
-                        className="grid h-8 w-8 place-items-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                        className="grid h-9 w-9 place-items-center rounded-md border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
                         aria-label="Hapus komentar"
                         title="Hapus komentar"
                       >
@@ -666,7 +685,7 @@ function ReviewCommentsPopup({
                 ))}
               </div>
             ) : (
-              <div className="rounded-md border border-dashed border-slate-300 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+              <div className="rounded-lg border border-dashed border-[#c9d3df] p-3 text-center text-[13px] font-bold text-[#5b6778]">
                 Belum ada komentar review.
               </div>
             )}
@@ -695,50 +714,64 @@ function ReviewCommentDialog({
   if (!state) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/40 px-4" data-review-ignore>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/40 p-[18px]" data-review-ignore>
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="review-comment-dialog-title"
-        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+        className="grid w-[min(460px,100%)] gap-3 rounded-[10px] bg-white p-[18px] shadow-[0_22px_54px_rgba(23,32,42,0.24)]"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 id="review-comment-dialog-title" className="text-base font-bold text-[#0f2d4a]">
+            <h2 id="review-comment-dialog-title" className="m-0 text-base font-bold text-[#1c2734]">
               {state.mode === "edit"
                 ? "Edit komentar"
                 : state.mode === "reply"
                   ? "Balas komentar"
                   : "Tambah komentar"}
             </h2>
-            <p className="mt-1 text-xs font-semibold text-slate-500">{state.target.targetLabel}</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Oleh: {actor}</p>
+            <p className="m-0 mt-1 text-[13px] font-bold text-[#5b6778]">Reviewer: {actor || "-"}</p>
           </div>
           <button
             type="button"
             onClick={onCancel}
-            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#5b6778] transition hover:bg-[#f7f9fc]"
             aria-label="Tutup komentar"
+            title="Tutup komentar"
           >
             <X size={16} />
           </button>
         </div>
-        <div className="mt-4 grid gap-3">
-          <FieldLabel label={state.mode === "reply" ? "Balasan" : "Komentar"} required>
-            <textarea
-              value={text}
-              rows={4}
-              onChange={(event) => onTextChange(event.target.value)}
-              className="min-h-28 resize-y rounded-md border border-slate-400 px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-              autoFocus
-            />
-          </FieldLabel>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <IconButton onClick={onCancel}>Batal</IconButton>
-          <IconButton onClick={onSave} variant="primary">
+        <p className="rounded-lg bg-[#eef2f6] px-2.5 py-2 text-xs font-extrabold text-[#163754]">
+          {state.target.targetLabel}
+        </p>
+        <label className="grid gap-1.5 text-[13px] font-extrabold text-[#1c2734]">
+          <span>{state.mode === "reply" ? "Balasan" : "Komentar"} <span className="text-[#b42318]">*</span></span>
+          <textarea
+            value={text}
+            rows={4}
+            onChange={(event) => onTextChange(event.target.value)}
+            className="min-h-28 resize-y rounded-md border border-[#c9d3df] px-3 py-2 text-[15px] font-semibold text-[#1c2734] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            placeholder="Tulis catatan reviewer"
+            autoFocus
+            required
+          />
+        </label>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex min-h-10 items-center justify-center rounded-md border border-[#c9d3df] bg-white px-3 text-[13px] font-extrabold text-[#1c2734] transition hover:bg-[#f7f9fc]"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="inline-flex min-h-10 items-center justify-center rounded-md border border-[#1b4d78] bg-[#1b4d78] px-3 text-[13px] font-extrabold text-white transition hover:bg-[#163754]"
+          >
             {state.mode === "reply" ? "Kirim balasan" : "Simpan"}
-          </IconButton>
+          </button>
         </div>
       </section>
     </div>
@@ -2360,7 +2393,7 @@ export function MemoBuilderApp() {
         onContinue={continueIdentityDialog}
       />
       <div
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-[26px] border border-white/70 bg-white/55 p-1.5 shadow-[0_18px_46px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-2xl"
+        className="fixed bottom-[18px] right-[18px] z-40 flex flex-col gap-2 rounded-[10px] border border-[#c9d3df]/90 bg-white/95 p-2 shadow-[0_16px_34px_rgba(23,32,42,0.16)] backdrop-blur max-[760px]:bottom-3 max-[760px]:right-3 max-[760px]:flex-row"
         data-review-ignore
       >
         <button
@@ -2368,26 +2401,27 @@ export function MemoBuilderApp() {
           onClick={exportDocx}
           disabled={isExporting}
           aria-label="Buat dokumen Word cepat"
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#007aff]/20 bg-[#007aff]/10 px-4 text-[13px] font-semibold leading-none text-[#0057b8] shadow-[0_1px_2px_rgba(0,122,255,0.08),0_8px_24px_rgba(0,122,255,0.08)] backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px hover:bg-[#007aff]/15 focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-md border border-[#1b4d78] bg-[#1b4d78] px-3 text-[13px] font-extrabold leading-none text-white shadow-[0_10px_22px_rgba(27,77,120,0.18)] transition hover:bg-[#163754] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:cursor-not-allowed disabled:opacity-45 max-[760px]:min-w-0"
           data-floating-generate
         >
           <Download size={16} />
           Generate Docx
-          <span className="rounded-full border border-white/70 bg-white/70 px-2 py-1 text-[11px] font-bold leading-none text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+          <span className="rounded-full bg-white/20 px-2 py-1 text-[11px] font-black leading-none text-white">
             {pages.length} pages
           </span>
         </button>
         <button
           type="button"
           onClick={() => setReviewOpen((current) => !current)}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 text-[13px] font-semibold leading-none text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl transition duration-200 ease-out hover:-translate-y-px hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#007aff]/20 active:translate-y-0 active:scale-[0.98]"
+          className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-md border border-[#1b4d78] bg-[#1b4d78] px-3 text-[13px] font-extrabold leading-none text-white shadow-[0_10px_22px_rgba(27,77,120,0.18)] transition hover:bg-[#163754] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 max-[760px]:min-w-0"
           aria-expanded={reviewOpen}
           aria-controls="review-comments-popup"
+          title="Komentar review"
         >
           <MessageSquare size={16} />
-          Komentar Review
+          Comment
           {unresolvedReviewCount ? (
-            <span className="rounded-full bg-rose-600 px-2 py-1 text-[11px] font-bold leading-none text-white shadow-[0_4px_12px_rgba(225,29,72,0.25)]">{unresolvedReviewCount}</span>
+            <span className="rounded-full bg-[#fff200] px-2 py-1 text-[11px] font-black leading-none text-[#5c4300]">{unresolvedReviewCount}</span>
           ) : null}
         </button>
       </div>
