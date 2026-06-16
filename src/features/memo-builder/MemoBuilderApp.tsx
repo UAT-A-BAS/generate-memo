@@ -541,7 +541,7 @@ function ReviewCommentsPopup({
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(620px,calc(100dvh-110px))] w-[min(390px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-[#b9c9dc]/95 bg-white/95 p-3 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
+          className="fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(620px,calc(100dvh-110px))] w-[min(560px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-[#b9c9dc]/95 bg-white/95 p-3 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-2">
@@ -2362,7 +2362,7 @@ export function MemoBuilderApp() {
           </div>
         </aside>
       </div>
-      <footer className="px-4 pb-7 pt-1 text-center text-xs font-semibold tracking-[0.02em] text-slate-500/80">
+      <footer className="mx-auto mt-4 w-full px-4 pt-4 text-center text-[13px] font-extrabold tracking-[0.02em] text-[#5b6778] before:mx-auto before:mb-3.5 before:block before:h-px before:w-[min(420px,72%)] before:bg-gradient-to-r before:from-transparent before:via-[#c9d3df] before:to-transparent before:content-['']">
         Developed by Alex Surya Marcelo (UAT - A) &bull; Memo Generator
       </footer>
       <ReviewCommentsPopup
