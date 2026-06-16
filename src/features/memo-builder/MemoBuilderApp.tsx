@@ -2362,7 +2362,7 @@ export function MemoBuilderApp() {
           </div>
         </aside>
       </div>
-      <footer className="mx-auto mt-4 w-full px-4 pt-4 text-center text-[13px] font-extrabold tracking-[0.02em] text-[#5b6778] before:mx-auto before:mb-3.5 before:block before:h-px before:w-[min(420px,72%)] before:bg-gradient-to-r before:from-transparent before:via-[#c9d3df] before:to-transparent before:content-['']">
+      <footer className="mx-auto mt-4 w-full px-4 pb-8 pt-4 text-center text-[13px] font-extrabold tracking-[0.02em] text-[#5b6778] before:mx-auto before:mb-3.5 before:block before:h-px before:w-[min(420px,72%)] before:bg-gradient-to-r before:from-transparent before:via-[#c9d3df] before:to-transparent before:content-['']">
         Developed by Alex Surya Marcelo (UAT - A) &bull; Memo Generator
       </footer>
       <ReviewCommentsPopup
