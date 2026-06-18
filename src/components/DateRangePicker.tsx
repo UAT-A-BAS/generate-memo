@@ -90,7 +90,7 @@ export function DateRangePicker({
   const [selectingEnd, setSelectingEnd] = useState(Boolean(startDate && !endDate));
   const anchorRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
-  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 });
+  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 704 });
   const start = parseInputDate(startDate);
   const end = parseInputDate(endDate);
   const initial = start ?? end ?? parseInputDate(todayInputValue()) ?? new Date();
@@ -106,26 +106,43 @@ export function DateRangePicker({
     if (!anchor) return;
 
     const rect = anchor.getBoundingClientRect();
-    const popupWidth = 292;
-    const popupHeight = popupRef.current?.offsetHeight ?? 420;
     const viewportPadding = 8;
+    const popupWidth = 292;
+    const maxHeight = Math.max(240, window.innerHeight - viewportPadding * 2);
+    const popupHeight = Math.min(
+      popupRef.current?.scrollHeight ?? 420,
+      maxHeight,
+    );
     const left = Math.min(
       Math.max(viewportPadding, rect.left),
       Math.max(viewportPadding, window.innerWidth - popupWidth - viewportPadding),
     );
     const below = rect.bottom + 8;
     const above = rect.top - popupHeight - 8;
-    const top =
+    const preferredTop =
       below + popupHeight <= window.innerHeight - viewportPadding || above < viewportPadding
         ? below
         : above;
+    const top = Math.min(
+      Math.max(viewportPadding, preferredTop),
+      Math.max(viewportPadding, window.innerHeight - popupHeight - viewportPadding),
+    );
 
-    setPopupPosition({ left, top: Math.max(viewportPadding, top) });
+    setPopupPosition({ left, top, maxHeight });
   }, []);
 
   useLayoutEffect(() => {
     if (open) updatePopupPosition();
-  }, [mode, open, updatePopupPosition, viewMonth, viewYear]);
+  }, [
+    endDate,
+    mode,
+    open,
+    selectingEnd,
+    startDate,
+    updatePopupPosition,
+    viewMonth,
+    viewYear,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -205,9 +222,10 @@ export function DateRangePicker({
         <div
           ref={popupRef}
           data-date-range-popup
-          className="fixed z-[100] w-[292px] rounded-2xl border border-[#c6d3e1] bg-white p-3 text-[#0f2d4a] shadow-[0_18px_50px_rgba(15,23,42,0.18)]"
+          className="fixed z-[100] flex w-[292px] flex-col overflow-hidden rounded-2xl border border-[#c6d3e1] bg-white p-3 text-[#0f2d4a] shadow-[0_18px_50px_rgba(15,23,42,0.18)]"
           style={popupPosition}
         >
+          <div className="min-h-0 overflow-y-auto pr-1">
           <div className="mb-4 flex items-center justify-between">
             <button
               type="button"
@@ -314,8 +332,9 @@ export function DateRangePicker({
               ))}
             </div>
           ) : null}
+          </div>
 
-          <div className="mt-4 flex items-center justify-between">
+          <div className="mt-3 flex shrink-0 items-center justify-between border-t border-[#d8e1eb] bg-white pt-3">
             <button
               type="button"
               onClick={clear}

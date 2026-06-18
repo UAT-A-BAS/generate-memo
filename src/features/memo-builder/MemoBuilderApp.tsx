@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   FileJson,
@@ -54,6 +56,8 @@ import {
   saveCollaboratorIdentity,
 } from "@/collaboration/collaboratorIdentity";
 import { createId } from "@/utils/ids";
+import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import { focusEditorField } from "@/utils/fieldNavigation";
 
 const memoTypes: MemoType[] = [
   "Pilot",
@@ -208,29 +212,16 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
 }
 
 function jumpToValidationIssue(issues: ValidationIssue[]) {
-  document
-    .querySelectorAll(".validation-jump-highlight")
-    .forEach((element) => element.classList.remove("validation-jump-highlight"));
+  const firstAvailable = issues.find((issue) =>
+    document.querySelector(`[data-field-id="${CSS.escape(issue.id)}"]`),
+  );
 
-  const target = issues
-    .map((issue) => document.querySelector<HTMLElement>(`[data-field-id="${issue.id}"]`))
-    .find(Boolean);
-
-  if (!target) {
+  if (!firstAvailable || !focusEditorField(firstAvailable.id)) {
     document.querySelector("[data-validation-panel]")?.scrollIntoView({
       block: "center",
       behavior: "smooth",
     });
-    return;
   }
-
-  target.classList.add("validation-jump-highlight");
-  target.scrollIntoView({ block: "center", behavior: "smooth" });
-
-  const focusTarget = target.matches("input, textarea, select, .ProseMirror")
-    ? target
-    : target.querySelector<HTMLElement>("input, textarea, select, .ProseMirror");
-  window.setTimeout(() => focusTarget?.focus(), 250);
 }
 
 function Panel({
@@ -504,6 +495,7 @@ function formatCommentTime(value: string) {
 function ReviewCommentsPopup({
   open,
   comments,
+  auditLog,
   commentMode,
   onToggleOpen,
   onToggleCommentMode,
@@ -515,6 +507,7 @@ function ReviewCommentsPopup({
 }: {
   open: boolean;
   comments: ReviewComment[];
+  auditLog: ReviewAuditLogEntry[];
   commentMode: boolean;
   onToggleOpen: () => void;
   onToggleCommentMode: () => void;
@@ -529,19 +522,39 @@ function ReviewCommentsPopup({
     return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
   });
   const [filter, setFilter] = useState<"all" | "unresolved" | "resolved">("all");
+  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
   const unresolvedCount = comments.filter((comment) => !comment.resolved).length;
+  const resolvedCount = comments.length - unresolvedCount;
   const visibleComments = sortedComments.filter((comment) => {
     if (filter === "unresolved") return !comment.resolved;
     if (filter === "resolved") return comment.resolved;
     return true;
   });
+  const commentAuditEntries = (comment: ReviewComment) =>
+    auditLog.filter((entry) => entry.commentId === comment.id);
+  const statusAuditEntry = (comment: ReviewComment) =>
+    [...commentAuditEntries(comment)]
+      .reverse()
+      .find((entry) =>
+        comment.resolved
+          ? entry.action === "comment-resolved"
+          : entry.action === "comment-replied" || entry.action === "comment-reopened",
+      );
+  const toggleLog = (commentId: string) => {
+    setExpandedLogs((current) => {
+      const next = new Set(current);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
+  };
 
   return (
     <div data-review-ignore>
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(620px,calc(100dvh-110px))] w-[min(560px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-[#b9c9dc]/95 bg-white/95 p-3 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
+          className="fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(680px,calc(100dvh-110px))] w-[min(720px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#b9c9dc]/95 bg-white/95 p-3.5 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-2">
@@ -550,13 +563,13 @@ function ReviewCommentsPopup({
                 Komentar Review
               </h2>
               <p className="mt-0.5 text-xs font-extrabold text-[#5b6778]">
-                {unresolvedCount} unresolved
+                {unresolvedCount} unresolved, {resolvedCount} resolved
               </p>
             </div>
             <button
               type="button"
               onClick={onToggleOpen}
-              className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#5b6778] shadow-sm transition hover:bg-[#f7f9fc] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+              className="grid h-11 w-11 place-items-center rounded-lg border border-[#c9d3df] bg-white text-[#5b6778] shadow-sm transition hover:bg-[#f7f9fc] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
               aria-label="Tutup komentar review"
               title="Tutup komentar"
             >
@@ -569,7 +582,7 @@ function ReviewCommentsPopup({
               type="button"
               onClick={onToggleCommentMode}
               aria-pressed={commentMode}
-              className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 ${
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 ${
                 commentMode
                   ? "border-[#2563eb] bg-[#1b4d78] text-white shadow-[0_10px_22px_rgba(27,77,120,0.18)]"
                   : "border-[#c9d3df] bg-[#1b4d78] text-white hover:bg-[#163754]"
@@ -582,7 +595,7 @@ function ReviewCommentsPopup({
               value={filter}
               onChange={(event) => setFilter(event.target.value as "all" | "unresolved" | "resolved")}
               aria-label="Filter komentar"
-              className="min-h-9 rounded-md border border-[#c9d3df] bg-white px-3 text-xs font-extrabold text-[#1c2734] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              className="min-h-11 rounded-lg border border-[#c9d3df] bg-white px-3 text-xs font-extrabold text-[#1c2734] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             >
               <option value="all">All</option>
               <option value="unresolved">Unresolved</option>
@@ -593,96 +606,141 @@ function ReviewCommentsPopup({
           <div className="min-h-0 overflow-auto">
             {visibleComments.length ? (
               <div className="grid gap-2">
-                {visibleComments.map((comment) => (
-                  <article
-                    key={comment.id}
-                    className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 rounded-lg border border-[#b9c9dc] border-l-[5px] p-3 max-[720px]:grid-cols-1 ${
-                      comment.resolved
-                        ? "border-l-[#1f7a4d] bg-[#f7f9fc] text-[#5b6778] opacity-75 shadow-[0_6px_16px_rgba(31,45,61,0.08)]"
-                        : "border-l-[#2563eb] bg-gradient-to-b from-white to-[#f8fbff] text-[#1c2734] shadow-[0_12px_28px_rgba(27,77,120,0.14)]"
-                    }`}
-                  >
-                    <div className="col-start-1 flex min-w-0 flex-wrap items-center gap-2 text-xs font-extrabold text-[#163754]">
-                      <span className={`inline-flex min-h-[22px] items-center rounded-full px-2 text-[11px] font-black ${
-                        comment.resolved ? "bg-[#e7f6ee] text-[#1f7a4d]" : "bg-[#fff200] text-[#5c4300]"
-                      }`}>
-                        {comment.resolved ? "Resolved" : "Unresolved"}
-                      </span>
-                      <span>{comment.author || "Reviewer"}</span>
-                      <span>{formatCommentTime(comment.updatedAt || comment.createdAt)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onFocus(comment)}
-                      className="col-start-1 w-fit rounded-full bg-[#d9e8f5] px-2.5 py-1 text-left text-xs font-black text-[#163754] transition hover:bg-[#c8deef]"
+                {visibleComments.map((comment) => {
+                  const entries = commentAuditEntries(comment);
+                  const statusEntry = statusAuditEntry(comment);
+                  const logExpanded = expandedLogs.has(comment.id);
+
+                  return (
+                    <article
+                      key={comment.id}
+                      data-review-comment-status={comment.resolved ? "resolved" : "unresolved"}
+                      className={`grid min-w-0 gap-2 rounded-xl border border-[#b9c9dc] border-l-[5px] p-3.5 ${
+                        comment.resolved
+                          ? "border-l-[#4ba37a] bg-[#f8fbfa] text-[#1c2734]"
+                          : "border-l-[#0b84d8] bg-gradient-to-b from-white to-[#f8fbff] text-[#1c2734]"
+                      }`}
                     >
-                      Lihat field: {comment.targetLabel}
-                    </button>
-                    <p
-                      data-review-comment-body
-                      className="col-start-1 m-0 whitespace-pre-wrap break-words text-[13px] leading-[1.35] text-[#1c2734] [overflow-wrap:anywhere]"
-                    >
-                      {comment.text}
-                    </p>
-                    {comment.replies.length ? (
-                      <div className="col-start-1 grid gap-2 border-l-2 border-[#c8deef] pl-3">
-                        {comment.replies.map((reply) => (
-                          <div key={reply.id} className="rounded-md bg-[#eef6ff] px-3 py-2">
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-extrabold text-[#5b6778]">
-                              <span className="text-[#163754]">{reply.author || "Reviewer"}</span>
-                              <span>/</span>
-                              <span>{formatCommentTime(reply.createdAt)}</span>
-                            </div>
-                            <p
-                              data-review-reply-body
-                              className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-[1.35] text-[#1c2734] [overflow-wrap:anywhere]"
-                            >
-                              {reply.text}
-                            </p>
-                          </div>
-                        ))}
+                      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-extrabold text-[#163754]">
+                        <span className={`inline-flex min-h-[24px] items-center rounded-full px-2.5 text-[11px] font-black ${
+                          comment.resolved
+                            ? "bg-[#e7f6ee] text-[#2f8b64]"
+                            : "bg-[#fff200] text-[#5c4300]"
+                        }`}>
+                          {comment.resolved ? "Resolved" : "Unresolved"}
+                        </span>
+                        <span>{comment.author || "Reviewer"}</span>
+                        <span>{comment.replies.length} reply</span>
+                        <span>{formatCommentTime(comment.updatedAt || comment.createdAt)}</span>
                       </div>
-                    ) : null}
-                    <div className="col-start-2 row-start-1 row-span-3 flex items-center justify-end gap-1.5 max-[720px]:col-start-1 max-[720px]:row-start-auto max-[720px]:justify-start">
+
+                      {statusEntry ? (
+                        <p className="text-[11px] font-bold text-[#7a8596]">
+                          {comment.resolved ? "Solved" : "Reply dibuat"} oleh {statusEntry.actor || "Reviewer"},{" "}
+                          {formatCommentTime(statusEntry.createdAt)}
+                        </p>
+                      ) : null}
+
                       <button
                         type="button"
-                        onClick={() => onReply(comment)}
-                        className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc]"
-                        aria-label="Balas komentar"
-                        title="Balas komentar"
+                        onClick={() => onFocus(comment)}
+                        className="w-fit rounded-full bg-[#d9e8f5] px-2.5 py-1.5 text-left text-xs font-black text-[#163754] transition hover:bg-[#c8deef] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                       >
-                        <MessageSquare size={14} />
+                        Lihat field: {comment.targetLabel}
                       </button>
+                      <p
+                        data-review-comment-body
+                        className="m-0 min-h-11 whitespace-pre-wrap break-words text-[13px] leading-[1.4] text-[#1c2734] [overflow-wrap:anywhere]"
+                      >
+                        {comment.text}
+                      </p>
+
+                      {comment.replies.length ? (
+                        <div className="grid gap-2 border-l-2 border-[#c8deef] pl-3">
+                          {comment.replies.map((reply) => (
+                            <div key={reply.id} className="rounded-lg bg-[#eef6ff] px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-extrabold text-[#5b6778]">
+                                <span>Reply</span>
+                                <span className="text-[#163754]">{reply.author || "Reviewer"}</span>
+                                <span>{formatCommentTime(reply.createdAt)}</span>
+                              </div>
+                              <p
+                                data-review-reply-body
+                                className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-[1.4] text-[#1c2734] [overflow-wrap:anywhere]"
+                              >
+                                {reply.text}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
                       <button
                         type="button"
-                        onClick={() => onToggleResolve(comment)}
-                        className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc]"
-                        aria-label={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
-                        title={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
+                        onClick={() => toggleLog(comment.id)}
+                        className="flex min-h-8 w-fit items-center gap-1 text-xs font-extrabold text-[#40566e] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/20"
+                        aria-expanded={logExpanded}
+                        aria-label={`Log Comment (${entries.length})`}
                       >
-                        {comment.resolved ? <RefreshCcw size={14} /> : <Check size={15} />}
+                        {logExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                        Log Comment ({entries.length})
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onEdit(comment)}
-                        className="grid h-9 w-9 place-items-center rounded-md border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc]"
-                        aria-label={comment.resolved ? "Follow up komentar" : "Edit komentar"}
-                        title={comment.resolved ? "Follow up komentar" : "Edit komentar"}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(comment)}
-                        className="grid h-9 w-9 place-items-center rounded-md border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
-                        aria-label="Hapus komentar"
-                        title="Hapus komentar"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                      {logExpanded ? (
+                        <ol className="grid gap-1 pl-5 text-[11px] font-bold text-[#7a8596]">
+                          {entries.map((entry, index) => (
+                            <li key={entry.id} data-review-comment-log-entry>
+                              {index + 1}. {entry.description} oleh {entry.actor || "Reviewer"},{" "}
+                              {formatCommentTime(entry.createdAt)}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : null}
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          data-review-comment-action
+                          onClick={() => onToggleResolve(comment)}
+                          className="grid h-11 w-11 place-items-center rounded-lg border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                          aria-label={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
+                          title={comment.resolved ? "Reopen komentar" : "Resolve komentar"}
+                        >
+                          {comment.resolved ? <RefreshCcw size={15} /> : <Check size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          data-review-comment-action
+                          onClick={() => onReply(comment)}
+                          className="grid h-11 w-11 place-items-center rounded-lg border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                          aria-label="Balas komentar"
+                          title="Balas komentar"
+                        >
+                          <MessageSquare size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          data-review-comment-action
+                          onClick={() => onEdit(comment)}
+                          className="grid h-11 w-11 place-items-center rounded-lg border border-[#c9d3df] bg-white text-[#163754] transition hover:bg-[#f7f9fc] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                          aria-label={comment.resolved ? "Follow up komentar" : "Edit komentar"}
+                          title={comment.resolved ? "Follow up komentar" : "Edit komentar"}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          data-review-comment-action
+                          onClick={() => onDelete(comment)}
+                          className="grid h-11 w-11 place-items-center rounded-lg border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                          aria-label="Hapus komentar"
+                          title="Hapus komentar"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-[#c9d3df] p-3 text-center text-[13px] font-bold text-[#5b6778]">
@@ -1281,18 +1339,12 @@ type ScenarioSectionGroup = {
   rows: ScenarioRow[];
 };
 
-function scenarioDateKey(row: ScenarioRow) {
-  return row.startDate || row.endDate
-    ? `date:${row.startDate}:${row.endDate}`
-    : `group:${row.dateGroupId ?? row.id}`;
-}
-
 function scenarioDateGroups(rows: ScenarioRow[]) {
   const groups: ScenarioDateGroup[] = [];
   const indexByKey = new Map<string, number>();
 
   rows.forEach((row) => {
-    const key = scenarioDateKey(row);
+    const key = row.dateGroupId ?? row.id;
     const existingIndex = indexByKey.get(key);
 
     if (existingIndex !== undefined) {
@@ -1317,8 +1369,7 @@ function scenarioSectionGroups(rows: ScenarioRow[]) {
   const indexByKey = new Map<string, number>();
 
   rows.forEach((row) => {
-    const title = row.section.trim();
-    const key = title ? `section:${title}` : `group:${row.sectionGroupId ?? row.id}`;
+    const key = row.sectionGroupId ?? row.id;
     const existingIndex = indexByKey.get(key);
 
     if (existingIndex !== undefined) {
@@ -1352,6 +1403,26 @@ function AppendixPanel({
   }
 
   const groups = scenarioDateGroups(rows);
+
+  function reorderDateGroups(nextGroups: ScenarioDateGroup[]) {
+    setRows(nextGroups.flatMap((group) => group.rows), true);
+  }
+
+  function reorderSections(
+    group: ScenarioDateGroup,
+    nextSections: ScenarioSectionGroup[],
+  ) {
+    const groupRowIds = new Set(group.rows.map((row) => row.id));
+    const reorderedRows = nextSections.flatMap((section) => section.rows);
+    let inserted = false;
+    const nextRows = rows.flatMap((row) => {
+      if (!groupRowIds.has(row.id)) return [row];
+      if (inserted) return [];
+      inserted = true;
+      return reorderedRows;
+    });
+    setRows(nextRows, true);
+  }
 
   function updateGroupDates(group: ScenarioDateGroup, value: { startDate: string; endDate: string }) {
     const ids = new Set(group.rows.map((row) => row.id));
@@ -1442,119 +1513,168 @@ function AppendixPanel({
   return (
     <Panel>
       <SectionTitle title="Lampiran Skenario" />
-      <div className="mt-4 grid gap-4">
-        {groups.map((group, groupIndex) => (
-          <section key={group.id} className="rounded-md border border-slate-300 bg-slate-50 p-3">
-            <div className="mb-3 grid items-end gap-3 md:grid-cols-[minmax(220px,0.9fr)_1fr]">
-              <FieldLabel label={`Tanggal ${groupIndex + 1}`} fieldId={`scenario-date-${group.rows[0]?.id}`} required>
-                <DateRangePicker
-                  compact
-                  startDate={group.startDate}
-                  endDate={group.endDate}
-                  onChange={(value) => updateGroupDates(group, value)}
-                />
-              </FieldLabel>
-            </div>
-            <div className="grid gap-3">
-              {scenarioSectionGroups(group.rows).map((section) => (
-                <section key={section.id} className="rounded-md border border-slate-300 bg-white p-3">
-                  <FieldLabel label="Bagian" fieldId={`scenario-section-${section.rows[0]?.id}`} required>
-                    <div className="grid grid-cols-[42px_1fr] overflow-hidden rounded-md border border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
-                      <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
-                        {section.marker}
-                      </span>
-                      <textarea
-                        value={section.title}
-                        rows={1}
-                        onChange={(event) => updateSectionTitle(section, event.target.value)}
-                        className="min-h-10 resize-y border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
-                      />
-                    </div>
-                  </FieldLabel>
-                  <div className="mt-3">
-                    <DragDropList
-                      items={section.rows}
-                      onReorder={(nextSectionRows) =>
-                        replaceSectionRows(section, nextSectionRows)
-                      }
-                      itemLabel={(_, index) => `skenario ${index + 1}`}
-                      renderItem={(row, rowIndex) => (
-                        <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-slate-900">
-                              Skenario {rowIndex + 1}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextRows = rows.filter((item) => item.id !== row.id);
-                                setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
-                              }}
-                              className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
-                              aria-label="Hapus skenario"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                          <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
-                            <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
-                              <RichTextEditor
-                                value={row.scenario}
-                                minHeight={92}
-                                onChange={(value) =>
-                                  setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
-                                }
-                              />
-                            </FieldLabel>
-                            <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
-                              <RichTextEditor
-                                value={row.expectedResult}
-                                minHeight={92}
-                                onChange={(value) =>
-                                  setRows(
-                                    rows.map((item) =>
-                                      item.id === row.id ? { ...item, expectedResult: value } : item,
-                                    ),
-                                  )
-                                }
-                              />
-                            </FieldLabel>
-                            <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
-                              <textarea
-                                value={row.pic}
-                                rows={5}
-                                onChange={(event) =>
-                                  setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
-                                }
-                                className="min-h-[132px] resize-y rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                              />
-                            </FieldLabel>
-                          </div>
-                        </div>
-                      )}
+      <div className="mt-4">
+        <DragDropList
+          items={groups}
+          onReorder={reorderDateGroups}
+          itemLabel={(_, index) => `tanggal ${index + 1}`}
+          renderItem={(group, groupIndex) => (
+            <section
+              data-scenario-date-group={group.id}
+              className="rounded-xl border border-[#c9d3df] bg-[#f7f9fc] p-2"
+            >
+              <details open className="group/date">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+                  <span>Tanggal {groupIndex + 1}</span>
+                  <span className="text-xs font-semibold text-[#5b6778]">
+                    {formatDateRangeID(group.startDate, group.endDate)} · {group.rows.length} skenario
+                  </span>
+                </summary>
+                <div className="mt-2 grid gap-3">
+                  <FieldLabel
+                    label={`Tanggal ${groupIndex + 1}`}
+                    fieldId={`scenario-date-${group.rows[0]?.id}`}
+                    required
+                  >
+                    <DateRangePicker
+                      compact
+                      startDate={group.startDate}
+                      endDate={group.endDate}
+                      onChange={(value) => updateGroupDates(group, value)}
                     />
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <IconButton onClick={() => addScenarioToSection(group, section)}>
+                  </FieldLabel>
+
+                  <DragDropList
+                    items={scenarioSectionGroups(group.rows)}
+                    onReorder={(nextSections) => reorderSections(group, nextSections)}
+                    itemLabel={(section) => `bagian ${section.marker}`}
+                    renderItem={(section) => (
+                      <section className="rounded-xl border border-[#d8e1eb] bg-white p-2">
+                        <details open className="group/section">
+                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+                            <span>Bagian {section.marker}</span>
+                            <span className="truncate text-xs font-semibold text-[#5b6778]">
+                              {section.title || "Belum diberi nama"} · {section.rows.length} skenario
+                            </span>
+                          </summary>
+                          <div className="mt-2">
+                            <FieldLabel
+                              label="Bagian"
+                              fieldId={`scenario-section-${section.rows[0]?.id}`}
+                              required
+                            >
+                              <div className="grid grid-cols-[42px_1fr] overflow-hidden rounded-lg border border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
+                                <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
+                                  {section.marker}
+                                </span>
+                                <textarea
+                                  value={section.title}
+                                  rows={1}
+                                  onChange={(event) => updateSectionTitle(section, event.target.value)}
+                                  className="min-h-10 resize-y border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
+                                />
+                              </div>
+                            </FieldLabel>
+
+                            <div className="mt-3">
+                              <DragDropList
+                                items={section.rows}
+                                onReorder={(nextSectionRows) =>
+                                  replaceSectionRows(section, nextSectionRows)
+                                }
+                                itemLabel={(_, index) => `skenario ${index + 1}`}
+                                renderItem={(row, rowIndex) => (
+                                  <details
+                                    open={rowIndex === 0}
+                                    className="rounded-lg border border-slate-200 bg-slate-50"
+                                  >
+                                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+                                      <span>Skenario {rowIndex + 1}</span>
+                                      <span className="truncate text-xs font-medium text-slate-500">
+                                        {row.pic || "PIC belum diisi"}
+                                      </span>
+                                    </summary>
+                                    <div className="grid gap-3 border-t border-slate-200 p-3">
+                                      <div className="flex justify-end">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const nextRows = rows.filter((item) => item.id !== row.id);
+                                            setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
+                                          }}
+                                          className="flex h-11 w-11 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                                          aria-label="Hapus skenario"
+                                        >
+                                          <Trash2 size={15} />
+                                        </button>
+                                      </div>
+                                      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
+                                        <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
+                                          <RichTextEditor
+                                            value={row.scenario}
+                                            minHeight={84}
+                                            onChange={(value) =>
+                                              setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
+                                            }
+                                          />
+                                        </FieldLabel>
+                                        <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
+                                          <RichTextEditor
+                                            value={row.expectedResult}
+                                            minHeight={84}
+                                            onChange={(value) =>
+                                              setRows(
+                                                rows.map((item) =>
+                                                  item.id === row.id ? { ...item, expectedResult: value } : item,
+                                                ),
+                                              )
+                                            }
+                                          />
+                                        </FieldLabel>
+                                        <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
+                                          <textarea
+                                            value={row.pic}
+                                            rows={4}
+                                            onChange={(event) =>
+                                              setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
+                                            }
+                                            className="min-h-[116px] resize-y rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                                          />
+                                        </FieldLabel>
+                                      </div>
+                                    </div>
+                                  </details>
+                                )}
+                              />
+                            </div>
+
+                            <div className="mt-3 flex justify-end">
+                              <IconButton onClick={() => addScenarioToSection(group, section)}>
+                                <Plus size={16} />
+                                Skenario
+                              </IconButton>
+                            </div>
+                          </div>
+                        </details>
+                      </section>
+                    )}
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    <IconButton onClick={() => addDateAfterGroup(group)}>
                       <Plus size={16} />
-                      Skenario
+                      Tanggal
+                    </IconButton>
+                    <IconButton onClick={() => addSectionToGroup(group)}>
+                      <Plus size={16} />
+                      Bagian
                     </IconButton>
                   </div>
-                </section>
-              ))}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <IconButton onClick={() => addDateAfterGroup(group)}>
-                <Plus size={16} />
-                Tanggal
-              </IconButton>
-              <IconButton onClick={() => addSectionToGroup(group)}>
-                <Plus size={16} />
-                Bagian
-              </IconButton>
-            </div>
-          </section>
-        ))}
+                </div>
+              </details>
+            </section>
+          )}
+        />
       </div>
       {validationIssues.length ? (
         <div
@@ -2357,7 +2477,7 @@ export function MemoBuilderApp() {
               </span>
             </div>
             <div className="min-w-[1144px]">
-              <MemoPreview draft={draft} />
+              <MemoPreview draft={draft} onNavigateField={focusEditorField} />
             </div>
           </div>
         </aside>
@@ -2368,6 +2488,7 @@ export function MemoBuilderApp() {
       <ReviewCommentsPopup
         open={reviewOpen}
         comments={draft.reviewComments ?? []}
+        auditLog={draft.reviewAuditLog ?? []}
         commentMode={commentMode}
         onToggleOpen={() => setReviewOpen((current) => !current)}
         onToggleCommentMode={requestToggleCommentMode}
@@ -2416,6 +2537,7 @@ export function MemoBuilderApp() {
           className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-md border border-[#1b4d78] bg-[#1b4d78] px-3 text-[13px] font-extrabold leading-none text-white shadow-[0_10px_22px_rgba(27,77,120,0.18)] transition hover:bg-[#163754] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 max-[760px]:min-w-0"
           aria-expanded={reviewOpen}
           aria-controls="review-comments-popup"
+          aria-label="Komentar Review"
           title="Komentar review"
         >
           <MessageSquare size={16} />

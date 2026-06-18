@@ -43,6 +43,17 @@ function richListFrom(type: "bulletList" | "orderedList", start: number, items: 
   return doc;
 }
 
+function richListWithTrailingEmpty(type: "bulletList" | "orderedList", items: string[]) {
+  const doc = richList(type, items);
+  return {
+    ...doc,
+    content: [
+      ...doc.content,
+      { type: "paragraph", content: [] },
+    ],
+  };
+}
+
 function completeDraft() {
   return {
     metadata: {
@@ -189,7 +200,10 @@ test("exports DOCX from current draft", async ({ page }) => {
   expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4 3 0).docx");
 
   const { xml, rels } = await docxPartsFrom(download);
-  expect(xml).toMatch(/<w:t[^>]*>- {6}Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
+  expect(xml).toMatch(/<w:t[^>]*>- Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
+  const attachmentIndex = xml.indexOf("- Draft SE Perihal");
+  const attachmentParagraph = xml.slice(xml.lastIndexOf("<w:p>", attachmentIndex), attachmentIndex);
+  expect(attachmentParagraph).toContain('<w:ind w:left="300" w:hanging="300"/>');
   expect(xml).toMatch(/<w:t[^>]*>Nama PIC \u2013 pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>Kepala KCU Pluit<\/w:t>/);
   expect(xml).toContain('<w:type w:val="continuous"/>');
@@ -706,7 +720,7 @@ test("blocks DOCX export when mandatory fields are empty", async ({ page }) => {
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
 
   await expect(page.getByText("Generate Docx ditahan")).toBeVisible();
-  await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/validation-jump-highlight/);
+  await expect(page.locator('[data-field-id="projectName"]')).toHaveClass(/field-jump-highlight/);
   expect(await downloadPromise).toBeNull();
 });
 
@@ -749,6 +763,13 @@ test("all salutation fields start with the Sapaan placeholder", async ({ page })
     await expect(placeholder).toHaveText("Sapaan");
     await expect(placeholder).toHaveAttribute("disabled", "");
     await expect(placeholder).toHaveAttribute("hidden", "");
+    await expect(salutation.locator('option[value="Yth."]')).toHaveCount(0);
+    await expect(salutation.locator("option")).toHaveText([
+      "Sapaan",
+      "Bapak",
+      "Ibu",
+      "Tim",
+    ]);
   }
 });
 
@@ -862,7 +883,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
       accessLinkEnabled: false,
       accessLink: "",
     },
-    developmentRows: Array.from({ length: 4 }, (_, index) => ({
+    developmentRows: Array.from({ length: 12 }, (_, index) => ({
       id: `spacing-development-${index}`,
       item: richText(`Pengembangan ${index + 1}`),
       description: richText("Keterangan untuk mengisi halaman pertama memo."),
@@ -954,7 +975,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
   expect(initialsContext).toContain('w:before="220"');
 });
 
-test("consecutive duplicate table values merge and center in preview and DOCX", async ({ page }) => {
+test("consecutive duplicate table values keep each column default alignment", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const duplicateItem = richText("Nilai pengembangan sama");
   const duplicateDescription = richText("Keterangan sama");
@@ -1004,9 +1025,17 @@ test("consecutive duplicate table values merge and center in preview and DOCX", 
 
   const mergedCells = page.locator('aside td[rowspan="2"]');
   await expect(mergedCells).toHaveCount(8);
-  for (let index = 0; index < await mergedCells.count(); index += 1) {
-    await expect(mergedCells.nth(index)).toHaveClass(/text-center/);
-    await expect(mergedCells.nth(index)).toHaveClass(/align-middle/);
+  for (const text of [
+    "Nilai pengembangan sama",
+    "Keterangan sama",
+    "Aktivitas sama",
+    "Skenario sama",
+    "Hasil sama",
+  ]) {
+    const cell = page.locator('aside td[rowspan="2"]').filter({ hasText: text });
+    await expect(cell).toHaveCount(1);
+    await expect(cell).not.toHaveClass(/text-center/);
+    await expect(cell).toHaveClass(/align-middle/);
   }
 
   const downloadPromise = page.waitForEvent("download");
@@ -1017,6 +1046,19 @@ test("consecutive duplicate table values merge and center in preview and DOCX", 
   expect(xml).not.toContain('w:val="single" w:color="FFFFFF"');
   expect(xml).not.toContain('w:val="nil"');
   expect(xml).toContain('w:color="0F172A"');
+  for (const text of [
+    "Nilai pengembangan sama",
+    "Keterangan sama",
+    "Aktivitas sama",
+    "Skenario sama",
+    "Hasil sama",
+  ]) {
+    const textIndex = xml.indexOf(text);
+    const paragraphStart = xml.lastIndexOf("<w:p>", textIndex);
+    const paragraphEnd = xml.indexOf("</w:p>", textIndex);
+    const paragraphXml = xml.slice(paragraphStart, paragraphEnd);
+    expect(paragraphXml).not.toContain('<w:jc w:val="center"/>');
+  }
 });
 
 test("memo and appendix preview use the exact generated A4 paper size without changing validation", async ({ page }) => {
@@ -1250,7 +1292,7 @@ test("appendix scenario uses section header numbering", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await page.getByLabel("Nama Project").fill("BDS Web Gen 2 versi 4.3.0");
-  await page.getByLabel("Bagian").first().fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
+  await page.getByRole("textbox", { name: "Bagian * A" }).fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
 
   const appendixTable = page.locator("aside table").last();
   await expect(appendixTable).toContainText("A.Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
@@ -1291,9 +1333,10 @@ test("appendix hierarchy adds date, section, and scenario in place", async ({ pa
     .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
     .first();
 
-  await expect(appendixPanel.getByLabel("Bagian")).toHaveCount(1);
-  await appendixPanel.getByRole("button", { name: "Bagian" }).click();
-  await expect(appendixPanel.getByLabel("Bagian")).toHaveCount(2);
+  const sectionInputs = appendixPanel.getByRole("textbox", { name: /Bagian \* [A-Z]+/ });
+  await expect(sectionInputs).toHaveCount(1);
+  await appendixPanel.getByRole("button", { name: "Bagian", exact: true }).click();
+  await expect(sectionInputs).toHaveCount(2);
 
   await expect(appendixPanel.getByRole("button", { name: "Skenario", exact: true })).toHaveCount(2);
   await appendixPanel.getByRole("button", { name: "Skenario", exact: true }).first().click();
@@ -1302,4 +1345,260 @@ test("appendix hierarchy adds date, section, and scenario in place", async ({ pa
   await expect(appendixPanel.getByRole("button", { name: "Tanggal", exact: true })).toHaveCount(1);
   await appendixPanel.getByRole("button", { name: "Tanggal", exact: true }).click();
   await expect(appendixPanel.getByRole("button", { name: "Tanggal", exact: true })).toHaveCount(2);
+});
+
+test("Lingkup wording uses only project name and document borders stay thin", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const wording = "Berikut adalah fitur pengembangan pada BDS Web Gen 2 versi 4.3.0:";
+  await expect(page.locator("aside").getByText(wording, { exact: true })).toBeVisible();
+  await expect(
+    page.locator("aside").getByText(
+      "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain(wording);
+  expect(xml).not.toContain(
+    "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
+  );
+  expect(xml).toContain('w:val="single" w:color="0F172A" w:sz="4"');
+  expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
+});
+
+test("schedule keeps the complete date range together in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    pilotSchedule: { startDate: "2026-06-12", endDate: "2026-06-19" },
+  });
+
+  const scheduleSection = page
+    .locator("aside section")
+    .filter({ has: page.getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true }) });
+  const date = scheduleSection.locator("[data-schedule-date]");
+  await expect(date).toHaveText("12 – 19 Juni 2026");
+  await expect(date).toHaveClass(/whitespace-nowrap/);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("12 – 19 Juni 2026");
+});
+
+test("table rich text removes trailing empty paragraphs after lists", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [{
+      id: "development-list-trim",
+      item: richText("Daftar pengembangan"),
+      description: richListWithTrailingEmpty("orderedList", ["Pertama", "Kedua"]),
+    }],
+  });
+
+  const descriptionCell = page.locator("aside td").filter({ hasText: "Pertama" });
+  await expect(descriptionCell).toHaveCount(1);
+  await expect(descriptionCell.locator(".preview-rich-text > p")).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const secondIndex = xml.indexOf("Kedua");
+  const cellEnd = xml.indexOf("</w:tc>", secondIndex);
+  const tail = xml.slice(xml.indexOf("</w:p>", secondIndex) + 6, cellEnd);
+  expect(tail).not.toContain("<w:p>");
+});
+
+test("duplicate scenario dates remain independent range groups", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      { ...scenarioBase, id: "same-date-1", dateGroupId: "same-date-group-1" },
+      {
+        ...scenarioBase,
+        id: "same-date-2",
+        dateGroupId: "same-date-group-2",
+        sectionGroupId: "same-date-section-2",
+        section: "Bagian kedua",
+      },
+    ],
+  });
+
+  const appendixPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  const dateButtons = appendixPanel.getByRole("button", { name: /Tanggal \d+ \*/ });
+  await expect(dateButtons).toHaveCount(2);
+  await expect(dateButtons.nth(0)).toContainText("7 – 21 Mei 2026");
+  await expect(dateButtons.nth(1)).toContainText("7 – 21 Mei 2026");
+
+  await dateButtons.nth(1).click();
+  const popup = page.locator("[data-date-range-popup]");
+  await popup.getByRole("button", { name: "24", exact: true }).click();
+  await popup.getByRole("button", { name: "25", exact: true }).click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(dateButtons.nth(0)).toContainText("7 – 21 Mei 2026");
+  await expect(dateButtons.nth(1)).toContainText("24 – 25 Mei 2026");
+});
+
+test("appendix date and section groups expose hierarchy drag handles", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      {
+        ...scenarioBase,
+        id: "drag-a",
+        dateGroupId: "drag-date-a",
+        sectionGroupId: "drag-section-a",
+        section: "Bagian Alpha",
+      },
+      {
+        ...scenarioBase,
+        id: "drag-b",
+        dateGroupId: "drag-date-b",
+        sectionGroupId: "drag-section-b",
+        startDate: "2026-06-01",
+        endDate: "2026-06-02",
+        section: "Bagian Beta",
+      },
+    ],
+  });
+
+  const appendixPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  await expect(appendixPanel.getByRole("button", { name: "Ubah urutan tanggal 1" })).toBeVisible();
+  await expect(appendixPanel.getByRole("button", { name: "Ubah urutan tanggal 2" })).toBeVisible();
+  await expect(appendixPanel.getByRole("button", { name: "Ubah urutan bagian A" })).toHaveCount(2);
+  const dateGroups = appendixPanel.locator("[data-scenario-date-group]");
+  await expect(dateGroups).toHaveCount(2);
+  await expect(dateGroups.nth(0)).toContainText("Bagian Alpha");
+  await expect(dateGroups.nth(1)).toContainText("Bagian Beta");
+});
+
+test("preview field click and mandatory validation share temporary yellow focus", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const previewProject = page.locator('[data-preview-field-id="projectName"]').first();
+  await expect(previewProject).toBeVisible();
+  await previewProject.click();
+  const projectField = page.locator('[data-field-id="projectName"]');
+  await expect(projectField).toHaveClass(/field-jump-highlight/);
+  await expect(page.getByLabel("Nama Project")).toBeFocused();
+  await expect(projectField).not.toHaveClass(/field-jump-highlight/, { timeout: 3500 });
+
+  await page.getByLabel("Nama Project").fill("");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  await expect(projectField).toHaveClass(/field-jump-highlight/);
+  await expect(page.getByLabel("Nama Project")).toBeFocused();
+  await expect(projectField).not.toHaveClass(/field-jump-highlight/, { timeout: 3500 });
+});
+
+test("review comments layout matches unresolved and resolved references", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const createdAt = "2026-06-18T13:48:00.000Z";
+  await importDraft(page, {
+    ...completeDraft(),
+    reviewComments: [
+      {
+        id: "review-open",
+        type: "field",
+        targetId: "projectName",
+        targetLabel: "Nama Project",
+        path: [],
+        text: "Perlu diperbaiki",
+        author: "asdas",
+        resolved: false,
+        createdAt,
+        updatedAt: createdAt,
+        replies: [{ id: "reply-open", text: "Sudah dicek", author: "asdas", createdAt }],
+      },
+      {
+        id: "review-resolved",
+        type: "field",
+        targetId: "contact-name-contact-test",
+        targetLabel: "PIC",
+        path: [],
+        text: "asdsadsaa",
+        author: "asdas",
+        resolved: true,
+        createdAt,
+        updatedAt: createdAt,
+        replies: [],
+      },
+    ],
+    reviewAuditLog: [
+      {
+        id: "audit-created-open",
+        action: "comment-created",
+        actor: "asdas",
+        description: "Dibuat",
+        commentId: "review-open",
+        targetLabel: "Nama Project",
+        createdAt,
+      },
+      {
+        id: "audit-reply-open",
+        action: "comment-replied",
+        actor: "asdas",
+        description: "Reply dibuat",
+        commentId: "review-open",
+        targetLabel: "Nama Project",
+        createdAt,
+      },
+      {
+        id: "audit-created-resolved",
+        action: "comment-created",
+        actor: "asdas",
+        description: "Dibuat",
+        commentId: "review-resolved",
+        targetLabel: "PIC",
+        createdAt,
+      },
+      {
+        id: "audit-resolved",
+        action: "comment-resolved",
+        actor: "asdas",
+        description: "Solved",
+        commentId: "review-resolved",
+        targetLabel: "PIC",
+        createdAt,
+      },
+    ],
+  });
+
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  const popup = page.locator("#review-comments-popup");
+  const box = await popup.boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(680);
+  await expect(popup.getByText("1 unresolved, 1 resolved", { exact: true })).toBeVisible();
+  const addButton = popup.getByRole("button", { name: "Add Comment" });
+  expect((await addButton.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+
+  const unresolved = popup.locator('[data-review-comment-status="unresolved"]');
+  const resolved = popup.locator('[data-review-comment-status="resolved"]');
+  await expect(unresolved).toHaveCount(1);
+  await expect(resolved).toHaveCount(1);
+  await expect(resolved).toContainText("Solved oleh asdas");
+  await expect(resolved.getByRole("button", { name: "Log Comment (2)" })).toBeVisible();
+  await resolved.getByRole("button", { name: "Log Comment (2)" }).click();
+  await expect(resolved.locator("[data-review-comment-log-entry]")).toHaveCount(2);
+  const actions = resolved.locator("[data-review-comment-action]");
+  for (let index = 0; index < await actions.count(); index += 1) {
+    expect((await actions.nth(index).boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  }
 });

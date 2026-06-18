@@ -92,7 +92,19 @@
 - [ ] **Step 3: Add `focusEditorField(fieldId)`** with timer replacement, smooth scrolling, focus management, and a 2.4 second yellow highlight. Add stable `data-preview-field-id`, keyboard activation, and accessible hints to preview blocks, then route both preview clicks and validation through the helper.
 - [ ] **Step 4: Re-run the focused tests**; expected result is all selected tests passing.
 
-### Task 7: Full verification, GitHub update, and Cloudflare deployment
+### Task 7: Match the review-comments reference
+
+**Files:**
+- Modify: `e2e/memo-builder.spec.ts`
+- Modify: `src/features/memo-builder/MemoBuilderApp.tsx`
+- Modify: `src/app/globals.css`
+
+- [ ] **Step 1: Write failing tests** that open the review popup and assert its desktop width extends left from the right anchor, the header/count/close arrangement matches the reference, Add Comment and filter share one row, thread cards have a blue status rail, and action buttons meet the 44 px target.
+- [ ] **Step 2: Run the focused tests** with `npx playwright test e2e/memo-builder.spec.ts --grep "review comments layout"`; expected result is failure on width and visual-contract assertions.
+- [ ] **Step 3: Refine the existing popup markup and styles** without changing collaboration state, comment mutations, filters, audit entries, or field-focus callbacks.
+- [ ] **Step 4: Re-run the focused tests**; expected result is all selected tests passing.
+
+### Task 8: Full verification, GitHub update, and Cloudflare deployment
 
 **Files:**
 - Modify: `README.md` only if deployment commands differ from the repository's documented workflow.

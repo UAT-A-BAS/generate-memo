@@ -15,7 +15,7 @@ type RecipientListProps = {
   defaultGender?: Recipient["gender"];
 };
 
-const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim", "Yth."];
+const genderOptions: Recipient["gender"][] = ["Bapak", "Ibu", "Tim"];
 const fieldClass =
   "h-10 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10";
 
@@ -82,6 +82,7 @@ export function RecipientList({
                     recipient.gender ? "text-slate-900" : "text-slate-400"
                   }`}
                   style={{ color: recipient.gender ? "#0f172a" : "#94a3b8" }}
+                  data-placeholder-selected={recipient.gender ? "false" : "true"}
                 >
                   {genderPlaceholder ? (
                     <option value="" disabled hidden>

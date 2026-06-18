@@ -60,18 +60,25 @@ function PreviewSection({
   title,
   children,
   rule = "content",
+  fieldId,
 }: {
   title: React.ReactNode;
   children: React.ReactNode;
   rule?: SectionRule;
+  fieldId?: string;
 }) {
-  const sectionRuleClass = rule === "full" ? "border-t border-slate-800 pt-3" : "";
+  const sectionRuleClass = rule === "full" ? "border-t border-slate-800 pt-2" : "";
   const titleRuleClass = rule === "content" ? "pt-3" : "";
   const contentRuleClass = rule === "content" ? "border-t border-slate-800 pt-3" : "";
-  const sectionMarginClass = rule === "full" ? "mt-5" : "mt-4";
+  const sectionMarginClass = rule === "full" ? "mt-2" : "mt-4";
 
   return (
-    <section className={`${sectionMarginClass} ${sectionRuleClass}`}>
+    <section
+      className={`${sectionMarginClass} ${sectionRuleClass} ${fieldId ? "preview-field-target" : ""}`}
+      data-preview-field-id={fieldId}
+      role={fieldId ? "button" : undefined}
+      tabIndex={fieldId ? 0 : undefined}
+    >
       <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.08]">
         <h3 className={`${titleRuleClass} text-[13.33px] leading-[1.08]`}>
           {typeof title === "string" ? <strong>{title}</strong> : title}
@@ -224,7 +231,6 @@ function renderBlock(
   draft: MemoDraft,
   block: PreviewBlock,
   sectionRule: SectionRule = "content",
-  options: { continuationMainPage?: boolean } = {},
 ) {
   switch (block.type) {
     case "memo-heading":
@@ -244,7 +250,14 @@ function renderBlock(
             <span>INTERNAL BCA</span>
             <span className="font-[Arial] text-[14.67px]">Perihal</span>
             <span className="font-[Arial] text-[14.67px]">:</span>
-            <span className="font-[Arial] text-[16px] font-bold leading-[1.25]">{draft.metadata.perihal}</span>
+            <span
+              className="preview-field-target font-[Arial] text-[16px] font-bold leading-[1.25]"
+              data-preview-field-id="projectName"
+              role="button"
+              tabIndex={0}
+            >
+              {draft.metadata.perihal}
+            </span>
           </div>
         </div>
       );
@@ -252,7 +265,7 @@ function renderBlock(
       return null;
     case "introduction":
       return (
-        <PreviewSection title="Pengantar" rule={sectionRule}>
+        <PreviewSection title="Pengantar" rule={sectionRule} fieldId="projectName">
           <p>
             Sehubungan dengan akan dilakukannya {draft.metadata.perihal}, berikut kami sampaikan
             informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.
@@ -262,7 +275,7 @@ function renderBlock(
     case "reference":
       const items = referenceItems(draft);
       return (
-        <PreviewSection title="Referensi" rule={sectionRule}>
+        <PreviewSection title="Referensi" rule={sectionRule} fieldId="reference">
           <p>Memorandum ini mengacu pada.</p>
           {items.length ? (
             <ul className="mt-1 list-disc pl-5">
@@ -275,17 +288,19 @@ function renderBlock(
       );
     case "pilot-schedule":
       return (
-        <PreviewSection title={scheduleTitle(draft)} rule={sectionRule}>
+        <PreviewSection title={scheduleTitle(draft)} rule={sectionRule} fieldId="schedule">
           <p>
             {draft.metadata.perihal} akan dilaksanakan pada tanggal{" "}
-            <strong>{formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate)}</strong>.
+            <strong data-schedule-date className="whitespace-nowrap">
+              {formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate)}
+            </strong>.
           </p>
         </PreviewSection>
       );
     case "access-link":
       const accessLink = draft.metadata.accessLink.trim();
       return (
-        <PreviewSection title={`Akses Link ${draft.metadata.perihal}`} rule={sectionRule}>
+        <PreviewSection title={`Akses Link ${draft.metadata.perihal}`} rule={sectionRule} fieldId="accessLink">
           <p>{draft.metadata.perihal} dapat diakses melalui link berikut:</p>
           {accessLink ? (
             <a
@@ -303,13 +318,17 @@ function renderBlock(
       );
     case "attachments":
       return (
-        <PreviewSection title="Lampiran" rule={sectionRule}>
+        <PreviewSection title="Lampiran" rule={sectionRule} fieldId="attachments">
           <AttachmentContent items={memoAttachmentItems(draft.attachments)} />
         </PreviewSection>
       );
     case "contacts":
       return (
-        <PreviewSection title="PIC yang Dapat Dihubungi" rule={sectionRule}>
+        <PreviewSection
+          title="PIC yang Dapat Dihubungi"
+          rule={sectionRule}
+          fieldId={draft.contacts[0] ? `contact-name-${draft.contacts[0].id}` : undefined}
+        >
           <p>PIC yang dapat dihubungi sehubungan dengan {draft.metadata.perihal} adalah:</p>
           <div className="mt-1 grid gap-0.5">
             {draft.contacts.map((contact) => (
@@ -323,9 +342,8 @@ function renderBlock(
     case "signature":
       return (
         <div
-          className={`ml-[140px] text-[14.67px] leading-[1.08] ${
-            options.continuationMainPage ? "mt-4" : "mt-5 border-t border-slate-800 pt-3"
-          }`}
+          data-preview-field-id={draft.signers[0] ? `signer-name-${draft.signers[0].id}` : undefined}
+          className="ml-[140px] mt-3 border-t border-slate-800 pt-2 text-[14.67px] leading-[1.08]"
         >
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
@@ -339,7 +357,10 @@ function renderBlock(
       );
     case "cc":
       return (
-        <div className="ml-[140px] mt-4 text-[14.67px] leading-[1.08]">
+        <div
+          className="ml-[140px] mt-4 text-[14.67px] leading-[1.08]"
+          data-preview-field-id={block.recipients[0] ? `recipient-${block.recipients[0].id}` : undefined}
+        >
           <p>Tembusan:</p>
           <div className="grid gap-0.5">
             {block.recipients.map((recipient) => (
@@ -353,7 +374,14 @@ function renderBlock(
         </div>
       );
     case "initials":
-      return <p className="ml-[140px] mt-4 text-[13.33px]">{initialsText(draft)}</p>;
+      return (
+        <p
+          className="ml-[140px] mt-4 text-[13.33px]"
+          data-preview-field-id="initials"
+        >
+          {initialsText(draft)}
+        </p>
+      );
     case "validation":
       return (
         <div className="relative h-full overflow-hidden px-2 pt-12 text-[12px] text-[#333]">
@@ -419,7 +447,6 @@ function renderGroupedBlocks(
   draft: MemoDraft,
   blocks: PreviewBlock[],
   suppressFirstSectionRule = false,
-  continuationMainPage = false,
 ) {
   const rendered: React.ReactNode[] = [];
   let index = 0;
@@ -443,12 +470,13 @@ function renderGroupedBlocks(
       const numbered = draft.developmentRows.length > 1;
       const continuation = isTableSectionContinuation(developmentRows[0]);
       rendered.push(
-        <PreviewSection
-          title={continuationSectionTitle("Lingkup Pengembangan", continuation)}
-          rule={nextSectionRule()}
+          <PreviewSection
+            title={continuationSectionTitle("Lingkup Pengembangan", continuation)}
+            rule={nextSectionRule()}
+            fieldId={`development-item-${developmentRows[0].row.id}`}
           key={`development-${index}`}
         >
-          <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.perihal}:</p>
+          <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.projectName}:</p>
           <MemoTable
             headers={numbered ? ["No.", "Pengembangan", "Keterangan"] : ["Pengembangan", "Keterangan"]}
             columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
@@ -471,16 +499,18 @@ function renderGroupedBlocks(
                 ) : null}
                 {itemMerge.hidden ? null : (
                   <td
-                    className={`border border-slate-900 px-2 py-1 align-middle ${itemMerge.span > 1 ? "text-center" : ""}`}
+                    className="border border-slate-900 px-2 py-1 align-middle"
                     rowSpan={itemMerge.span}
+                    data-preview-field-id={`development-item-${item.row.id}`}
                   >
                     <RichTextView html={richTextToHtml(item.row.item)} />
                   </td>
                 )}
                 {descriptionMerge.hidden ? null : (
                   <td
-                    className={`border border-slate-900 px-2 py-1 align-middle ${descriptionMerge.span > 1 ? "text-center" : ""}`}
+                    className="border border-slate-900 px-2 py-1 align-middle"
                     rowSpan={descriptionMerge.span}
+                    data-preview-field-id={`development-description-${item.row.id}`}
                   >
                     <RichTextView html={richTextToHtml(item.row.description)} />
                   </td>
@@ -501,9 +531,10 @@ function renderGroupedBlocks(
       const numbered = draft.activities.length > 1;
       const continuation = isTableSectionContinuation(activityRows[0]);
       rendered.push(
-        <PreviewSection
-          title={continuationSectionTitle("Aktivitas Cabang dan Unit Kerja", continuation)}
-          rule={nextSectionRule()}
+          <PreviewSection
+            title={continuationSectionTitle("Aktivitas Cabang dan Unit Kerja", continuation)}
+            rule={nextSectionRule()}
+            fieldId={`activity-text-${activityRows[0].row.id}`}
           key={`activity-${index}`}
         >
           <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
@@ -534,19 +565,28 @@ function renderGroupedBlocks(
                 ) : null}
                 {activityMerge.hidden ? null : (
                   <td
-                    className={`border border-slate-900 px-2 py-1 align-middle ${activityMerge.span > 1 ? "text-center" : ""}`}
+                    className="border border-slate-900 px-2 py-1 align-middle"
                     rowSpan={activityMerge.span}
+                    data-preview-field-id={`activity-text-${item.row.id}`}
                   >
                     <RichTextView html={richTextToHtml(item.row.activity)} />
                   </td>
                 )}
                 {ownerMerge.hidden ? null : (
-                  <td className="border border-slate-900 px-2 py-1 text-center align-middle" rowSpan={ownerMerge.span}>
+                  <td
+                    className="border border-slate-900 px-2 py-1 text-center align-middle"
+                    rowSpan={ownerMerge.span}
+                    data-preview-field-id={`activity-owner-${item.row.id}`}
+                  >
                     {item.row.owner}
                   </td>
                 )}
                 {dateMerge.hidden ? null : (
-                  <td className="border border-slate-900 px-2 py-1 text-center align-middle" rowSpan={dateMerge.span}>
+                  <td
+                    className="border border-slate-900 px-2 py-1 text-center align-middle"
+                    rowSpan={dateMerge.span}
+                    data-preview-field-id={`activity-date-${item.row.id}`}
+                  >
                     {formatDateRangeID(item.row.startDate, item.row.endDate)}
                   </td>
                 )}
@@ -593,7 +633,14 @@ function renderGroupedBlocks(
               <Fragment key={item.id}>
                 {item.meta.showDate ? (
                   <tr className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
-                    <td className="border border-slate-900 px-1 py-0.5" colSpan={4} style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>{item.meta.dateLabel}</td>
+                    <td
+                      className="border border-slate-900 px-1 py-0.5"
+                      colSpan={4}
+                      style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}
+                      data-preview-field-id={`scenario-date-${item.row.id}`}
+                    >
+                      {item.meta.dateLabel}
+                    </td>
                   </tr>
                 ) : null}
                 {item.meta.showSection ? (
@@ -601,7 +648,12 @@ function renderGroupedBlocks(
                     <td className="border border-slate-900 px-1 py-0.5 text-center align-middle" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                       {item.meta.sectionLetter}.
                     </td>
-                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle" colSpan={3} style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                    <td
+                      className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle"
+                      colSpan={3}
+                      style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}
+                      data-preview-field-id={`scenario-section-${item.row.id}`}
+                    >
                       {item.meta.sectionTitle}
                     </td>
                   </tr>
@@ -610,22 +662,28 @@ function renderGroupedBlocks(
                   <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-middle">{item.meta.number}.</td>
                   {scenarioMerge.hidden ? null : (
                     <td
-                      className={`border border-slate-900 px-1 py-0.5 align-middle ${scenarioMerge.span > 1 ? "text-center" : ""}`}
+                      className="border border-slate-900 px-1 py-0.5 align-middle"
                       rowSpan={scenarioMerge.span}
+                      data-preview-field-id={`scenario-text-${item.row.id}`}
                     >
                       <RichTextView html={richTextToHtml(item.row.scenario)} />
                     </td>
                   )}
                   {resultMerge.hidden ? null : (
                     <td
-                      className={`border border-slate-900 px-1 py-0.5 align-middle ${resultMerge.span > 1 ? "text-center" : ""}`}
+                      className="border border-slate-900 px-1 py-0.5 align-middle"
                       rowSpan={resultMerge.span}
+                      data-preview-field-id={`scenario-expected-${item.row.id}`}
                     >
                       <RichTextView html={richTextToHtml(item.row.expectedResult)} />
                     </td>
                   )}
                   {picMerge.hidden ? null : (
-                    <td className="preserve-lines border border-slate-900 px-1 py-0.5 text-center align-middle" rowSpan={picMerge.span}>
+                    <td
+                      className="preserve-lines border border-slate-900 px-1 py-0.5 text-center align-middle"
+                      rowSpan={picMerge.span}
+                      data-preview-field-id={`scenario-pic-${item.row.id}`}
+                    >
                       {item.row.pic}
                     </td>
                   )}
@@ -641,9 +699,7 @@ function renderGroupedBlocks(
 
     rendered.push(
       <div key={block.id}>
-        {renderBlock(draft, block, isPreviewSectionBlock(block) ? nextSectionRule() : "content", {
-          continuationMainPage,
-        })}
+        {renderBlock(draft, block, isPreviewSectionBlock(block) ? nextSectionRule() : "content")}
       </div>,
     );
     index += 1;
@@ -685,7 +741,6 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
         draft,
         page.blocks,
         Boolean(page.continuationTitle && page.kind === "main"),
-        Boolean(page.continuationTitle && page.kind === "main"),
       )}
       {page.continues && page.kind === "main" ? (
         <p className="ml-[140px] mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
@@ -696,11 +751,31 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
   );
 }
 
-export function MemoPreview({ draft }: { draft: MemoDraft }) {
+export function MemoPreview({
+  draft,
+  onNavigateField,
+}: {
+  draft: MemoDraft;
+  onNavigateField?: (fieldId: string) => unknown;
+}) {
   const pages = paginateMemoDraft(draft);
 
+  function navigateFromPreview(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return;
+    const field = target.closest<HTMLElement>("[data-preview-field-id]");
+    const fieldId = field?.dataset.previewFieldId;
+    if (fieldId) onNavigateField?.(fieldId);
+  }
+
   return (
-    <div className="grid gap-5 py-4">
+    <div
+      className="grid gap-5 py-4"
+      onClick={(event) => navigateFromPreview(event.target)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        navigateFromPreview(event.target);
+      }}
+    >
       {pages.map((page, index) => (
         <div key={page.id} className="origin-top">
           <PageContainer orientation={page.orientation} kind={page.kind}>

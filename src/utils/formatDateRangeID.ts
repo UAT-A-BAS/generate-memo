@@ -48,6 +48,10 @@ export function formatDateRangeID(startValue: string, endValue: string) {
   return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
 }
 
+export function formatDateRangeNonBreakingID(startValue: string, endValue: string) {
+  return formatDateRangeID(startValue, endValue).replaceAll(" ", "\u00A0");
+}
+
 export function todayInputValue() {
   return new Date().toISOString().slice(0, 10);
 }

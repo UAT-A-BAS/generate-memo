@@ -30,6 +30,10 @@ The appendix hierarchy is `date group -> section -> scenario`. Dragging a date m
 
 Date groups and sections use compact cards with persistent summaries and collapsible bodies. The currently edited group remains expanded. Add actions stay at the hierarchy level they affect. Delete actions remain explicit and do not share the drag handle. Touch targets are at least 44 px and focus rings remain visible.
 
+## Review comments
+
+The review-comments popup follows the supplied reference: it expands farther to the left while remaining anchored to the right edge, uses a compact title/count header, places the primary Add Comment action and status filter on one row, and renders each thread as a bordered card with a blue status rail. Reply metadata, comment logs, field links, and icon actions remain visible and keyboard accessible without changing collaboration behavior.
+
 ## Validation and preview navigation
 
 Every preview block exposes a stable target field ID. Clicking preview content calls one shared navigation function that smooth-scrolls to the matching editor field, focuses the first editable control, and applies a yellow highlight that removes itself after 2.4 seconds. Mandatory validation uses the same function and blocks DOCX generation until all issues are resolved.

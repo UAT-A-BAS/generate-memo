@@ -234,6 +234,8 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   let previousScenarioStartDate = "";
   let previousScenarioEndDate = "";
   let previousScenarioSection = "";
+  let previousScenarioDateGroupId = "";
+  let previousScenarioSectionGroupId = "";
   const appendixScenarios = Array.isArray(input.appendixScenarios)
     ? input.appendixScenarios.map((row) => {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
@@ -242,15 +244,30 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
         const section = row.section?.trim() ? row.section : previousScenarioSection;
         const normalizedStartDate = startDate || previousScenarioStartDate;
         const normalizedEndDate = endDate || previousScenarioEndDate || normalizedStartDate;
+        const continuesPreviousDate = !startDate && !endDate && Boolean(previousScenarioDateGroupId);
+        const dateGroupId =
+          row.dateGroupId ??
+          (continuesPreviousDate ? previousScenarioDateGroupId : createId("scenario-date"));
+        const continuesPreviousSection =
+          !row.section?.trim() &&
+          dateGroupId === previousScenarioDateGroupId &&
+          Boolean(previousScenarioSectionGroupId);
+        const sectionGroupId =
+          row.sectionGroupId ??
+          (continuesPreviousSection
+            ? previousScenarioSectionGroupId
+            : createId("scenario-section"));
 
         if (normalizedStartDate) previousScenarioStartDate = normalizedStartDate;
         if (normalizedEndDate) previousScenarioEndDate = normalizedEndDate;
         if (section?.trim()) previousScenarioSection = section;
+        previousScenarioDateGroupId = dateGroupId;
+        previousScenarioSectionGroupId = sectionGroupId;
 
         return {
           ...row,
-          dateGroupId: row.dateGroupId ?? createId("scenario-date"),
-          sectionGroupId: row.sectionGroupId ?? createId("scenario-section"),
+          dateGroupId,
+          sectionGroupId,
           startDate: normalizedStartDate,
           endDate: normalizedEndDate,
           section,

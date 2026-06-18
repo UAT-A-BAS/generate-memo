@@ -6,6 +6,7 @@ import {
   type IParagraphOptions,
 } from "docx";
 import type { RichTextDoc, RichTextMark, RichTextNode } from "@/types/richText";
+import { trimTrailingEmptyRichTextNodes } from "@/utils/richText";
 
 type RichTextDocxOptions = {
   size?: number;
@@ -135,7 +136,7 @@ export function richTextToDocxParagraphs(
     ];
   }
 
-  return doc.content.flatMap((node) => {
+  return trimTrailingEmptyRichTextNodes(doc).content.flatMap((node) => {
     if (node.type === "bulletList" || node.type === "orderedList") {
       return listNodeParagraphs(node, options);
     }

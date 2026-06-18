@@ -318,7 +318,7 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
       ...block,
       id: `${block.id}-part-${part + 1}`,
       row: { ...block.row, activity },
-      estimatedHeight: 96 + richVisualBlockHeight(activity, 0, 50),
+      estimatedHeight: 96 + richVisualBlockHeight(activity, 0, 44),
     }));
   }
 
@@ -365,11 +365,10 @@ function sourceBlockId(id: string) {
 function mainBlocks(draft: MemoDraft): PreviewBlock[] {
   const attachmentItems = memoAttachmentItems(draft.attachments);
   const blocks: PreviewBlock[] = [
-    { id: "memo-heading", type: "memo-heading", estimatedHeight: 170 },
     {
-      id: "recipients",
-      type: "recipients",
-      estimatedHeight: 54 + draft.recipients.length * 24,
+      id: "memo-heading",
+      type: "memo-heading",
+      estimatedHeight: 150 + Math.max(0, draft.recipients.length - 1) * 40,
     },
     {
       id: "introduction",
@@ -389,7 +388,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       row,
       index,
       estimatedHeight:
-        112 +
+        (index === 0 ? 112 : 24) +
         Math.max(
           richVisualBlockHeight(row.item, 0, 30),
           richVisualBlockHeight(row.description, 0, 62),
@@ -401,7 +400,9 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       type: "activity-row" as const,
       row,
       index,
-      estimatedHeight: 104 + richVisualBlockHeight(row.activity, 0, 54),
+      estimatedHeight:
+        (index === 0 ? 104 : 24) +
+        richVisualBlockHeight(row.activity, 0, 44),
     })),
     ...(draft.metadata.accessLinkEnabled
       ? [{ id: "access-link", type: "access-link" as const, estimatedHeight: 72 }]
@@ -437,8 +438,8 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
 }
 
 function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
-  let previousDate = "";
-  let previousSection = "";
+  let previousDateGroupId = "";
+  let previousSectionGroupId = "";
   let previousSource = "";
   let sectionIndex = -1;
   let numberInSection = 0;
@@ -466,21 +467,29 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     const isSplitContinuation = sourceId === previousSource;
     const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate);
     const sectionTitle = block.row.section.trim();
-    const showDate = !isSplitContinuation && dateLabel !== "-" && dateLabel !== previousDate;
+    const dateGroupId = block.row.dateGroupId ?? block.row.id;
+    const sectionGroupId = block.row.sectionGroupId ?? block.row.id;
+    const showDate =
+      !isSplitContinuation &&
+      dateLabel !== "-" &&
+      dateGroupId !== previousDateGroupId;
 
     if (showDate) {
-      previousDate = dateLabel;
-      previousSection = "";
+      previousDateGroupId = dateGroupId;
+      previousSectionGroupId = "";
       sectionIndex = -1;
       numberInSection = 0;
     }
 
-    const showSection = !isSplitContinuation && Boolean(sectionTitle) && sectionTitle !== previousSection;
+    const showSection =
+      !isSplitContinuation &&
+      Boolean(sectionTitle) &&
+      sectionGroupId !== previousSectionGroupId;
 
     if (!isSplitContinuation) {
       if (showSection) {
         sectionIndex += 1;
-        previousSection = sectionTitle;
+        previousSectionGroupId = sectionGroupId;
         numberInSection = 0;
       }
       numberInSection += 1;
@@ -529,9 +538,26 @@ function packPages(
   };
   let used = 0;
   let limit = pageLimit(options.orientation, 0);
+
+  const repeatedTableHeadingHeight = (block: PreviewBlock, previous?: PreviewBlock) => {
+    if (
+      previous?.type === block.type ||
+      (block.type !== "development-row" && block.type !== "activity-row") ||
+      !isTableSectionContinuation(block)
+    ) {
+      return 0;
+    }
+
+    return block.type === "development-row" ? 88 : 80;
+  };
+
   for (const block of blocks) {
     const hasContent = current.blocks.length > 0;
-    const wouldOverflow = used + block.estimatedHeight > limit;
+    let sectionHeadingHeight = repeatedTableHeadingHeight(
+      block,
+      current.blocks[current.blocks.length - 1],
+    );
+    const wouldOverflow = used + sectionHeadingHeight + block.estimatedHeight > limit;
     const shouldBreakForOverflow = wouldOverflow && hasContent;
 
     if (shouldBreakForOverflow) {
@@ -547,10 +573,11 @@ function packPages(
       };
       used = 0;
       limit = pageLimit(options.orientation, pages.length);
+      sectionHeadingHeight = repeatedTableHeadingHeight(block);
     }
 
     current.blocks.push(block);
-    used += block.estimatedHeight;
+    used += sectionHeadingHeight + block.estimatedHeight;
   }
 
   pages.push(current);

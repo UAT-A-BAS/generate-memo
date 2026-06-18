@@ -48,13 +48,13 @@ function SortableItem<T extends Identified>({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-2 rounded-md border bg-white p-2 shadow-sm ${
+      className={`grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-xl border bg-white p-2 shadow-sm ${
         isDragging ? "border-slate-900 shadow-md" : "border-slate-300"
       }`}
     >
       <button
         type="button"
-        className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
         aria-label={`Ubah urutan ${itemLabel(item, index)}`}
         {...attributes}
         {...listeners}

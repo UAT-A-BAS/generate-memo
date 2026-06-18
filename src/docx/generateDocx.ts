@@ -49,7 +49,10 @@ import {
   WORD_LINE_MULTIPLE_115,
 } from "@/documentLayout";
 import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/paginate";
-import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import {
+  formatDateRangeID,
+  formatDateRangeNonBreakingID,
+} from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import {
@@ -62,7 +65,7 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 6,
+  size: 4,
   color: "0F172A",
 };
 
@@ -84,7 +87,7 @@ const noTableBorder = {
 
 const sectionTopBorder = {
   style: BorderStyle.SINGLE,
-  size: 6,
+  size: 4,
   color: "1F2937",
 };
 const LIST_TEXT_GAP = "      ";
@@ -242,7 +245,10 @@ function dashGapParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
 ) {
-  return paragraph(`-${LIST_TEXT_GAP}${text}`, options);
+  return paragraph(`- ${text}`, {
+    ...options,
+    indent: { left: 300, hanging: 300, ...options.indent },
+  });
 }
 
 function tabAlignedParagraph(
@@ -640,7 +646,6 @@ function developmentTable(
                   mergedCell(
                     richTextToDocxParagraphs(block.row.item, {
                       size: 22,
-                      alignment: itemMerge.span > 1 ? AlignmentType.CENTER : undefined,
                     }),
                     numbered
                       ? DEVELOPMENT_COLUMN_WIDTHS[1]
@@ -654,8 +659,6 @@ function developmentTable(
                   mergedCell(
                     richTextToDocxParagraphs(block.row.description, {
                       size: 22,
-                      alignment:
-                        descriptionMerge.span > 1 ? AlignmentType.CENTER : undefined,
                     }),
                     numbered
                       ? DEVELOPMENT_COLUMN_WIDTHS[2]
@@ -729,8 +732,6 @@ function activityTable(
                   mergedCell(
                     richTextToDocxParagraphs(block.row.activity, {
                       size: 22,
-                      alignment:
-                        activityMerge.span > 1 ? AlignmentType.CENTER : undefined,
                     }),
                     numbered
                       ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1]
@@ -848,8 +849,6 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
                     spacingBefore: 0,
                     spacingAfter: 0,
                     line: WORD_LINE_MULTIPLE_108,
-                    alignment:
-                      scenarioMerge.span > 1 ? AlignmentType.CENTER : undefined,
                   }),
                   APPENDIX_COLUMN_WIDTHS[1],
                   scenarioMerge,
@@ -864,7 +863,6 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
                     spacingBefore: 0,
                     spacingAfter: 0,
                     line: WORD_LINE_MULTIPLE_108,
-                    alignment: resultMerge.span > 1 ? AlignmentType.CENTER : undefined,
                   }),
                   APPENDIX_COLUMN_WIDTHS[2],
                   resultMerge,
@@ -937,7 +935,7 @@ function leadingSectionSpacer(sectionRule: SectionRule): FileChild[] {
   return [
     new Paragraph({
       spacing: {
-        before: sectionRule === "full" ? 300 : sectionRule === "none" ? 0 : 240,
+        before: sectionRule === "full" ? 40 : sectionRule === "none" ? 0 : 240,
         after: 0,
         line: 1,
         lineRule: LineRuleType.EXACT,
@@ -964,7 +962,6 @@ function blockChildren(
   block: PreviewBlock,
   sectionRule: SectionRule = "content",
   options: {
-    continuationMainPage?: boolean;
     firstBlockOnContinuation?: boolean;
   } = {},
 ): FileChild[] {
@@ -1039,7 +1036,7 @@ function blockChildren(
             spacing: wordSpacing(),
             children: [
               run(`${draft.metadata.perihal} akan dilaksanakan pada tanggal `, { size: 22 }),
-              run(formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate), { bold: true, size: 22 }),
+              run(formatDateRangeNonBreakingID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate), { bold: true, size: 22 }),
               run(".", { size: 22 }),
             ],
           }),
@@ -1090,7 +1087,7 @@ function blockChildren(
       return [
         closingParagraph(
           "Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.",
-          !options.continuationMainPage,
+          true,
         ),
         ...draft.signers.map((signer) =>
           new Paragraph({
@@ -1193,7 +1190,7 @@ function pageChildren(
       children.push(
         ...leadingSectionSpacer(sectionRule),
         previewSection(title, [
-          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.perihal}:`, {
+          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
             size: 22,
             spacingAfter: 120,
           }),
@@ -1236,7 +1233,6 @@ function pageChildren(
 
     children.push(
       ...blockChildren(draft, block, isSectionBlock(block) ? nextSectionRule() : "content", {
-        continuationMainPage: Boolean(page.continuationTitle && page.kind === "main"),
         firstBlockOnContinuation: Boolean(
           page.continuationTitle &&
           page.kind === "main" &&

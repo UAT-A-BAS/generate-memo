@@ -114,6 +114,10 @@ main[data-suite-ui] :where(input:not([type="checkbox"]):not([type="radio"]), sel
   cursor: not-allowed;
 }
 
+main[data-suite-ui] select[data-placeholder-selected="true"] {
+  color: #94a3b8 !important;
+}
+
 main[data-suite-ui] :where(label, legend) {
   color: var(--suite-ink-soft);
   font-weight: 700;
@@ -176,11 +180,13 @@ main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich
   white-space: pre-line;
 }
 
-.validation-jump-highlight {
+.validation-jump-highlight,
+.field-jump-highlight {
   border-radius: 8px;
-  outline: 3px solid #dc2626;
+  outline: 3px solid #facc15;
   outline-offset: 3px;
-  box-shadow: 0 0 0 6px rgb(220 38 38 / 0.12);
+  background-color: rgb(254 249 195 / 0.72);
+  box-shadow: 0 0 0 6px rgb(250 204 21 / 0.18);
 }
 
 .review-target-highlight {
@@ -188,6 +194,35 @@ main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich
   outline: 3px solid #185abd;
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgb(24 90 189 / 0.14);
+}
+
+.preview-field-target,
+[data-preview-field-id] {
+  cursor: pointer;
+  transition: background-color 160ms ease, outline-color 160ms ease;
+}
+
+.preview-field-target:hover,
+[data-preview-field-id]:hover {
+  background-color: rgb(254 249 195 / 0.36);
+}
+
+.preview-field-target:focus-visible,
+[data-preview-field-id]:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid #ca8a04;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .preview-field-target,
+  [data-preview-field-id] {
+    transition: none;
+  }
 }
 
 body.is-review-commenting [data-field-id] {

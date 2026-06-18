@@ -62,9 +62,21 @@ export function richTextToPlainText(doc?: RichTextDoc) {
   return doc.content.map(nodeText).join("\n").trim();
 }
 
+export function trimTrailingEmptyRichTextNodes(doc: RichTextDoc): RichTextDoc {
+  const content = [...doc.content];
+
+  while (content.length > 1) {
+    const last = content.at(-1);
+    if (!last || last.type !== "paragraph" || nodeText(last).trim()) break;
+    content.pop();
+  }
+
+  return content.length === doc.content.length ? doc : { ...doc, content };
+}
+
 export function richTextToHtml(doc?: RichTextDoc) {
   if (!doc) return "";
-  return doc.content.map(nodeHtml).join("");
+  return trimTrailingEmptyRichTextNodes(doc).content.map(nodeHtml).join("");
 }
 
 export function cloneRichText(doc: RichTextDoc): RichTextDoc {
