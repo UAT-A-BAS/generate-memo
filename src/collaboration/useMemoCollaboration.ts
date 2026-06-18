@@ -35,7 +35,7 @@ type PresenceMessage = {
 };
 
 const ROOM_PARAM = "room";
-const WORKER_BASE_URL = "https://generate-berita-acara-collab.alex-marcello08.workers.dev";
+const WORKER_BASE_URL = "https://generate-memo-collab.alex-marcello08.workers.dev";
 const DOC_PREFIX = "generate-memo";
 const LOCAL_ORIGIN = "memo-builder-local";
 const REMOTE_ORIGIN = "memo-builder-remote";

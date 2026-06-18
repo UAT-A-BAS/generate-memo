@@ -1,0 +1,13 @@
+name = "generate-memo-collab"
+main = "workers/collab/worker.js"
+compatibility_date = "2026-06-18"
+workers_dev = true
+
+[durable_objects]
+bindings = [
+  { name = "MEMO_ROOMS", class_name = "MemoRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MemoRoom"]

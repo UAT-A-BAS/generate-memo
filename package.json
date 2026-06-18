@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:collab": "npx wrangler@4.101.0 dev --config wrangler.collab.toml",
+    "deploy:collab": "npx wrangler@4.101.0 deploy --config wrangler.collab.toml",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
