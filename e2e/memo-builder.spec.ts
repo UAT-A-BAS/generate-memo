@@ -202,10 +202,14 @@ test("exports DOCX from current draft", async ({ page }) => {
   const headingTable = documentTables(xml)[0];
   expect(headingTable).toContain('w:val="nil"');
   expect(headingTable).not.toContain('w:val="none"');
-  expect(xml).toMatch(/<w:t[^>]*>- Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
-  const attachmentIndex = xml.indexOf("- Draft SE Perihal");
-  const attachmentParagraph = xml.slice(xml.lastIndexOf("<w:p>", attachmentIndex), attachmentIndex);
+  const attachmentIndex = xml.indexOf("Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan");
+  const attachmentParagraph = xml.slice(
+    xml.lastIndexOf("<w:p>", attachmentIndex),
+    xml.indexOf("</w:p>", attachmentIndex) + "</w:p>".length,
+  );
+  expect(attachmentParagraph).toContain('<w:tab w:val="left" w:pos="300"/>');
   expect(attachmentParagraph).toContain('<w:ind w:left="300" w:hanging="300"/>');
+  expect(attachmentParagraph).toContain("<w:tab/>");
   expect(xml).toMatch(/<w:t[^>]*>Nama PIC \u2013 pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>Kepala KCU Pluit<\/w:t>/);
   expect(xml).toContain('<w:type w:val="continuous"/>');
@@ -223,6 +227,76 @@ test("exports DOCX from current draft", async ({ page }) => {
   const continuationContext = xml.slice(Math.max(0, continuationIndex - 900), continuationIndex + 100);
   expect(continuationContext).toContain("<w:pageBreakBefore/>");
   expect(continuationContext).toContain('<w:t xml:space="preserve"></w:t>');
+});
+
+test("DOCX list rows use the same fixed bullet column as preview", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    recipients: [
+      completeDraft().recipients[0],
+      {
+        id: "recipient-second",
+        gender: "Ibu",
+        name: "Praptiwi",
+        position: "Experience Design - Loan Operations & Credit Process Bureau Head B",
+      },
+    ],
+    contacts: [
+      completeDraft().contacts[0],
+      { id: "contact-second", name: "Alvyn", email: "alvyn@example.com" },
+    ],
+    ccRecipients: [
+      completeDraft().ccRecipients[0],
+      {
+        id: "cc-second",
+        gender: "",
+        name: "",
+        position: "Operation Strategy & Design Bureau F",
+      },
+    ],
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const download = await downloadPromise;
+  const xml = await documentXmlFrom(download);
+  const paragraphContaining = (text: string) => {
+    const textIndex = xml.indexOf(text);
+    expect(textIndex).toBeGreaterThan(-1);
+    return xml.slice(
+      xml.lastIndexOf("<w:p>", textIndex),
+      xml.indexOf("</w:p>", textIndex) + "</w:p>".length,
+    );
+  };
+
+  for (const text of [
+    "Kepala Operasi Cabang Pluit",
+    "Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan",
+    "Nama PIC",
+  ]) {
+    const paragraphXml = paragraphContaining(text);
+    const expectedPosition = text === "Kepala Operasi Cabang Pluit" ? 311 : 300;
+    expect(paragraphXml).toContain(
+      `<w:tab w:val="left" w:pos="${expectedPosition}"/>`,
+    );
+    expect(paragraphXml).toContain(
+      `<w:ind w:left="${expectedPosition}" w:hanging="300"/>`,
+    );
+    expect(paragraphXml).toContain("<w:tab/>");
+  }
+
+  const ccParagraph = paragraphContaining("Kepala KCU Pluit");
+  expect(ccParagraph).toContain('<w:tab w:val="left" w:pos="2400"/>');
+  expect(ccParagraph).toContain('<w:ind w:left="2400" w:right="0" w:hanging="300"/>');
+  expect(ccParagraph).toContain("<w:tab/>");
+
+  expect(paragraphContaining("U.p. Yth. Ibu Agustina")).toContain(
+    '<w:ind w:left="311"/>',
+  );
+  expect(paragraphContaining("U.p. Yth. Bapak Verry Iskandar")).toContain(
+    '<w:ind w:left="2400" w:right="0"/>',
+  );
 });
 
 test("uses validation content controls in every memo header", async ({ page }) => {

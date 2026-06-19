@@ -15,6 +15,8 @@ import {
   TableCell,
   TableLayoutType,
   TableRow,
+  Tab,
+  TabStopType,
   TextRun,
   UnderlineType,
   VerticalAlign,
@@ -90,8 +92,7 @@ const sectionTopBorder = {
   size: 4,
   color: "1F2937",
 };
-const LIST_TEXT_GAP = "      ";
-const LIST_TEXT_ALIGNMENT_GAP = ` ${LIST_TEXT_GAP}`;
+const LIST_TEXT_OFFSET = 300;
 const MAIN_BODY_TABLE_WIDTH = MAIN_BODY_CONTENT_WIDTH;
 
 type SectionRule = "full" | "content" | "none";
@@ -244,9 +245,24 @@ function dashGapParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
 ) {
-  return paragraph(`- ${text}`, {
-    ...options,
-    indent: { left: 300, hanging: 300, ...options.indent },
+  const indent = options.indent ?? {};
+  const textPosition = (indent.left ?? 0) + LIST_TEXT_OFFSET;
+
+  return new Paragraph({
+    alignment: options.align,
+    keepNext: options.keepNext,
+    indent: { ...indent, left: textPosition, hanging: LIST_TEXT_OFFSET },
+    tabStops: [{ type: TabStopType.LEFT, position: textPosition }],
+    spacing: wordSpacing({
+      before: options.spacingBefore,
+      after: options.spacingAfter,
+      line: options.line,
+    }),
+    children: [
+      run("-", options),
+      new TextRun({ children: [new Tab()] }),
+      ...multilineRuns(text, options),
+    ],
   });
 }
 
@@ -254,7 +270,11 @@ function tabAlignedParagraph(
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
 ) {
-  return paragraph(`${LIST_TEXT_ALIGNMENT_GAP}${text}`, options);
+  const indent = options.indent ?? {};
+  return paragraph(text, {
+    ...options,
+    indent: { ...indent, left: (indent.left ?? 0) + LIST_TEXT_OFFSET },
+  });
 }
 
 function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph>[1] = {}) {
