@@ -198,7 +198,7 @@ main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich
 
 .review-comments-font,
 .review-comments-font * {
-  font-size: 11px !important;
+  font-size: 18px !important;
 }
 
 .preview-field-target,

@@ -739,7 +739,7 @@ test("tembusan shows mandatory markers", async ({ page }) => {
   const salutation = ccPanel.getByLabel("Sapaan");
   const placeholder = salutation.locator('option[value=""]');
   await expect(placeholder).toHaveAttribute("disabled", "");
-  await expect(placeholder).toHaveAttribute("hidden", "");
+  await expect(placeholder).not.toHaveAttribute("hidden", "");
   await expect(salutation).toHaveClass(/text-slate-400/);
 
   await salutation.selectOption("Bapak");
@@ -764,7 +764,12 @@ test("all salutation fields start with the Sapaan placeholder", async ({ page })
     const placeholder = salutation.locator('option[value=""]');
     await expect(placeholder).toHaveText("Sapaan");
     await expect(placeholder).toHaveAttribute("disabled", "");
-    await expect(placeholder).toHaveAttribute("hidden", "");
+    await expect(placeholder).not.toHaveAttribute("hidden", "");
+    expect(
+      await salutation.evaluate((element) =>
+        (element as HTMLSelectElement).selectedOptions[0]?.textContent,
+      ),
+    ).toBe("Sapaan");
     await expect(salutation.locator('option[value="Yth."]')).toHaveCount(0);
     await expect(salutation.locator("option")).toHaveText([
       "Sapaan",
@@ -1099,18 +1104,64 @@ test("DOCX data tables use the A4 content grid without spacer columns", async ({
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const developmentTable = documentTables(xml).find(
-    (table) =>
-      table.includes(">Pengembangan</w:t>") &&
-      table.includes(">Keterangan</w:t>"),
-  );
+  const titleIndex = xml.indexOf(">Lingkup Pengembangan</w:t>");
+  const headerIndex = xml.indexOf(">Pengembangan</w:t>", titleIndex + 1);
+  const tableStart = xml.lastIndexOf("<w:tbl>", headerIndex);
+  const tableEnd = xml.indexOf("</w:tbl>", headerIndex) + "</w:tbl>".length;
+  const developmentTable = xml.slice(tableStart, tableEnd);
 
   expect(developmentTable).toBeTruthy();
   expect(developmentTable).toMatch(/<w:tblW w:type="dxa" w:w="7166"\/>/);
-  expect(developmentTable).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
+  expect(developmentTable).not.toContain("<w:tblInd");
   expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(2);
   expect(developmentTable).toContain('<w:gridCol w:w="2006"/>');
   expect(developmentTable).toContain('<w:gridCol w:w="5160"/>');
+});
+
+test("DOCX keeps development and activity tables inside their preview section grid", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+
+  for (const [title, header] of [
+    ["Lingkup Pengembangan", "Pengembangan"],
+    ["Aktivitas Cabang dan Unit Kerja", "Aktivitas"],
+  ]) {
+    const titleIndex = xml.indexOf(`>${title}</w:t>`);
+    const headerIndex = xml.indexOf(`>${header}</w:t>`, titleIndex + title.length);
+    const sectionTableEnd = xml.indexOf("</w:tbl>", titleIndex);
+    expect(titleIndex).toBeGreaterThan(-1);
+    expect(headerIndex).toBeGreaterThan(titleIndex);
+    expect(headerIndex).toBeLessThan(sectionTableEnd);
+  }
+});
+
+test("DOCX keeps safe preview spacing before data tables and access links", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+
+  for (const text of [
+    "Berikut adalah fitur pengembangan pada",
+    "Berikut ini adalah aktivitas yang perlu dilakukan",
+  ]) {
+    const textIndex = xml.indexOf(text);
+    const paragraphStart = xml.lastIndexOf("<w:p>", textIndex);
+    const paragraphEnd = xml.indexOf("</w:p>", textIndex);
+    expect(xml.slice(paragraphStart, paragraphEnd)).toContain('w:after="120"');
+  }
+
+  const accessIntroIndex = xml.indexOf("dapat diakses melalui link berikut:");
+  const accessUrlIndex = xml.indexOf("https://bdswebg2-pilot", accessIntroIndex);
+  expect(xml.lastIndexOf("<w:p>", accessUrlIndex)).toBe(
+    xml.lastIndexOf("<w:p>", accessIntroIndex),
+  );
 });
 
 test("DOCX continuation and section rules share the same A4 content boundary", async ({ page }) => {
@@ -1720,7 +1771,7 @@ test("closing rule is omitted only when closing starts a page", async ({ page })
   await expect(closing).toHaveCSS("border-top-width", "1px");
 });
 
-test("review comments use 11px text throughout", async ({ page }) => {
+test("review comments use 18px text throughout", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const createdAt = "2026-06-18T13:48:00.000Z";
   await importDraft(page, {
@@ -1748,6 +1799,6 @@ test("review comments use 11px text throughout", async ({ page }) => {
     popup.locator("[data-review-reply-body]"),
     popup.getByRole("button", { name: "Lihat field: Nama Project" }),
   ]) {
-    await expect(target).toHaveCSS("font-size", "11px");
+    await expect(target).toHaveCSS("font-size", "18px");
   }
 });

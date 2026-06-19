@@ -203,30 +203,29 @@ function hyperlinkTarget(value: string) {
   return /^[a-z][a-z\d+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-function hyperlinkParagraph(
+function hyperlinkAfterTextParagraph(
+  introduction: string,
   text: string,
   options: Parameters<typeof paragraph>[1] = {},
 ) {
-  const trimmed = text.trim();
-  const target = hyperlinkTarget(trimmed);
-
-  if (!target) {
-    return paragraph("-", options);
-  }
-
+  const target = hyperlinkTarget(text);
   return new Paragraph({
-    alignment: options.align,
-    indent: options.indent,
     spacing: wordSpacing({
       before: options.spacingBefore,
       after: options.spacingAfter,
       line: options.line,
     }),
     children: [
-      new ExternalHyperlink({
-        link: target,
-        children: multilineRuns(trimmed, { ...options, underline: true }),
-      }),
+      run(introduction, options),
+      new TextRun({ break: 1 }),
+      ...(target
+        ? [
+            new ExternalHyperlink({
+              link: target,
+              children: multilineRuns(text.trim(), { ...options, underline: true }),
+            }),
+          ]
+        : [run("-", options)]),
     ],
   });
 }
@@ -389,10 +388,14 @@ function bodyRow(options: ConstructorParameters<typeof TableRow>[0]) {
   return new TableRow(options);
 }
 
-function bodyTable(rows: TableRow[], columnWidths: number[]) {
+function bodyTable(
+  rows: TableRow[],
+  columnWidths: number[],
+  indent = BODY_COLUMN_INDENT,
+) {
   return new Table({
     width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
-    indent: { size: BODY_COLUMN_INDENT, type: WidthType.DXA },
+    indent: indent ? { size: indent, type: WidthType.DXA } : undefined,
     columnWidths: columnWidths.map((columnWidth) =>
       Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
     ),
@@ -597,6 +600,7 @@ function ccRecipientParagraphs(recipients: Recipient[], totalRecipients = recipi
 function developmentTable(
   rows: Extract<PreviewBlock, { type: "development-row" }>[],
   numbered: boolean,
+  indent = BODY_COLUMN_INDENT,
 ) {
   const columnWidths = numbered
     ? Array.from(DEVELOPMENT_COLUMN_WIDTHS)
@@ -671,12 +675,13 @@ function developmentTable(
         );
       },
     ),
-  ], columnWidths);
+  ], columnWidths, indent);
 }
 
 function activityTable(
   rows: Extract<PreviewBlock, { type: "activity-row" }>[],
   numbered: boolean,
+  indent = BODY_COLUMN_INDENT,
 ) {
   const columnWidths = numbered
     ? Array.from(ACTIVITY_NUMBERED_COLUMN_WIDTHS)
@@ -771,7 +776,7 @@ function activityTable(
         );
       },
     ),
-  ], columnWidths);
+  ], columnWidths, indent);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -1047,8 +1052,11 @@ function blockChildren(
       return [
         ...leadingSectionSpacer(sectionRule),
         previewSection(`Akses Link ${draft.metadata.perihal}`, [
-          paragraph(`${draft.metadata.perihal} dapat diakses melalui link berikut:`, { size: 22 }),
-          hyperlinkParagraph(draft.metadata.accessLink || "-", { size: 22, underline: true }),
+          hyperlinkAfterTextParagraph(
+            `${draft.metadata.perihal} dapat diakses melalui link berikut:`,
+            draft.metadata.accessLink,
+            { size: 22 },
+          ),
         ], sectionRule),
       ];
     case "attachments":
@@ -1194,10 +1202,10 @@ function pageChildren(
         previewSection(title, [
           paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
             size: 22,
-            spacingAfter: 0,
+            spacingAfter: 120,
           }),
+          developmentTable(developmentRows, draft.developmentRows.length > 1, 0),
         ], sectionRule),
-        developmentTable(developmentRows, draft.developmentRows.length > 1),
         tableBottomSpacer(),
       );
       index = nextIndex;
@@ -1216,10 +1224,10 @@ function pageChildren(
         previewSection(title, [
           paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
             size: 22,
-            spacingAfter: 0,
+            spacingAfter: 120,
           }),
+          activityTable(activityRows, draft.activities.length > 1, 0),
         ], sectionRule),
-        activityTable(activityRows, draft.activities.length > 1),
         tableBottomSpacer(),
       );
       index = nextIndex;
