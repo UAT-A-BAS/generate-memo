@@ -231,6 +231,7 @@ function renderBlock(
   draft: MemoDraft,
   block: PreviewBlock,
   sectionRule: SectionRule = "content",
+  firstBlockOnPage = false,
 ) {
   switch (block.type) {
     case "memo-heading":
@@ -342,8 +343,11 @@ function renderBlock(
     case "signature":
       return (
         <div
+          data-preview-closing
           data-preview-field-id={draft.signers[0] ? `signer-name-${draft.signers[0].id}` : undefined}
-          className="ml-[140px] mt-3 border-t border-slate-800 pt-2 text-[14.67px] leading-[1.08]"
+          className={`ml-[140px] text-[14.67px] leading-[1.08] ${
+            firstBlockOnPage ? "mt-0 pt-0" : "mt-3 border-t border-slate-800 pt-2"
+          }`}
         >
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
           <div className="mt-4">
@@ -699,7 +703,12 @@ function renderGroupedBlocks(
 
     rendered.push(
       <div key={block.id}>
-        {renderBlock(draft, block, isPreviewSectionBlock(block) ? nextSectionRule() : "content")}
+        {renderBlock(
+          draft,
+          block,
+          isPreviewSectionBlock(block) ? nextSectionRule() : "content",
+          index === 0,
+        )}
       </div>,
     );
     index += 1;

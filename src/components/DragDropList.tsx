@@ -28,6 +28,9 @@ type DragDropListProps<T extends Identified> = {
   onReorder: (items: T[]) => void;
   renderItem: (item: T, index: number) => React.ReactNode;
   itemLabel: (item: T, index: number) => string;
+  listId?: string;
+  withContext?: boolean;
+  onCrossReorder?: (event: DragEndEvent) => void;
 };
 
 function SortableItem<T extends Identified>({
@@ -35,14 +38,16 @@ function SortableItem<T extends Identified>({
   index,
   renderItem,
   itemLabel,
+  listId,
 }: {
   item: T;
   index: number;
   renderItem: (item: T, index: number) => React.ReactNode;
   itemLabel: (item: T, index: number) => string;
+  listId: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+    useSortable({ id: item.id, data: { listId } });
 
   return (
     <div
@@ -71,6 +76,9 @@ export function DragDropList<T extends Identified>({
   onReorder,
   renderItem,
   itemLabel,
+  listId = "default",
+  withContext = true,
+  onCrossReorder,
 }: DragDropListProps<T>) {
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -83,26 +91,41 @@ export function DragDropList<T extends Identified>({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
+    if (
+      active.data.current?.listId !== listId ||
+      over.data.current?.listId !== listId
+    ) {
+      onCrossReorder?.(event);
+      return;
+    }
+
     const oldIndex = items.findIndex((item) => item.id === active.id);
     const newIndex = items.findIndex((item) => item.id === over.id);
     onReorder(arrayMove(items, oldIndex, newIndex));
   }
 
+  const content = (
+    <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+      <div className="grid min-w-0 gap-3">
+        {items.map((item, index) => (
+          <SortableItem
+            key={item.id}
+            item={item}
+            index={index}
+            renderItem={renderItem}
+            itemLabel={itemLabel}
+            listId={listId}
+          />
+        ))}
+      </div>
+    </SortableContext>
+  );
+
+  if (!withContext) return content;
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-        <div className="grid min-w-0 gap-3">
-          {items.map((item, index) => (
-            <SortableItem
-              key={item.id}
-              item={item}
-              index={index}
-              renderItem={renderItem}
-              itemLabel={itemLabel}
-            />
-          ))}
-        </div>
-      </SortableContext>
+      {content}
     </DndContext>
   );
 }

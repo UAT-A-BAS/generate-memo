@@ -196,10 +196,12 @@ test("exports DOCX from current draft", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const download = await downloadPromise;
-
   expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4 3 0).docx");
 
   const { xml, rels } = await docxPartsFrom(download);
+  const headingTable = documentTables(xml)[0];
+  expect(headingTable).toContain('w:val="nil"');
+  expect(headingTable).not.toContain('w:val="none"');
   expect(xml).toMatch(/<w:t[^>]*>- Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan<\/w:t>/);
   const attachmentIndex = xml.indexOf("- Draft SE Perihal");
   const attachmentParagraph = xml.slice(xml.lastIndexOf("<w:p>", attachmentIndex), attachmentIndex);
@@ -1044,7 +1046,6 @@ test("consecutive duplicate table values keep each column default alignment", as
   expect((xml.match(/<w:vMerge w:val="restart"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
   expect((xml.match(/<w:vMerge w:val="continue"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
   expect(xml).not.toContain('w:val="single" w:color="FFFFFF"');
-  expect(xml).not.toContain('w:val="nil"');
   expect(xml).toContain('w:color="0F172A"');
   for (const text of [
     "Nilai pengembangan sama",
@@ -1054,6 +1055,9 @@ test("consecutive duplicate table values keep each column default alignment", as
     "Hasil sama",
   ]) {
     const textIndex = xml.indexOf(text);
+    const cellStart = xml.lastIndexOf("<w:tc>", textIndex);
+    const cellEnd = xml.indexOf("</w:tc>", textIndex);
+    expect(xml.slice(cellStart, cellEnd)).not.toContain('w:val="nil"');
     const paragraphStart = xml.lastIndexOf("<w:p>", textIndex);
     const paragraphEnd = xml.indexOf("</w:p>", textIndex);
     const paragraphXml = xml.slice(paragraphStart, paragraphEnd);
@@ -1600,5 +1604,150 @@ test("review comments layout matches unresolved and resolved references", async 
   const actions = resolved.locator("[data-review-comment-action]");
   for (let index = 0; index < await actions.count(); index += 1) {
     expect((await actions.nth(index).boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("scenario header aligns its delete action", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const row = page.locator("[data-scenario-row]").first();
+  const header = row.locator("[data-scenario-header]");
+  const remove = row.getByRole("button", { name: "Hapus skenario" });
+  await expect(row).toHaveCount(1);
+
+  const headerBox = await header.boundingBox();
+  const removeBox = await remove.boundingBox();
+  expect(headerBox).toBeTruthy();
+  expect(removeBox).toBeTruthy();
+  expect(Math.abs(
+    (headerBox?.y ?? 0) + (headerBox?.height ?? 0) / 2 -
+    ((removeBox?.y ?? 0) + (removeBox?.height ?? 0) / 2),
+  )).toBeLessThanOrEqual(2);
+});
+
+test("appendix sections can move between date groups", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      {
+        ...scenarioBase,
+        id: "cross-date-alpha",
+        dateGroupId: "cross-date-a",
+        sectionGroupId: "cross-section-alpha",
+        section: "Bagian Alpha",
+      },
+      {
+        ...scenarioBase,
+        id: "cross-date-beta",
+        dateGroupId: "cross-date-b",
+        sectionGroupId: "cross-section-beta",
+        startDate: "2026-06-01",
+        endDate: "2026-06-02",
+        section: "Bagian Beta",
+      },
+    ],
+  });
+
+  const dateGroups = page.locator("[data-scenario-date-group]");
+  await expect(dateGroups).toHaveCount(2);
+  const source = dateGroups.nth(0).getByRole("button", { name: "Ubah urutan bagian A" });
+  const target = dateGroups.nth(1).getByRole("button", { name: "Ubah urutan bagian A" });
+  await source.dragTo(target);
+
+  await expect(dateGroups).toHaveCount(1);
+  await expect(dateGroups.nth(0)).toContainText("Bagian Alpha");
+  await expect(dateGroups.nth(0)).toContainText("Bagian Beta");
+});
+
+test("editor and preview split can be resized", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("http://localhost:3002");
+
+  const editor = page.locator("[data-editor-pane]");
+  const separator = page.getByRole("separator", { name: "Geser pembagi input dan preview" });
+  const before = await editor.boundingBox();
+  const separatorBox = await separator.boundingBox();
+  expect(before).toBeTruthy();
+  expect(separatorBox).toBeTruthy();
+
+  await page.mouse.move(
+    (separatorBox?.x ?? 0) + (separatorBox?.width ?? 0) / 2,
+    (separatorBox?.y ?? 0) + 120,
+  );
+  await page.mouse.down();
+  await page.mouse.move((separatorBox?.x ?? 0) + 160, (separatorBox?.y ?? 0) + 120);
+  await page.mouse.up();
+
+  const after = await editor.boundingBox();
+  expect((after?.width ?? 0) - (before?.width ?? 0)).toBeGreaterThan(100);
+});
+
+test("closing rule is omitted only when closing starts a page", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const closing = page.locator("[data-preview-closing]");
+  await expect(closing).toHaveCount(1);
+  await expect(closing).toHaveCSS("border-top-width", "0px");
+
+  const firstDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const firstXml = await documentXmlFrom(await firstDownloadPromise);
+  const firstClosingIndex = firstXml.indexOf("Demikian informasi ini kami sampaikan");
+  const firstClosingParagraph = firstXml.slice(
+    firstXml.lastIndexOf("<w:p>", firstClosingIndex),
+    firstXml.indexOf("</w:p>", firstClosingIndex),
+  );
+  expect(firstClosingParagraph).not.toContain("<w:top");
+  expect(firstClosingParagraph).toContain('w:before="0"');
+  expect(firstClosingParagraph).not.toContain('w:before="220"');
+
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      accessLinkEnabled: false,
+      accessLink: "",
+    },
+    developmentRows: [],
+    activities: [],
+    attachmentsEnabled: false,
+    attachments: "",
+  });
+  await expect(closing).toHaveCSS("border-top-width", "1px");
+});
+
+test("review comments use 11px text throughout", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const createdAt = "2026-06-18T13:48:00.000Z";
+  await importDraft(page, {
+    ...completeDraft(),
+    reviewComments: [{
+      id: "review-font",
+      type: "field",
+      targetId: "projectName",
+      targetLabel: "Nama Project",
+      path: [],
+      text: "Ukuran komentar",
+      author: "Reviewer",
+      resolved: false,
+      createdAt,
+      updatedAt: createdAt,
+      replies: [{ id: "reply-font", text: "Ukuran balasan", author: "Reviewer", createdAt }],
+    }],
+  });
+
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  const popup = page.locator("#review-comments-popup");
+  for (const target of [
+    popup.getByRole("heading", { name: "Komentar Review" }),
+    popup.locator("[data-review-comment-body]"),
+    popup.locator("[data-review-reply-body]"),
+    popup.getByRole("button", { name: "Lihat field: Nama Project" }),
+  ]) {
+    await expect(target).toHaveCSS("font-size", "11px");
   }
 });

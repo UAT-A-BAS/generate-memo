@@ -70,7 +70,7 @@ const border = {
 };
 
 const hiddenBorder = {
-  style: BorderStyle.NONE,
+  style: BorderStyle.NIL,
   size: 0,
 };
 const noBorder = {
@@ -262,7 +262,7 @@ function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph
   return paragraph(text, {
     ...options,
     indent: { left: WORD_INDENT_002_CM, ...options.indent },
-    spacingBefore: options.spacingBefore ?? 80,
+    spacingBefore: options.spacingBefore ?? 40,
     spacingAfter: options.spacingAfter ?? 0,
     line: options.line ?? WORD_LINE_MULTIPLE_115,
   });
@@ -364,7 +364,7 @@ function previewSection(title: string, content: FileChild[], rule: SectionRule =
 function bodyCell(children: Paragraph[], width: number, shaded = false) {
   return new TableCell({
     verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 90, bottom: 90, left: 90, right: 90 },
+    margins: { top: 45, bottom: 45, left: 90, right: 90 },
     shading: shaded ? { fill: TABLE_HEADER_FILL } : undefined,
     width: {
       size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
@@ -410,7 +410,7 @@ function mergedCell(
   return new TableCell({
     rowSpan: merge.span > 1 ? merge.span : undefined,
     verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 90, bottom: 90, left: 90, right: 90 },
+    margins: { top: 45, bottom: 45, left: 90, right: 90 },
     width: {
       size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
       type: WidthType.DXA,
@@ -486,10 +486,10 @@ function appendixParagraph(
   });
 }
 
-function closingParagraph(text: string, withTopBorder = true) {
+function closingParagraph(text: string, withTopBorder = true, spacingBefore = 220) {
   return new Paragraph({
     indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-    spacing: wordSpacing({ before: 220, after: 220 }),
+    spacing: wordSpacing({ before: spacingBefore, after: 220 }),
     border: withTopBorder
       ? {
           top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 8 },
@@ -963,6 +963,7 @@ function blockChildren(
   sectionRule: SectionRule = "content",
   options: {
     firstBlockOnContinuation?: boolean;
+    firstBlockOnPage?: boolean;
   } = {},
 ): FileChild[] {
   switch (block.type) {
@@ -970,7 +971,7 @@ function blockChildren(
       return [
         new Paragraph({
           spacing: {
-            before: 600,
+            before: 120,
             after: 0,
             line: 1,
             lineRule: LineRuleType.EXACT,
@@ -1087,7 +1088,8 @@ function blockChildren(
       return [
         closingParagraph(
           "Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.",
-          true,
+          !options.firstBlockOnPage,
+          options.firstBlockOnPage ? 0 : 220,
         ),
         ...draft.signers.map((signer) =>
           new Paragraph({
@@ -1192,7 +1194,7 @@ function pageChildren(
         previewSection(title, [
           paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
             size: 22,
-            spacingAfter: 120,
+            spacingAfter: 0,
           }),
         ], sectionRule),
         developmentTable(developmentRows, draft.developmentRows.length > 1),
@@ -1214,7 +1216,7 @@ function pageChildren(
         previewSection(title, [
           paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
             size: 22,
-            spacingAfter: 120,
+            spacingAfter: 0,
           }),
         ], sectionRule),
         activityTable(activityRows, draft.activities.length > 1),
@@ -1238,6 +1240,7 @@ function pageChildren(
           page.kind === "main" &&
           index === 0
         ),
+        firstBlockOnPage: index === 0,
       }),
     );
     index += 1;

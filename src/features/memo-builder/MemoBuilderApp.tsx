@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import type { DragEndEvent } from "@dnd-kit/core";
 import {
   Check,
   ChevronDown,
@@ -554,7 +555,7 @@ function ReviewCommentsPopup({
       {open ? (
         <section
           id="review-comments-popup"
-          className="fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(680px,calc(100dvh-110px))] w-[min(720px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#b9c9dc]/95 bg-white/95 p-3.5 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
+          className="review-comments-font fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(680px,calc(100dvh-110px))] w-[min(720px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#b9c9dc]/95 bg-white/95 p-3.5 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-2">
@@ -1408,6 +1409,57 @@ function AppendixPanel({
     setRows(nextGroups.flatMap((group) => group.rows), true);
   }
 
+  function moveSectionAcrossDates(event: DragEndEvent) {
+    if (!event.over) return;
+    const sourceGroup = groups.find((group) => group.id === event.active.data.current?.listId);
+    const targetGroupId = event.over.data.current?.listId === "scenario-dates"
+      ? String(event.over.id)
+      : String(event.over.data.current?.listId ?? "");
+    const targetGroup = groups.find((group) => group.id === targetGroupId);
+    const sourceSection = sourceGroup
+      ? scenarioSectionGroups(sourceGroup.rows).find((section) => section.id === event.active.id)
+      : undefined;
+    if (!sourceGroup || !targetGroup || !sourceSection) return;
+
+    if (sourceGroup.id === targetGroup.id) {
+      const sections = scenarioSectionGroups(sourceGroup.rows);
+      const from = sections.findIndex((section) => section.id === sourceSection.id);
+      const to = sections.findIndex((section) => section.id === event.over?.id);
+      if (from < 0 || to < 0 || from === to) return;
+      const next = [...sections];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      reorderSections(sourceGroup, next);
+      return;
+    }
+
+    const movedIds = new Set(sourceSection.rows.map((row) => row.id));
+    const remaining = rows.filter((row) => !movedIds.has(row.id));
+    const movedRows = sourceSection.rows.map((row) => ({
+      ...row,
+      dateGroupId: targetGroup.id,
+      startDate: targetGroup.startDate,
+      endDate: targetGroup.endDate,
+    }));
+    const targetSectionId = event.over.data.current?.listId === targetGroup.id
+      ? String(event.over.id)
+      : "";
+    const targetIndex = targetSectionId
+      ? remaining.findIndex((row) => (row.sectionGroupId ?? row.id) === targetSectionId)
+      : -1;
+    const insertAt = targetIndex >= 0
+      ? targetIndex
+      : remaining.reduce(
+          (last, row, index) => (row.dateGroupId === targetGroup.id ? index + 1 : last),
+          remaining.length,
+        );
+    setRows([
+      ...remaining.slice(0, insertAt),
+      ...movedRows,
+      ...remaining.slice(insertAt),
+    ], true);
+  }
+
   function reorderSections(
     group: ScenarioDateGroup,
     nextSections: ScenarioSectionGroup[],
@@ -1517,6 +1569,8 @@ function AppendixPanel({
         <DragDropList
           items={groups}
           onReorder={reorderDateGroups}
+          listId="scenario-dates"
+          onCrossReorder={moveSectionAcrossDates}
           itemLabel={(_, index) => `tanggal ${index + 1}`}
           renderItem={(group, groupIndex) => (
             <section
@@ -1547,6 +1601,8 @@ function AppendixPanel({
                   <DragDropList
                     items={scenarioSectionGroups(group.rows)}
                     onReorder={(nextSections) => reorderSections(group, nextSections)}
+                    listId={group.id}
+                    withContext={false}
                     itemLabel={(section) => `bagian ${section.marker}`}
                     renderItem={(section) => (
                       <section className="rounded-xl border border-[#d8e1eb] bg-white p-2">
@@ -1586,28 +1642,31 @@ function AppendixPanel({
                                 renderItem={(row, rowIndex) => (
                                   <details
                                     open={rowIndex === 0}
+                                    data-scenario-row
                                     className="rounded-lg border border-slate-200 bg-slate-50"
                                   >
-                                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+                                    <summary data-scenario-header className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
                                       <span>Skenario {rowIndex + 1}</span>
-                                      <span className="truncate text-xs font-medium text-slate-500">
-                                        {row.pic || "PIC belum diisi"}
-                                      </span>
-                                    </summary>
-                                    <div className="grid gap-3 border-t border-slate-200 p-3">
-                                      <div className="flex justify-end">
+                                      <span className="flex min-w-0 items-center gap-2">
+                                        <span className="truncate text-xs font-medium text-slate-500">
+                                          {row.pic || "PIC belum diisi"}
+                                        </span>
                                         <button
                                           type="button"
-                                          onClick={() => {
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
                                             const nextRows = rows.filter((item) => item.id !== row.id);
                                             setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
                                           }}
-                                          className="flex h-11 w-11 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                                           aria-label="Hapus skenario"
                                         >
                                           <Trash2 size={15} />
                                         </button>
-                                      </div>
+                                      </span>
+                                    </summary>
+                                    <div className="grid gap-3 border-t border-slate-200 p-3">
                                       <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
                                         <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
                                           <RichTextEditor
@@ -1700,6 +1759,7 @@ function AppendixPanel({
 
 export function MemoBuilderApp() {
   const appRootRef = useRef<HTMLElement>(null);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
   const editControlIndexRef = useRef(0);
@@ -1713,6 +1773,7 @@ export function MemoBuilderApp() {
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const [identityDialog, setIdentityDialog] = useState<IdentityDialogState | null>(null);
   const [identityInput, setIdentityInput] = useState("");
+  const [editorPanePercent, setEditorPanePercent] = useState(40);
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
@@ -2254,8 +2315,15 @@ export function MemoBuilderApp() {
         </div>
       </header>
 
-      <div className="grid w-full gap-4 px-3 py-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:px-4">
-        <div className="grid min-w-0 content-start gap-4">
+      <div
+        ref={splitContainerRef}
+        className="grid w-full gap-4 px-3 py-4 xl:grid-cols-[minmax(0,var(--editor-pane))_12px_minmax(0,var(--preview-pane))] xl:gap-0 xl:px-4"
+        style={{
+          "--editor-pane": `${editorPanePercent}fr`,
+          "--preview-pane": `${100 - editorPanePercent}fr`,
+        } as React.CSSProperties}
+      >
+        <div data-editor-pane className="grid min-w-0 content-start gap-4 xl:pr-2">
           <Panel>
             <SectionTitle title="Kepada" />
             <div className="mt-6">
@@ -2463,8 +2531,34 @@ export function MemoBuilderApp() {
           />
         </div>
 
+        <button
+          type="button"
+          role="separator"
+          aria-label="Geser pembagi input dan preview"
+          aria-orientation="vertical"
+          aria-valuemin={25}
+          aria-valuemax={70}
+          aria-valuenow={Math.round(editorPanePercent)}
+          onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+          onPointerMove={(event) => {
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            const bounds = splitContainerRef.current?.getBoundingClientRect();
+            if (!bounds) return;
+            setEditorPanePercent(Math.min(70, Math.max(25, ((event.clientX - bounds.left) / bounds.width) * 100)));
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            setEditorPanePercent((value) => Math.min(70, Math.max(25, value + (event.key === "ArrowRight" ? 2 : -2))));
+          }}
+          className="group hidden cursor-col-resize touch-none items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/30 xl:flex"
+        >
+          <span className="h-14 w-1 rounded-full bg-[#b9c9dc] transition group-hover:bg-[#1b4d78]" />
+        </button>
+
         <aside
-          className="sticky top-[112px] max-h-[calc(100dvh-128px)] min-w-0 self-start overflow-hidden rounded-[22px] border border-[#c9d3df] bg-[#f7f9fc] shadow-[0_18px_40px_rgba(31,45,61,0.08)]"
+          data-preview-pane
+          className="sticky top-[112px] max-h-[calc(100dvh-128px)] min-w-0 self-start overflow-hidden rounded-[22px] border border-[#c9d3df] bg-[#f7f9fc] shadow-[0_18px_40px_rgba(31,45,61,0.08)] xl:ml-2"
         >
           <div className="max-h-[calc(100dvh-128px)] overflow-auto">
             <div className="flex items-center justify-between border-b border-[#c9d3df] bg-white px-5 py-3">

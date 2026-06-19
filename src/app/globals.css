@@ -196,6 +196,11 @@ main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich
   box-shadow: 0 0 0 6px rgb(24 90 189 / 0.14);
 }
 
+.review-comments-font,
+.review-comments-font * {
+  font-size: 11px !important;
+}
+
 .preview-field-target,
 [data-preview-field-id] {
   cursor: pointer;
