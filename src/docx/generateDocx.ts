@@ -33,7 +33,7 @@ import {
   A4_HEIGHT_TWIPS,
   A4_WIDTH_TWIPS,
   APPENDIX_PAGE_MARGINS,
-  APPENDIX_PAGE_CONTENT_WIDTH,
+  APPENDIX_TABLE_WIDTH,
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
   BODY_COLUMN_GAP,
@@ -44,6 +44,7 @@ import {
   DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
   MAIN_PAGE_MARGINS,
   MAIN_BODY_CONTENT_WIDTH,
+  MAIN_BODY_TABLE_WIDTH,
   MAIN_PAGE_CONTENT_WIDTH,
   TABLE_HEADER_FILL,
   WORD_INDENT_002_CM,
@@ -97,7 +98,6 @@ const sectionTopBorder = {
   color: "1F2937",
 };
 const LIST_TEXT_OFFSET = 300;
-const MAIN_BODY_TABLE_WIDTH = MAIN_BODY_CONTENT_WIDTH;
 
 type SectionRule = "full" | "content" | "none";
 type TableBorders = ConstructorParameters<typeof Table>[0]["borders"];
@@ -311,7 +311,7 @@ function bodyRuleTable(children: Paragraph[]) {
         new TableCell({
           verticalAlign: VerticalAlign.TOP,
           margins: { top: 40, bottom: 0, left: 0, right: 0 },
-          width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
+          width: { size: MAIN_BODY_CONTENT_WIDTH, type: WidthType.DXA },
           borders: {
             top: sectionTopBorder,
             bottom: hiddenBorder,
@@ -322,7 +322,7 @@ function bodyRuleTable(children: Paragraph[]) {
         }),
       ],
     }),
-  ], [100]);
+  ], [100], BODY_COLUMN_INDENT, noTableBorder, MAIN_BODY_CONTENT_WIDTH);
 }
 
 function continuationRule(): FileChild[] {
@@ -375,13 +375,13 @@ function previewSection(title: string, content: FileChild[], rule: SectionRule =
       children: [
         sectionCell([sectionTitleParagraph(title)], BODY_TITLE_WIDTH, titleHasRule, topMargin),
         sectionCell([paragraph("", { size: 2 })], BODY_COLUMN_GAP, titleHasRule, topMargin),
-        sectionCell(content, MAIN_BODY_TABLE_WIDTH, contentHasRule, topMargin),
+        sectionCell(content, MAIN_BODY_CONTENT_WIDTH, contentHasRule, topMargin),
       ],
     }),
   ], MAIN_PAGE_CONTENT_WIDTH, [
     BODY_TITLE_WIDTH,
     BODY_COLUMN_GAP,
-    MAIN_BODY_TABLE_WIDTH,
+    MAIN_BODY_CONTENT_WIDTH,
   ]);
 }
 
@@ -423,12 +423,13 @@ function bodyTable(
   columnWidths: number[],
   indent = BODY_COLUMN_INDENT,
   tableBorders: TableBorders = noTableBorder,
+  tableWidth = MAIN_BODY_TABLE_WIDTH,
 ) {
   return new Table({
-    width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
+    width: { size: tableWidth, type: WidthType.DXA },
     indent: indent ? { size: indent, type: WidthType.DXA } : undefined,
     columnWidths: columnWidths.map((columnWidth) =>
-      Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
+      Math.round((tableWidth * columnWidth) / 100),
     ),
     layout: TableLayoutType.FIXED,
     borders: tableBorders,
@@ -935,8 +936,8 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       ],
     }),
     ...bodyRows,
-  ], APPENDIX_PAGE_CONTENT_WIDTH, APPENDIX_COLUMN_WIDTHS.map((columnWidth) =>
-    Math.round((APPENDIX_PAGE_CONTENT_WIDTH * columnWidth) / 100),
+  ], APPENDIX_TABLE_WIDTH, APPENDIX_COLUMN_WIDTHS.map((columnWidth) =>
+    Math.round((APPENDIX_TABLE_WIDTH * columnWidth) / 100),
   ), rightClosedTableBorder);
 }
 

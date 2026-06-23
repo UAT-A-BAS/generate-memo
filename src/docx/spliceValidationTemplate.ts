@@ -295,6 +295,97 @@ function normalizeValidationColors(xml: string) {
   });
 }
 
+function visibleTableBorderXml(bordersXml: string) {
+  const source =
+    bordersXml.match(/<w:(?:top|left|bottom|insideH|insideV)\b[^>]*w:val="single"[^>]*\/>/)?.[0] ??
+    "";
+  const color = getAttr(source, "w:color") || "0F172A";
+  const size = getAttr(source, "w:sz") || "4";
+
+  return `<w:right w:val="single" w:color="${color}" w:sz="${size}"/>`;
+}
+
+function ensureRightBorderOnBorders(bordersXml: string) {
+  if (/<w:right\b[^>]*w:val="single"/.test(bordersXml)) {
+    return bordersXml;
+  }
+
+  const rightBorder = visibleTableBorderXml(bordersXml);
+
+  if (/<w:right\b[^>]*\/>/.test(bordersXml)) {
+    return bordersXml.replace(/<w:right\b[^>]*\/>/, rightBorder);
+  }
+
+  return bordersXml.replace(/<\/w:(?:tblBorders|tcBorders)>/, `${rightBorder}$&`);
+}
+
+function ensureRightBorderOnTablePr(tablePrXml: string) {
+  if (/<w:tblBorders\b/.test(tablePrXml)) {
+    return tablePrXml.replace(
+      /<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/,
+      ensureRightBorderOnBorders,
+    );
+  }
+
+  return tablePrXml.replace(
+    "</w:tblPr>",
+    `<w:tblBorders>${visibleTableBorderXml("")}</w:tblBorders></w:tblPr>`,
+  );
+}
+
+function ensureRightBorderOnCell(cellXml: string) {
+  if (/<w:tcPr\b/.test(cellXml)) {
+    return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) => {
+      if (/<w:tcBorders\b/.test(cellPrXml)) {
+        return cellPrXml.replace(
+          /<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/,
+          ensureRightBorderOnBorders,
+        );
+      }
+
+      return cellPrXml.replace(
+        "</w:tcPr>",
+        `<w:tcBorders>${visibleTableBorderXml("")}</w:tcBorders></w:tcPr>`,
+      );
+    });
+  }
+
+  return cellXml.replace(
+    /<w:tc(?=[\s>])[^>]*>/,
+    `$&<w:tcPr><w:tcBorders>${visibleTableBorderXml("")}</w:tcBorders></w:tcPr>`,
+  );
+}
+
+function ensureRightBorderOnLastCell(rowXml: string) {
+  const cells = [...rowXml.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)];
+  const lastCell = cells.at(-1);
+
+  if (!lastCell || lastCell.index === undefined) {
+    return rowXml;
+  }
+
+  return `${rowXml.slice(0, lastCell.index)}${ensureRightBorderOnCell(lastCell[0])}${rowXml.slice(
+    lastCell.index + lastCell[0].length,
+  )}`;
+}
+
+function closesRightBorderCandidate(tableXml: string) {
+  const rowCount = tableXml.match(/<w:tr\b/g)?.length ?? 0;
+  return rowCount > 1 && /<w:(?:tblBorders|tcBorders)\b[\s\S]*?w:val="single"/.test(tableXml);
+}
+
+function closeVisibleTableRightBorders(xml: string) {
+  return xml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, (tableXml) => {
+    if (!closesRightBorderCandidate(tableXml)) {
+      return tableXml;
+    }
+
+    return tableXml
+      .replace(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/, ensureRightBorderOnTablePr)
+      .replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, ensureRightBorderOnLastCell);
+  });
+}
+
 function validationTopSpacerParagraph() {
   return '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="259" w:lineRule="auto"/></w:pPr></w:p>';
 }
@@ -408,7 +499,9 @@ export async function spliceValidationTemplate(
   const mergedBody = `${content}${sectionBreakParagraph(sectPr)}${templateBody}`;
 
   outputDocumentXml = normalizeValidationColors(
-    mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml),
+    closeVisibleTableRightBorders(
+      mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml),
+    ),
   );
   outputRelsXml = appendRelationships(outputRelsXml, newRelationships);
 

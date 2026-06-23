@@ -1181,7 +1181,7 @@ test("memo and appendix preview use the exact generated A4 paper size without ch
   );
 });
 
-test("DOCX data tables use the A4 content grid without spacer columns", async ({ page }) => {
+test("DOCX data tables stay inside the A4 content grid without spacer columns", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
@@ -1195,11 +1195,15 @@ test("DOCX data tables use the A4 content grid without spacer columns", async ({
   const developmentTable = xml.slice(tableStart, tableEnd);
 
   expect(developmentTable).toBeTruthy();
-  expect(developmentTable).toMatch(/<w:tblW w:type="dxa" w:w="7166"\/>/);
+  expect(developmentTable).toMatch(/<w:tblW w:type="dxa" w:w="7086"\/>/);
   expect(developmentTable).not.toContain("<w:tblInd");
   expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(2);
-  expect(developmentTable).toContain('<w:gridCol w:w="2006"/>');
-  expect(developmentTable).toContain('<w:gridCol w:w="5160"/>');
+  expect(developmentTable).toContain('<w:gridCol w:w="1984"/>');
+  expect(developmentTable).toContain('<w:gridCol w:w="5102"/>');
+
+  const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
+  expect(appendixTable).toMatch(/<w:tblW w:type="dxa" w:w="15318"\/>/);
+  expect((appendixTable.match(/<w:gridCol /g) ?? []).length).toBe(4);
 });
 
 test("DOCX data tables close the right border", async ({ page }) => {
