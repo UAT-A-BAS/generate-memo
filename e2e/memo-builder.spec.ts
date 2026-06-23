@@ -1520,6 +1520,65 @@ test("schedule keeps the complete date range together in preview and DOCX", asyn
   expect(xml).toContain("12 – 19 Juni 2026");
 });
 
+test("all memo calendars render skipped dates as compact ranges in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const selectedDates = ["2026-07-03", "2026-07-04", "2026-07-07"];
+  const expected = "3 \u2013 4, 7 Juli 2026";
+  await importDraft(page, {
+    ...completeDraft(),
+    pilotSchedule: {
+      startDate: "2026-07-03",
+      endDate: "2026-07-07",
+      dates: selectedDates,
+    },
+    activities: completeDraft().activities.map((row) => ({
+      ...row,
+      startDate: "2026-07-03",
+      endDate: "2026-07-07",
+      dates: selectedDates,
+    })),
+    appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
+      ...row,
+      startDate: "2026-07-03",
+      endDate: "2026-07-07",
+      dates: selectedDates,
+    })),
+  });
+
+  await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
+  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: expected })).toBeVisible();
+  await expect(page.locator('aside article[data-page-kind="appendix"]').getByText(expected, { exact: true })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const expectedDocx = "3\u00A0\u2013\u00A04,\u00A07\u00A0Juli\u00A02026";
+  const expectedDocxAnySpacing = /3(?:\u00A0| )\u2013(?:\u00A0| )4,(?:\u00A0| )7(?:\u00A0| )Juli(?:\u00A0| )2026/g;
+  expect(xml).toContain(expectedDocx);
+  expect(xml.match(expectedDocxAnySpacing)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  expect(xml).not.toContain("3\u00A0\u2013\u00A07\u00A0Juli\u00A02026");
+});
+
+test("calendar day clicks keep previous selected dates and compress adjacent days", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    pilotSchedule: {
+      startDate: "2026-07-03",
+      endDate: "2026-07-03",
+      dates: ["2026-07-03"],
+    },
+  });
+
+  await page.locator('[data-field-id="schedule"] button').click();
+  const popup = page.locator("[data-date-range-popup]");
+  await popup.getByRole("button", { name: "4", exact: true }).first().click();
+  await popup.getByRole("button", { name: "7", exact: true }).first().click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(page.locator("[data-schedule-date]")).toHaveText("3 \u2013 4, 7 Juli 2026");
+});
+
 test("table rich text removes trailing empty paragraphs after lists", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {

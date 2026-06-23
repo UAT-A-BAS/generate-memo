@@ -293,7 +293,7 @@ function renderBlock(
           <p>
             {draft.metadata.perihal} akan dilaksanakan pada tanggal{" "}
             <strong data-schedule-date className="whitespace-nowrap">
-              {formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate)}
+              {formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate, draft.pilotSchedule.dates)}
             </strong>.
           </p>
         </PreviewSection>
@@ -560,7 +560,7 @@ function renderGroupedBlocks(
               const dateMerge = consecutiveMergeState(
                 activityRows,
                 rowIndex,
-                (row) => formatDateRangeID(row.row.startDate, row.row.endDate),
+                (row) => formatDateRangeID(row.row.startDate, row.row.endDate, row.row.dates),
               );
               return (
               <tr key={item.id}>
@@ -591,7 +591,7 @@ function renderGroupedBlocks(
                     rowSpan={dateMerge.span}
                     data-preview-field-id={`activity-date-${item.row.id}`}
                   >
-                    {formatDateRangeID(item.row.startDate, item.row.endDate)}
+                    {formatDateRangeID(item.row.startDate, item.row.endDate, item.row.dates)}
                   </td>
                 )}
               </tr>

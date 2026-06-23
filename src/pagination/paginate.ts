@@ -465,7 +465,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   return blocks.map((block) => {
     const sourceId = sourceBlockId(block.id);
     const isSplitContinuation = sourceId === previousSource;
-    const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate);
+    const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate, block.row.dates);
     const sectionTitle = block.row.section.trim();
     const dateGroupId = block.row.dateGroupId ?? block.row.id;
     const sectionGroupId = block.row.sectionGroupId ?? block.row.id;

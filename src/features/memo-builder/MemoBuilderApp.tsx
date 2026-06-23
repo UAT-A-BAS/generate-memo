@@ -32,7 +32,7 @@ import type {
   ReviewComment,
   ScenarioRow,
 } from "@/types/memo";
-import { DateRangePicker } from "@/components/DateRangePicker";
+import { DateRangePicker, type DateRangeValue } from "@/components/DateRangePicker";
 import { DragDropList } from "@/components/DragDropList";
 import { RecipientList } from "@/components/RecipientList";
 import { SectionTitle } from "@/components/SectionTitle";
@@ -1092,6 +1092,7 @@ function ActivitiesPanel({
                     compact
                     startDate={row.startDate}
                     endDate={row.endDate}
+                    dates={row.dates}
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>
@@ -1330,6 +1331,7 @@ type ScenarioDateGroup = {
   id: string;
   startDate: string;
   endDate: string;
+  dates?: string[];
   rows: ScenarioRow[];
 };
 
@@ -1358,6 +1360,7 @@ function scenarioDateGroups(rows: ScenarioRow[]) {
       id: row.dateGroupId ?? createId("scenario-date"),
       startDate: row.startDate,
       endDate: row.endDate,
+      dates: row.dates,
       rows: [row],
     });
   });
@@ -1440,6 +1443,7 @@ function AppendixPanel({
       dateGroupId: targetGroup.id,
       startDate: targetGroup.startDate,
       endDate: targetGroup.endDate,
+      dates: targetGroup.dates,
     }));
     const targetSectionId = event.over.data.current?.listId === targetGroup.id
       ? String(event.over.id)
@@ -1476,12 +1480,18 @@ function AppendixPanel({
     setRows(nextRows, true);
   }
 
-  function updateGroupDates(group: ScenarioDateGroup, value: { startDate: string; endDate: string }) {
+  function updateGroupDates(group: ScenarioDateGroup, value: DateRangeValue) {
     const ids = new Set(group.rows.map((row) => row.id));
     setRows(
       rows.map((row) =>
         ids.has(row.id)
-          ? { ...row, dateGroupId: group.id, startDate: value.startDate, endDate: value.endDate }
+          ? {
+              ...row,
+              dateGroupId: group.id,
+              startDate: value.startDate,
+              endDate: value.endDate,
+              dates: value.dates,
+            }
           : row,
       ),
       true,
@@ -1518,6 +1528,7 @@ function AppendixPanel({
       sectionGroupId: section.id,
       startDate: group.startDate,
       endDate: group.endDate,
+      dates: group.dates,
       section: section.title,
     });
 
@@ -1539,6 +1550,7 @@ function AppendixPanel({
       dateGroupId: group.id,
       startDate: group.startDate,
       endDate: group.endDate,
+      dates: group.dates,
     });
 
     setRows([
@@ -1581,7 +1593,7 @@ function AppendixPanel({
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
                   <span>Tanggal {groupIndex + 1}</span>
                   <span className="text-xs font-semibold text-[#5b6778]">
-                    {formatDateRangeID(group.startDate, group.endDate)} · {group.rows.length} skenario
+                    {formatDateRangeID(group.startDate, group.endDate, group.dates)} · {group.rows.length} skenario
                   </span>
                 </summary>
                 <div className="mt-2 grid gap-3">
@@ -1594,6 +1606,7 @@ function AppendixPanel({
                       compact
                       startDate={group.startDate}
                       endDate={group.endDate}
+                      dates={group.dates}
                       onChange={(value) => updateGroupDates(group, value)}
                     />
                   </FieldLabel>
@@ -2356,6 +2369,7 @@ export function MemoBuilderApp() {
                 <DateRangePicker
                   startDate={draft.pilotSchedule.startDate}
                   endDate={draft.pilotSchedule.endDate}
+                  dates={draft.pilotSchedule.dates}
                   onChange={(pilotSchedule) =>
                     updateDraft((current) => ({ ...current, pilotSchedule }), true)
                   }

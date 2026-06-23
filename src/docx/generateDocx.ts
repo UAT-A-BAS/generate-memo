@@ -742,7 +742,7 @@ function activityTable(
         const dateMerge = consecutiveMergeState(
           rows,
           index,
-          (row) => formatDateRangeID(row.row.startDate, row.row.endDate),
+          (row) => formatDateRangeID(row.row.startDate, row.row.endDate, row.row.dates),
         );
         return (
         bodyRow({
@@ -781,7 +781,7 @@ function activityTable(
                   mergedCell(
                     [
                       paragraph(
-                        formatDateRangeID(block.row.startDate, block.row.endDate),
+                        formatDateRangeID(block.row.startDate, block.row.endDate, block.row.dates),
                         { size: 22, align: AlignmentType.CENTER },
                       ),
                     ],
@@ -1062,7 +1062,7 @@ function blockChildren(
             spacing: wordSpacing(),
             children: [
               run(`${draft.metadata.perihal} akan dilaksanakan pada tanggal `, { size: 22 }),
-              run(formatDateRangeNonBreakingID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate), { bold: true, size: 22 }),
+              run(formatDateRangeNonBreakingID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate, draft.pilotSchedule.dates), { bold: true, size: 22 }),
               run(".", { size: 22 }),
             ],
           }),

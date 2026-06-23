@@ -3,13 +3,19 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { formatDateRangeID, todayInputValue } from "@/utils/formatDateRangeID";
+import {
+  datesFromRange,
+  formatDateRangeID,
+  normalizeDateSelection,
+  todayInputValue,
+} from "@/utils/formatDateRangeID";
 
-type DateRangeValue = { startDate: string; endDate: string };
+export type DateRangeValue = { startDate: string; endDate: string; dates: string[] };
 
 type DateRangePickerProps = {
   startDate: string;
   endDate: string;
+  dates?: string[];
   onChange: (value: DateRangeValue) => void;
   compact?: boolean;
 };
@@ -46,16 +52,6 @@ function toInputDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function sameDay(first: Date, second: Date) {
-  return first.toDateString() === second.toDateString();
-}
-
-function isBetween(day: Date, start: Date | null, end: Date | null) {
-  if (!start || !end) return false;
-  const value = day.getTime();
-  return value > start.getTime() && value < end.getTime();
-}
-
 function calendarDays(year: number, month: number) {
   const first = new Date(year, month, 1);
   const firstDay = first.getDay();
@@ -82,23 +78,29 @@ function calendarDays(year: number, month: number) {
 export function DateRangePicker({
   startDate,
   endDate,
+  dates,
   onChange,
   compact,
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<DatePickerMode>("day");
-  const [selectingEnd, setSelectingEnd] = useState(Boolean(startDate && !endDate));
   const anchorRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 704 });
   const start = parseInputDate(startDate);
   const end = parseInputDate(endDate);
-  const initial = start ?? end ?? parseInputDate(todayInputValue()) ?? new Date();
+  const selectedDates = useMemo(
+    () => normalizeDateSelection(dates?.length ? dates : datesFromRange(startDate, endDate)),
+    [dates, endDate, startDate],
+  );
+  const selectedDateSet = useMemo(() => new Set(selectedDates), [selectedDates]);
+  const selectedDatesKey = selectedDates.join("|");
+  const initial = parseInputDate(selectedDates[0] ?? "") ?? start ?? end ?? parseInputDate(todayInputValue()) ?? new Date();
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
   const days = useMemo(() => calendarDays(viewYear, viewMonth), [viewYear, viewMonth]);
-  const displayValue = startDate || endDate ? formatDateRangeID(startDate, endDate) : "";
+  const displayValue = selectedDates.length ? formatDateRangeID(startDate, endDate, selectedDates) : "";
   const yearStart = Math.floor(viewYear / 16) * 16;
 
   const updatePopupPosition = useCallback(() => {
@@ -137,7 +139,7 @@ export function DateRangePicker({
     endDate,
     mode,
     open,
-    selectingEnd,
+    selectedDatesKey,
     startDate,
     updatePopupPosition,
     viewMonth,
@@ -171,26 +173,34 @@ export function DateRangePicker({
     setViewMonth(next.getMonth());
   }
 
+  function toggleOpen() {
+    if (!open) {
+      const focusDate = parseInputDate(selectedDates[0] ?? "") ?? parseInputDate(startDate) ?? parseInputDate(endDate);
+      if (focusDate) {
+        setViewYear(focusDate.getFullYear());
+        setViewMonth(focusDate.getMonth());
+      }
+      setMode("day");
+    }
+
+    setOpen((value) => !value);
+  }
+
   function chooseDay(day: Date) {
     const value = toInputDate(day);
+    const nextDates = selectedDateSet.has(value)
+      ? selectedDates.filter((date) => date !== value)
+      : normalizeDateSelection([...selectedDates, value]);
 
-    if (!start || !selectingEnd) {
-      onChange({ startDate: value, endDate: value });
-      setSelectingEnd(true);
-      return;
-    }
-
-    if (day.getTime() < start.getTime()) {
-      onChange({ startDate: value, endDate: startDate });
-    } else {
-      onChange({ startDate, endDate: value });
-    }
-    setSelectingEnd(false);
+    onChange({
+      startDate: nextDates[0] ?? "",
+      endDate: nextDates.at(-1) ?? "",
+      dates: nextDates,
+    });
   }
 
   function clear() {
-    onChange({ startDate: "", endDate: "" });
-    setSelectingEnd(false);
+    onChange({ startDate: "", endDate: "", dates: [] });
   }
 
   function today() {
@@ -200,7 +210,7 @@ export function DateRangePicker({
       setViewYear(date.getFullYear());
       setViewMonth(date.getMonth());
     }
-    onChange({ startDate: value, endDate: value });
+    onChange({ startDate: value, endDate: value, dates: [value] });
   }
 
   return (
@@ -208,11 +218,11 @@ export function DateRangePicker({
       <div ref={anchorRef} className={`relative ${compact ? "" : "max-w-md"}`}>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggleOpen}
         className="flex h-11 w-full items-center justify-between rounded-lg border border-[#c6d3e1] bg-white px-3 text-left text-sm text-[#0f2d4a] shadow-sm outline-none transition hover:border-[#0a67b1] focus:border-[#0a67b1] focus:ring-2 focus:ring-[#0a67b1]/15"
       >
         <span className={displayValue ? "" : "text-[#8ca1b8]"}>
-          {displayValue || "Pilih rentang tanggal"}
+          {displayValue || "Pilih tanggal"}
         </span>
         <span className="text-[#0a67b1]">▾</span>
       </button>
@@ -254,7 +264,7 @@ export function DateRangePicker({
 
           {mode === "day" ? (
             <>
-              <p className="mb-2 text-center text-sm font-bold text-[#0056a8]">Pilih rentang tanggal</p>
+              <p className="mb-2 text-center text-sm font-bold text-[#0056a8]">Pilih tanggal</p>
               <div className="grid grid-cols-7 gap-y-1 text-center text-xs">
                 {dayLabels.map((day) => (
                   <div key={day} className="py-1 text-[#8ca1b8]">
@@ -263,22 +273,20 @@ export function DateRangePicker({
                 ))}
                 {days.map((day) => {
                   const muted = day.getMonth() !== viewMonth;
-                  const selected =
-                    (start && sameDay(day, start)) || (end && sameDay(day, end));
-                  const ranged = isBetween(day, start, end);
+                  const value = toInputDate(day);
+                  const selected = selectedDateSet.has(value);
                   return (
                     <button
                       type="button"
                       key={day.toISOString()}
                       onClick={() => chooseDay(day)}
+                      aria-pressed={selected}
                       className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-sm transition ${
                         selected
                           ? "bg-[#0067b1] font-bold text-white"
-                          : ranged
-                            ? "bg-[#e5eef8] text-[#0f2d4a]"
-                            : muted
-                              ? "text-[#b3c0ce] hover:bg-[#edf4fb]"
-                              : "text-[#0f2d4a] hover:bg-[#edf4fb]"
+                          : muted
+                            ? "text-[#b3c0ce] hover:bg-[#edf4fb]"
+                            : "text-[#0f2d4a] hover:bg-[#edf4fb]"
                       }`}
                     >
                       {day.getDate()}

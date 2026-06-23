@@ -24,6 +24,7 @@ export type ActivityRow = {
   id: string;
   startDate: string;
   endDate: string;
+  dates?: string[];
   activity: RichTextDoc;
   owner: string;
 };
@@ -34,6 +35,7 @@ export type ScenarioRow = {
   sectionGroupId?: string;
   startDate: string;
   endDate: string;
+  dates?: string[];
   section: string;
   scenario: RichTextDoc;
   expectedResult: RichTextDoc;
@@ -109,6 +111,7 @@ export type MemoMetadata = {
 export type PilotSchedule = {
   startDate: string;
   endDate: string;
+  dates?: string[];
 };
 
 export type MemoDraft = {

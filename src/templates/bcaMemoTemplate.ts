@@ -14,6 +14,7 @@ import type {
 import { emptyRichText } from "@/types/richText";
 import { generatePerihal } from "@/utils/generatePerihal";
 import { createId } from "@/utils/ids";
+import { normalizeDateSelection } from "@/utils/formatDateRangeID";
 
 export function createRecipient(seed: Partial<Recipient> = {}): Recipient {
   return {
@@ -217,34 +218,48 @@ export type MemoDraftInput = Partial<Omit<MemoDraft, "metadata">> & {
   metadata?: Partial<MemoMetadata>;
 };
 
+function normalizeDateFields<T extends { startDate?: string; endDate?: string; dates?: string[] }>(value: T) {
+  const dates = normalizeDateSelection(value.dates);
+  return {
+    ...value,
+    startDate: dates[0] ?? value.startDate ?? "",
+    endDate: dates.at(-1) ?? value.endDate ?? value.startDate ?? "",
+    dates,
+  };
+}
+
 export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   const base = createInitialMemoDraft();
   const metadata = {
     ...base.metadata,
     ...(input.metadata ?? {}),
   };
+  const pilotSchedule = normalizeDateFields(input.pilotSchedule ?? base.pilotSchedule);
 
   const activities = Array.isArray(input.activities)
-    ? input.activities.map((row) => ({
-        ...row,
-        startDate: row.startDate ?? "",
-        endDate: row.endDate ?? row.startDate ?? "",
-      }))
+    ? input.activities.map((row) => normalizeDateFields(row))
     : base.activities;
   let previousScenarioStartDate = "";
   let previousScenarioEndDate = "";
+  let previousScenarioDates: string[] = [];
   let previousScenarioSection = "";
   let previousScenarioDateGroupId = "";
   let previousScenarioSectionGroupId = "";
   const appendixScenarios = Array.isArray(input.appendixScenarios)
     ? input.appendixScenarios.map((row) => {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
-        const startDate = row.startDate ?? legacyDate;
-        const endDate = row.endDate ?? row.startDate ?? legacyDate;
+        const dates = normalizeDateSelection(row.dates);
+        const startDate = dates[0] ?? row.startDate ?? legacyDate;
+        const endDate = dates.at(-1) ?? row.endDate ?? row.startDate ?? legacyDate;
         const section = row.section?.trim() ? row.section : previousScenarioSection;
         const normalizedStartDate = startDate || previousScenarioStartDate;
         const normalizedEndDate = endDate || previousScenarioEndDate || normalizedStartDate;
         const continuesPreviousDate = !startDate && !endDate && Boolean(previousScenarioDateGroupId);
+        const normalizedDates = dates.length
+          ? dates
+          : continuesPreviousDate
+            ? previousScenarioDates
+            : [];
         const dateGroupId =
           row.dateGroupId ??
           (continuesPreviousDate ? previousScenarioDateGroupId : createId("scenario-date"));
@@ -260,6 +275,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
 
         if (normalizedStartDate) previousScenarioStartDate = normalizedStartDate;
         if (normalizedEndDate) previousScenarioEndDate = normalizedEndDate;
+        previousScenarioDates = normalizedDates;
         if (section?.trim()) previousScenarioSection = section;
         previousScenarioDateGroupId = dateGroupId;
         previousScenarioSectionGroupId = sectionGroupId;
@@ -270,6 +286,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
           sectionGroupId,
           startDate: normalizedStartDate,
           endDate: normalizedEndDate,
+          dates: normalizedDates,
           section,
         };
       })
@@ -291,7 +308,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     developmentRows: Array.isArray(input.developmentRows)
       ? input.developmentRows
       : base.developmentRows,
-    pilotSchedule: input.pilotSchedule ?? base.pilotSchedule,
+    pilotSchedule,
     activities,
     attachmentsEnabled:
       typeof input.attachmentsEnabled === "boolean"
