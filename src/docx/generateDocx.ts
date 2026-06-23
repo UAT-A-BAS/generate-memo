@@ -86,6 +86,10 @@ const noTableBorder = {
   insideHorizontal: hiddenBorder,
   insideVertical: hiddenBorder,
 };
+const rightClosedTableBorder = {
+  ...noTableBorder,
+  right: border,
+};
 
 const sectionTopBorder = {
   style: BorderStyle.SINGLE,
@@ -96,6 +100,7 @@ const LIST_TEXT_OFFSET = 300;
 const MAIN_BODY_TABLE_WIDTH = MAIN_BODY_CONTENT_WIDTH;
 
 type SectionRule = "full" | "content" | "none";
+type TableBorders = ConstructorParameters<typeof Table>[0]["borders"];
 
 function breakLongWords(text: string, chunkSize = 28) {
   return text.replace(/\S{29,}/g, (word) => {
@@ -394,12 +399,17 @@ function bodyCell(children: Paragraph[], width: number, shaded = false) {
   });
 }
 
-function table(rows: TableRow[], width: number, columnWidths: number[]) {
+function table(
+  rows: TableRow[],
+  width: number,
+  columnWidths: number[],
+  tableBorders: TableBorders = noTableBorder,
+) {
   return new Table({
     width: { size: width, type: WidthType.DXA },
     columnWidths,
     layout: TableLayoutType.FIXED,
-    borders: noTableBorder,
+    borders: tableBorders,
     rows,
   });
 }
@@ -412,6 +422,7 @@ function bodyTable(
   rows: TableRow[],
   columnWidths: number[],
   indent = BODY_COLUMN_INDENT,
+  tableBorders: TableBorders = noTableBorder,
 ) {
   return new Table({
     width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
@@ -420,7 +431,7 @@ function bodyTable(
       Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
     ),
     layout: TableLayoutType.FIXED,
-    borders: noTableBorder,
+    borders: tableBorders,
     rows,
   });
 }
@@ -695,7 +706,7 @@ function developmentTable(
         );
       },
     ),
-  ], columnWidths, indent);
+  ], columnWidths, indent, rightClosedTableBorder);
 }
 
 function activityTable(
@@ -796,7 +807,7 @@ function activityTable(
         );
       },
     ),
-  ], columnWidths, indent);
+  ], columnWidths, indent, rightClosedTableBorder);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -926,7 +937,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
     ...bodyRows,
   ], APPENDIX_PAGE_CONTENT_WIDTH, APPENDIX_COLUMN_WIDTHS.map((columnWidth) =>
     Math.round((APPENDIX_PAGE_CONTENT_WIDTH * columnWidth) / 100),
-  ));
+  ), rightClosedTableBorder);
 }
 
 function consumeTableRows(
@@ -1185,6 +1196,7 @@ function pageChildren(
           ],
         }),
         ...continuationRule(),
+        exactSpacer(240),
       );
     } else {
       children.push(

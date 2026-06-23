@@ -131,6 +131,16 @@ function documentTables(xml: string) {
   return xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? [];
 }
 
+function documentTableAround(xml: string, marker: string) {
+  const markerIndex = xml.indexOf(marker);
+  expect(markerIndex).toBeGreaterThan(-1);
+  const tableStart = xml.lastIndexOf("<w:tbl>", markerIndex);
+  const tableEnd = xml.indexOf("</w:tbl>", markerIndex) + "</w:tbl>".length;
+  expect(tableStart).toBeGreaterThan(-1);
+  expect(tableEnd).toBeGreaterThan(tableStart);
+  return xml.slice(tableStart, tableEnd);
+}
+
 async function docxPartsFrom(download: Download) {
   const path = await download.path();
   expect(path).toBeTruthy();
@@ -1039,7 +1049,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
   const scheduleContinuationIndex = xml.lastIndexOf("Perihal:  </w:t>", scheduleIndex);
   const scheduleContext = xml.slice(scheduleContinuationIndex, scheduleIndex);
   expect(scheduleContinuationIndex).toBeGreaterThan(-1);
-  expect(scheduleContext).not.toContain('w:before="240"');
+  expect(scheduleContext).toContain('w:before="240"');
   expect(scheduleContext).not.toContain('w:before="120"');
 
   const closingIndex = xml.indexOf("Demikian informasi ini kami sampaikan");
@@ -1190,6 +1200,26 @@ test("DOCX data tables use the A4 content grid without spacer columns", async ({
   expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(2);
   expect(developmentTable).toContain('<w:gridCol w:w="2006"/>');
   expect(developmentTable).toContain('<w:gridCol w:w="5160"/>');
+});
+
+test("DOCX data tables close the right border", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const rightBorder = /<w:right w:val="single"[^>]*w:color="0F172A"[^>]*\/>/;
+
+  for (const marker of [
+    ">Keterangan</w:t>",
+    ">Waktu</w:t>",
+    ">Hasil/Keterangan</w:t>",
+  ]) {
+    const table = documentTableAround(xml, marker);
+    expect(table).toMatch(rightBorder);
+    expect(table).not.toContain('<w:right w:val="nil"');
+  }
 });
 
 test("DOCX keeps development and activity tables inside their preview section grid", async ({ page }) => {
