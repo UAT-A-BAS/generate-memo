@@ -44,6 +44,37 @@ const DATA_KEY = "data";
 const UPDATED_AT_KEY = "updatedAt";
 const UPDATED_BY_KEY = "updatedBy";
 const SNAPSHOT_PREFIX = "snapshot:";
+const DEFAULT_IDLE_TIMERS = {
+  idleMs: 5 * 60 * 1000,
+  hiddenGraceMs: 60 * 1000,
+  autosaveMs: 2500,
+  reconnectBaseMs: 1800,
+  reconnectMaxMs: 30000,
+  idleCloseDelayMs: 150,
+};
+
+type IdleTimers = typeof DEFAULT_IDLE_TIMERS;
+type FlushOptions = {
+  keepalive?: boolean;
+  persistHttp?: boolean;
+  sendSocket?: boolean;
+};
+type CollaborationWindow = Window & typeof globalThis & {
+  __MEMO_COLLAB_IDLE_TIMERS__?: Partial<IdleTimers>;
+};
+
+function idleTimers(): IdleTimers {
+  if (typeof window === "undefined") return DEFAULT_IDLE_TIMERS;
+  const overrides = (window as CollaborationWindow).__MEMO_COLLAB_IDLE_TIMERS__ ?? {};
+  return {
+    idleMs: Math.max(1, Number(overrides.idleMs ?? DEFAULT_IDLE_TIMERS.idleMs)),
+    hiddenGraceMs: Math.max(1, Number(overrides.hiddenGraceMs ?? DEFAULT_IDLE_TIMERS.hiddenGraceMs)),
+    autosaveMs: Math.max(1, Number(overrides.autosaveMs ?? DEFAULT_IDLE_TIMERS.autosaveMs)),
+    reconnectBaseMs: Math.max(1, Number(overrides.reconnectBaseMs ?? DEFAULT_IDLE_TIMERS.reconnectBaseMs)),
+    reconnectMaxMs: Math.max(1, Number(overrides.reconnectMaxMs ?? DEFAULT_IDLE_TIMERS.reconnectMaxMs)),
+    idleCloseDelayMs: Math.max(0, Number(overrides.idleCloseDelayMs ?? DEFAULT_IDLE_TIMERS.idleCloseDelayMs)),
+  };
+}
 
 function jsonEqual(a: unknown, b: unknown) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -90,6 +121,10 @@ function workerWebSocketUrl(roomId: string) {
   return url.toString();
 }
 
+function workerHttpUrl(roomId: string) {
+  return new URL(`/collab/${encodeURIComponent(collaborationDocId(roomId))}`, WORKER_BASE_URL).toString();
+}
+
 function safeJsonParse(value: string) {
   try {
     return JSON.parse(value) as PresenceMessage;
@@ -108,6 +143,42 @@ function draftSyncKey(draft: MemoDraft) {
     updatedAt: "",
   };
   return JSON.stringify(syncDraft);
+}
+
+function persistDraftSnapshot(
+  roomId: string,
+  draft: MemoDraft,
+  user: PresenceUser | null,
+  updatedAt: number,
+  keepalive = false,
+) {
+  if (typeof window === "undefined" || !roomId) return;
+
+  const payload = JSON.stringify({
+    type: "draft-save",
+    draft: normalizeMemoDraft(draft),
+    updatedAt,
+    user: user
+      ? {
+          id: user.id,
+          name: user.name,
+          color: user.color,
+        }
+      : null,
+  });
+  const url = workerHttpUrl(roomId);
+
+  if (keepalive && navigator.sendBeacon) {
+    navigator.sendBeacon(url, new Blob([payload], { type: "application/json" }));
+    return;
+  }
+
+  fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: payload,
+    keepalive,
+  }).catch(() => {});
 }
 
 function sharedDraftStateFromMap(map: Y.Map<unknown>) {
@@ -155,6 +226,8 @@ export function useMemoCollaboration(
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const sharedUpdateTimerRef = useRef<number | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
+  const hiddenTimerRef = useRef<number | null>(null);
   const applyingRemoteRef = useRef(false);
   const localBaselineRef = useRef("");
   const localUpdatedAtRef = useRef(0);
@@ -162,6 +235,11 @@ export function useMemoCollaboration(
   const activeRoomRef = useRef("");
   const userRef = useRef<PresenceUser | null>(null);
   const draftRef = useRef(draft);
+  const flushSharedDraftRef = useRef<((options?: FlushOptions) => void) | null>(null);
+  const idlePausedRef = useRef(false);
+  const suppressReconnectRef = useRef(false);
+  const reconnectAttemptRef = useRef(0);
+  const latestIdentityNameRef = useRef(collaboratorName);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -172,6 +250,10 @@ export function useMemoCollaboration(
       }
     }
   }, [draft]);
+
+  useEffect(() => {
+    latestIdentityNameRef.current = collaboratorName;
+  }, [collaboratorName]);
 
   const updateStatus = useCallback((status: ConnectionStatus, lastSyncedAt?: string) => {
     setState((current) => ({
@@ -188,8 +270,18 @@ export function useMemoCollaboration(
     sharedUpdateTimerRef.current = null;
   }, []);
 
+  const clearIdleTimers = useCallback(() => {
+    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    if (hiddenTimerRef.current) window.clearTimeout(hiddenTimerRef.current);
+    idleTimerRef.current = null;
+    hiddenTimerRef.current = null;
+  }, []);
+
   const disconnect = useCallback((clearUrl = true) => {
     clearTimers();
+    clearIdleTimers();
+    suppressReconnectRef.current = true;
+    idlePausedRef.current = false;
     if (socketRef.current) {
       socketRef.current.onclose = null;
       socketRef.current.close();
@@ -202,6 +294,8 @@ export function useMemoCollaboration(
     localBaselineRef.current = "";
     localUpdatedAtRef.current = 0;
     pendingStateUpdateRef.current = false;
+    reconnectAttemptRef.current = 0;
+    flushSharedDraftRef.current = null;
     if (clearUrl) setRoomUrl("");
     setState({
       active: false,
@@ -209,7 +303,7 @@ export function useMemoCollaboration(
       status: "offline",
       collaborators: [],
     });
-  }, [clearTimers]);
+  }, [clearTimers, clearIdleTimers]);
 
   const connect = useCallback((
     roomId: string,
@@ -222,6 +316,10 @@ export function useMemoCollaboration(
     if (!cleanRoom || !cleanName) return;
 
     disconnect(false);
+    idlePausedRef.current = false;
+    suppressReconnectRef.current = false;
+    reconnectAttemptRef.current = 0;
+    latestIdentityNameRef.current = cleanName;
     if (updateUrl) setRoomUrl(cleanRoom);
 
     const doc = new Y.Doc();
@@ -291,6 +389,40 @@ export function useMemoCollaboration(
       }
     };
 
+    flushSharedDraftRef.current = (options: FlushOptions = {}) => {
+      if (applyingRemoteRef.current || !activeRoomRef.current) return;
+      const normalized = normalizeMemoDraft(draftRef.current);
+      const updatedAt = Date.now();
+      localBaselineRef.current = draftSyncKey(normalized);
+      localUpdatedAtRef.current = updatedAt;
+      pendingStateUpdateRef.current = true;
+
+      if (mapRef.current && docRef.current) {
+        docRef.current.transact(() => {
+          mapRef.current?.set(DATA_KEY, normalized);
+          mapRef.current?.set(UPDATED_AT_KEY, updatedAt);
+          mapRef.current?.set(UPDATED_BY_KEY, user.id);
+          mapRef.current?.set(snapshotKey(updatedAt, user.id), normalized);
+        }, LOCAL_ORIGIN);
+
+        if (options.sendSocket !== false && socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(Y.encodeStateAsUpdate(docRef.current));
+          socketRef.current.send(JSON.stringify({
+            type: "draft-save",
+            draft: normalized,
+            updatedAt,
+            user,
+          }));
+          pendingStateUpdateRef.current = false;
+          updateStatus("syncing");
+        }
+      }
+
+      if (options.persistHttp) {
+        persistDraftSnapshot(activeRoomRef.current, normalized, user, updatedAt, options.keepalive);
+      }
+    };
+
     const applySharedDraftIfPresent = () => {
       const remoteState = sharedDraftStateFromMap(map);
       if (!remoteState) return false;
@@ -334,6 +466,7 @@ export function useMemoCollaboration(
 
       socket.addEventListener("open", () => {
         if (socket !== socketRef.current) return;
+        reconnectAttemptRef.current = 0;
         updateStatus("connected");
         sendPresence();
         if (firstServerSync && pendingStateUpdateRef.current) {
@@ -382,8 +515,23 @@ export function useMemoCollaboration(
 
       socket.addEventListener("close", () => {
         if (socket !== socketRef.current) return;
+        socketRef.current = null;
         updateStatus("offline");
-        reconnectTimerRef.current = window.setTimeout(connectSocket, 1800);
+        if (
+          suppressReconnectRef.current ||
+          idlePausedRef.current ||
+          document.hidden ||
+          !navigator.onLine
+        ) {
+          return;
+        }
+        const timers = idleTimers();
+        const delay = Math.min(
+          timers.reconnectBaseMs * (2 ** reconnectAttemptRef.current),
+          timers.reconnectMaxMs,
+        );
+        reconnectAttemptRef.current += 1;
+        reconnectTimerRef.current = window.setTimeout(connectSocket, delay);
       });
 
       socket.addEventListener("error", () => {
@@ -421,25 +569,11 @@ export function useMemoCollaboration(
 
     if (sharedUpdateTimerRef.current) window.clearTimeout(sharedUpdateTimerRef.current);
     sharedUpdateTimerRef.current = window.setTimeout(() => {
-      if (!mapRef.current || !docRef.current || applyingRemoteRef.current) return;
-      const normalized = normalizeMemoDraft(draftRef.current);
-      const updatedAt = localUpdatedAtRef.current || Date.now();
-      localBaselineRef.current = draftSyncKey(normalized);
-      localUpdatedAtRef.current = updatedAt;
-      pendingStateUpdateRef.current = true;
-      docRef.current.transact(() => {
-        mapRef.current?.set(DATA_KEY, normalized);
-        mapRef.current?.set(UPDATED_AT_KEY, updatedAt);
-        mapRef.current?.set(UPDATED_BY_KEY, userRef.current?.id ?? "");
-        mapRef.current?.set(snapshotKey(updatedAt, userRef.current?.id ?? "unknown"), normalized);
-      }, LOCAL_ORIGIN);
-
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(Y.encodeStateAsUpdate(docRef.current));
-        pendingStateUpdateRef.current = false;
-        updateStatus("syncing");
-      }
-    }, 180);
+      flushSharedDraftRef.current?.({
+        persistHttp: socketRef.current?.readyState !== WebSocket.OPEN,
+        sendSocket: true,
+      });
+    }, idleTimers().autosaveMs);
   }, [draft, state.active, updateStatus]);
 
   useEffect(() => {
@@ -457,6 +591,162 @@ export function useMemoCollaboration(
       window.removeEventListener("offline", updateOnlineStatus);
     };
   }, [state.status, updateStatus]);
+
+  const pauseCollaborationForIdle = useCallback((keepalive = false) => {
+    if (!activeRoomRef.current || idlePausedRef.current) return;
+    idlePausedRef.current = true;
+    suppressReconnectRef.current = true;
+    clearTimers();
+    flushSharedDraftRef.current?.({
+      keepalive,
+      persistHttp: true,
+      sendSocket: true,
+    });
+
+    const socket = socketRef.current;
+    const closeSocket = () => {
+      if (socket && socketRef.current === socket) {
+        socket.close();
+        socketRef.current = null;
+      }
+    };
+    const closeDelay = idleTimers().idleCloseDelayMs;
+    if (closeDelay > 0 && !keepalive) {
+      window.setTimeout(closeSocket, closeDelay);
+    } else {
+      closeSocket();
+    }
+
+    updateStatus("offline");
+  }, [clearTimers, updateStatus]);
+
+  const resumeCollaborationIfIdle = useCallback(() => {
+    if (!activeRoomRef.current || document.hidden) return;
+    const socket = socketRef.current;
+    if (
+      socket?.readyState === WebSocket.OPEN ||
+      socket?.readyState === WebSocket.CONNECTING
+    ) {
+      return;
+    }
+
+    const roomId = activeRoomRef.current;
+    const identityName =
+      userRef.current?.name ||
+      latestIdentityNameRef.current ||
+      collaboratorName;
+
+    if (!identityName.trim()) return;
+    connect(roomId, null, false, identityName);
+  }, [collaboratorName, connect]);
+
+  const resetIdleTimer = useCallback(() => {
+    if (!activeRoomRef.current || document.hidden) return;
+    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = window.setTimeout(() => {
+      pauseCollaborationForIdle(false);
+    }, idleTimers().idleMs);
+  }, [pauseCollaborationForIdle]);
+
+  const markUserActivity = useCallback(() => {
+    if (!activeRoomRef.current || document.hidden) return;
+    if (hiddenTimerRef.current) {
+      window.clearTimeout(hiddenTimerRef.current);
+      hiddenTimerRef.current = null;
+    }
+    resetIdleTimer();
+    if (idlePausedRef.current || !socketRef.current) {
+      resumeCollaborationIfIdle();
+    }
+  }, [resetIdleTimer, resumeCollaborationIfIdle]);
+
+  useEffect(() => {
+    if (!state.active) return;
+    resetIdleTimer();
+    return () => {
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
+  }, [resetIdleTimer, state.active, state.roomId]);
+
+  useEffect(() => {
+    if (!state.active) return;
+    const activityEvents = [
+      "click",
+      "keydown",
+      "mousemove",
+      "scroll",
+      "touchstart",
+      "input",
+      "change",
+    ] as const;
+
+    for (const eventName of activityEvents) {
+      window.addEventListener(eventName, markUserActivity, {
+        capture: true,
+        passive: true,
+      });
+    }
+
+    return () => {
+      for (const eventName of activityEvents) {
+        window.removeEventListener(eventName, markUserActivity, {
+          capture: true,
+        });
+      }
+    };
+  }, [markUserActivity, state.active]);
+
+  useEffect(() => {
+    if (!state.active) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (hiddenTimerRef.current) window.clearTimeout(hiddenTimerRef.current);
+        hiddenTimerRef.current = window.setTimeout(() => {
+          pauseCollaborationForIdle(false);
+        }, idleTimers().hiddenGraceMs);
+        return;
+      }
+
+      if (hiddenTimerRef.current) {
+        window.clearTimeout(hiddenTimerRef.current);
+        hiddenTimerRef.current = null;
+      }
+      idlePausedRef.current = false;
+      suppressReconnectRef.current = false;
+      markUserActivity();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [markUserActivity, pauseCollaborationForIdle, state.active]);
+
+  useEffect(() => {
+    if (!state.active) return;
+
+    const handlePageExit = () => {
+      suppressReconnectRef.current = true;
+      flushSharedDraftRef.current?.({
+        keepalive: true,
+        persistHttp: true,
+        sendSocket: true,
+      });
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
+
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
+    return () => {
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+    };
+  }, [state.active]);
 
   const start = useCallback((identityName = collaboratorName) => {
     if (!identityName.trim()) return "";

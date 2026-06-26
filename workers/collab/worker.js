@@ -2,9 +2,14 @@ import * as Y from "yjs";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, OPTIONS",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
   "access-control-allow-headers": "content-type",
 };
+const MAP_NAME = "form";
+const DATA_KEY = "data";
+const UPDATED_AT_KEY = "updatedAt";
+const UPDATED_BY_KEY = "updatedBy";
+const SNAPSHOT_PREFIX = "snapshot:";
 
 async function toUint8Array(data) {
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -23,6 +28,22 @@ function safeJsonParse(value) {
   }
 }
 
+function snapshotKey(updatedAt, userId) {
+  return `${SNAPSHOT_PREFIX}${updatedAt}:${encodeURIComponent(userId || "unknown")}`;
+}
+
+function latestDraftFromDoc(doc) {
+  const map = doc.getMap(MAP_NAME);
+  const draft = map.get(DATA_KEY);
+  if (!draft || typeof draft !== "object") return null;
+
+  return {
+    draft,
+    updatedAt: Number(map.get(UPDATED_AT_KEY) || Date.now()),
+    updatedBy: String(map.get(UPDATED_BY_KEY) || ""),
+  };
+}
+
 export class MemoRoom {
   constructor(state) {
     this.state = state;
@@ -35,15 +56,65 @@ export class MemoRoom {
     if (this.loaded) return;
     const stored = await this.state.storage.get("ydoc");
     if (stored) Y.applyUpdate(this.doc, await toUint8Array(stored));
+    if (!latestDraftFromDoc(this.doc)) {
+      const latestDraft = await this.state.storage.get("latestDraft");
+      if (latestDraft?.draft) {
+        await this.saveDraftSnapshot(latestDraft, "");
+      }
+    }
     this.loaded = true;
+  }
+
+  async persistDoc() {
+    await this.state.storage.put(
+      "ydoc",
+      Y.encodeStateAsUpdate(this.doc).buffer,
+    );
+
+    const latestDraft = latestDraftFromDoc(this.doc);
+    if (latestDraft) {
+      await this.state.storage.put("latestDraft", latestDraft);
+    }
+  }
+
+  async saveDraftSnapshot(message, exceptSessionId = "") {
+    if (!message?.draft || typeof message.draft !== "object") return false;
+
+    const updatedAt = Number(message.updatedAt || Date.now());
+    const userId = String(message.user?.id || message.userId || "unknown");
+    const map = this.doc.getMap(MAP_NAME);
+    const before = Y.encodeStateVector(this.doc);
+
+    this.doc.transact(() => {
+      map.set(DATA_KEY, message.draft);
+      map.set(UPDATED_AT_KEY, updatedAt);
+      map.set(UPDATED_BY_KEY, userId);
+      map.set(snapshotKey(updatedAt, userId), message.draft);
+    });
+
+    await this.persistDoc();
+    const update = Y.encodeStateAsUpdate(this.doc, before);
+    if (update.byteLength > 0) {
+      this.broadcast(update, exceptSessionId);
+    }
+    return true;
   }
 
   async fetch(request) {
     await this.load();
 
+    if (request.method === "POST") {
+      const message = safeJsonParse(await request.text());
+      const saved = await this.saveDraftSnapshot(message, "");
+      return Response.json(
+        { ok: saved },
+        { status: saved ? 200 : 400, headers: CORS_HEADERS },
+      );
+    }
+
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json(
-        { ok: true, users: this.sessions.size },
+        { ok: true, users: this.sessions.size, hasDraft: Boolean(latestDraftFromDoc(this.doc)) },
         { headers: CORS_HEADERS },
       );
     }
@@ -63,17 +134,14 @@ export class MemoRoom {
 
     socket.addEventListener("message", async (event) => {
       if (typeof event.data === "string") {
-        this.handleTextMessage(sessionId, event.data);
+        await this.handleTextMessage(sessionId, event.data);
         return;
       }
 
       const update = await toUint8Array(event.data);
       if (!update) return;
       Y.applyUpdate(this.doc, update);
-      await this.state.storage.put(
-        "ydoc",
-        Y.encodeStateAsUpdate(this.doc).buffer,
-      );
+      await this.persistDoc();
       this.broadcast(update, sessionId);
       socket.send(JSON.stringify({ type: "saved" }));
     });
@@ -82,20 +150,29 @@ export class MemoRoom {
     socket.addEventListener("error", () => this.closeSession(sessionId));
   }
 
-  handleTextMessage(sessionId, rawMessage) {
+  async handleTextMessage(sessionId, rawMessage) {
     const message = safeJsonParse(rawMessage);
-    if (message?.type !== "presence" || !message.user) return;
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    session.user = {
-      id: String(message.user.id || sessionId),
-      name: String(message.user.name || "User").slice(0, 32),
-      color: /^#[0-9a-f]{6}$/i.test(message.user.color)
-        ? message.user.color
-        : "#1b4d78",
-    };
-    this.broadcastPresence();
+    if (message?.type === "presence" && message.user) {
+      session.user = {
+        id: String(message.user.id || sessionId),
+        name: String(message.user.name || "User").slice(0, 32),
+        color: /^#[0-9a-f]{6}$/i.test(message.user.color)
+          ? message.user.color
+          : "#1b4d78",
+      };
+      this.broadcastPresence();
+      return;
+    }
+
+    if (message?.type === "draft-save") {
+      const saved = await this.saveDraftSnapshot(message, sessionId);
+      if (saved) {
+        session.socket.send(JSON.stringify({ type: "saved" }));
+      }
+    }
   }
 
   broadcast(message, exceptSessionId = "") {
