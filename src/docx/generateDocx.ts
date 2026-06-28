@@ -25,7 +25,7 @@ import {
   type ISectionOptions,
   type TableVerticalAlign,
 } from "docx";
-import type { MemoDraft, Recipient } from "@/types/memo";
+import type { MemoDraft, Recipient, SignerRow } from "@/types/memo";
 import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination/paginate";
 import {
   ACTIVITY_COLUMN_WIDTHS,
@@ -68,7 +68,7 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 4,
+  size: 6,
   color: "0F172A",
 };
 
@@ -265,6 +265,31 @@ function dashGapParagraph(
     }),
     children: [
       run("-", options),
+      new TextRun({ children: [new Tab()] }),
+      ...multilineRuns(text, options),
+    ],
+  });
+}
+
+function bulletGapParagraph(
+  text: string,
+  options: Parameters<typeof paragraph>[1] = {},
+) {
+  const indent = options.indent ?? {};
+  const textPosition = (indent.left ?? 0) + LIST_TEXT_OFFSET;
+
+  return new Paragraph({
+    alignment: options.align,
+    keepNext: options.keepNext,
+    indent: { ...indent, left: textPosition, hanging: LIST_TEXT_OFFSET },
+    tabStops: [{ type: TabStopType.LEFT, position: textPosition }],
+    spacing: wordSpacing({
+      before: options.spacingBefore,
+      after: options.spacingAfter,
+      line: options.line,
+    }),
+    children: [
+      run("•", options),
       new TextRun({ children: [new Tab()] }),
       ...multilineRuns(text, options),
     ],
@@ -532,6 +557,37 @@ function closingParagraph(text: string, withTopBorder = true, spacingBefore = 22
       : undefined,
     children: multilineRuns(text, { size: 22 }),
   });
+}
+
+function signerCell(text: string, width: number, bold = false) {
+  return new TableCell({
+    verticalAlign: VerticalAlign.TOP,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    width: {
+      size: Math.round((MAIN_BODY_CONTENT_WIDTH * width) / 100),
+      type: WidthType.DXA,
+    },
+    borders: noBorder,
+    children: [paragraph(text, { bold, size: 22, spacingAfter: 70 })],
+  });
+}
+
+function signerTable(signers: SignerRow[]) {
+  const widths = [32, 3, 65];
+  return bodyTable(
+    signers.map((signer) => new TableRow({
+      cantSplit: true,
+      children: [
+        signerCell(signer.name.toUpperCase(), widths[0], true),
+        signerCell("-", widths[1]),
+        signerCell(signer.title, widths[2]),
+      ],
+    })),
+    widths,
+    BODY_COLUMN_INDENT,
+    noTableBorder,
+    MAIN_BODY_CONTENT_WIDTH,
+  );
 }
 
 function header() {
@@ -1106,13 +1162,13 @@ function blockChildren(
               ]
             : [
                 paragraph("Bersama dengan memo ini dilampirkan:", { size: 22 }),
-                ...attachmentItems.map((item) => dashGapParagraph(item, { size: 22 })),
+                ...attachmentItems.map((item) => bulletGapParagraph(item, { size: 22 })),
               ],
           sectionRule,
         ),
       ];
     case "contacts":
-      const contactParagraph = draft.contacts.length === 1 ? paragraph : dashGapParagraph;
+      const contactParagraph = draft.contacts.length === 1 ? paragraph : bulletGapParagraph;
       return [
         ...leadingSectionSpacer(sectionRule),
         previewSection("PIC yang Dapat Dihubungi", [
@@ -1131,16 +1187,7 @@ function blockChildren(
           !options.firstBlockOnPage,
           options.firstBlockOnPage ? 0 : 220,
         ),
-        ...draft.signers.map((signer) =>
-          new Paragraph({
-            indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
-            spacing: wordSpacing({ after: 70 }),
-            children: [
-              run(signer.name.toUpperCase(), { bold: true, size: 22 }),
-              run(` - ${signer.title}`, { size: 22 }),
-            ],
-          }),
-        ),
+        signerTable(draft.signers),
       ];
     case "cc":
       return [
@@ -1205,8 +1252,8 @@ function pageChildren(
           pageBreakBefore: options.pageBreakBefore,
           spacing: wordSpacing({ before: 0, after: 180 }),
           children: [
-            run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 22 }),
-            run(", Sambungan", { size: 22 }),
+            run(page.continuationTitle.replace(", Sambungan", ""), { bold: true, size: 20 }),
+            run(", Sambungan", { size: 20 }),
           ],
         }),
       );
@@ -1215,7 +1262,7 @@ function pageChildren(
     children.push(new Paragraph({
       pageBreakBefore: options.pageBreakBefore,
       spacing: wordSpacing({ before: 0, after: 180 }),
-      children: [run(page.title, { bold: true, size: 22 })],
+      children: [run(page.title, { bold: true, size: 20 })],
     }));
   }
 

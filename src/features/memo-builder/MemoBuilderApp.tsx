@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
@@ -58,7 +58,7 @@ import {
 } from "@/collaboration/collaboratorIdentity";
 import { createId } from "@/utils/ids";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
-import { focusEditorField } from "@/utils/fieldNavigation";
+import { focusEditorField, revealEditorTarget } from "@/utils/fieldNavigation";
 
 const memoTypes: MemoType[] = [
   "Pilot",
@@ -98,6 +98,44 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
+function safeFilePart(value: string) {
+  return value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "") || "Memo";
+}
+
+function fitTextarea(element: HTMLTextAreaElement | null) {
+  if (!element) return;
+  element.style.height = "auto";
+  element.style.height = `${Math.max(42, element.scrollHeight)}px`;
+}
+
+function AutoResizeTextarea({
+  onInput,
+  style,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    fitTextarea(ref.current);
+  }, [props.value]);
+
+  return (
+    <textarea
+      {...props}
+      ref={ref}
+      style={{ ...style, overflowY: "hidden", resize: "none" }}
+      onInput={(event) => {
+        fitTextarea(event.currentTarget);
+        onInput?.(event);
+      }}
+    />
+  );
+}
+
 function FieldLabel({
   label,
   children,
@@ -117,6 +155,7 @@ function FieldLabel({
     <Root
       className="grid content-start gap-1 text-[13px] font-semibold text-slate-700"
       data-field-id={fieldId}
+      data-field-label={label}
     >
       <span>
         {label}
@@ -427,6 +466,9 @@ function elementFromPath(root: HTMLElement, path: number[]) {
 }
 
 function targetLabelFromElement(element: HTMLElement) {
+  const explicitLabel = element.closest<HTMLElement>("[data-field-label]")?.dataset.fieldLabel;
+  if (explicitLabel) return cleanTargetLabel(explicitLabel);
+
   const fieldLabel = element.closest("label");
   const labelText = fieldLabel?.querySelector("span")?.textContent ?? fieldLabel?.textContent;
   if (labelText) return cleanTargetLabel(labelText);
@@ -439,13 +481,29 @@ function targetLabelFromElement(element: HTMLElement) {
 
 function reviewTargetFromElement(element: HTMLElement, root: HTMLElement): ReviewTarget | null {
   const target = element.closest<HTMLElement>("[data-field-id]");
-  if (!target) return null;
+  if (target) {
+    return {
+      type: "field",
+      targetId: target.dataset.fieldId ?? "",
+      targetLabel: targetLabelFromElement(target),
+      path: elementPathFrom(root, target),
+    };
+  }
+
+  const previewTarget = element.closest<HTMLElement>("[data-preview-field-id]");
+  const previewFieldId = previewTarget?.dataset.previewFieldId;
+  if (!previewFieldId) return null;
+
+  const editorTarget = root.querySelector<HTMLElement>(
+    `[data-field-id="${CSS.escape(previewFieldId)}"]`,
+  );
+  if (!editorTarget) return null;
 
   return {
     type: "field",
-    targetId: target.dataset.fieldId ?? "",
-    targetLabel: targetLabelFromElement(target),
-    path: elementPathFrom(root, target),
+    targetId: previewFieldId,
+    targetLabel: targetLabelFromElement(editorTarget),
+    path: elementPathFrom(root, editorTarget),
   };
 }
 
@@ -472,11 +530,13 @@ function focusReviewTarget(comment: ReviewComment, root: HTMLElement | null) {
   const target = findReviewTargetElement(comment, root);
   if (!target) return;
 
+  revealEditorTarget(target);
   target.classList.add("review-target-highlight");
   target.scrollIntoView({ block: "center", behavior: "smooth", inline: "nearest" });
   const focusTarget = target.matches("input, textarea, select, .ProseMirror")
     ? target
-    : target.querySelector<HTMLElement>("input, textarea, select, .ProseMirror");
+    : target.querySelector<HTMLElement>(".ProseMirror") ??
+      target.querySelector<HTMLElement>("input, textarea, select");
   window.setTimeout(() => focusTarget?.focus({ preventScroll: true }), 250);
   window.setTimeout(() => target.classList.remove("review-target-highlight"), 4500);
 }
@@ -555,7 +615,7 @@ function ReviewCommentsPopup({
       {open ? (
         <section
           id="review-comments-popup"
-          className="review-comments-font fixed bottom-[78px] right-[18px] z-50 grid max-h-[min(680px,calc(100dvh-110px))] w-[min(720px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#b9c9dc]/95 bg-white/95 p-3.5 shadow-[0_18px_42px_rgba(31,45,61,0.18)] backdrop-blur"
+          className="review-comments-font fixed bottom-[78px] right-[18px] z-50 isolate grid max-h-[min(680px,calc(100dvh-110px))] w-[min(720px,calc(100vw-36px))] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#b9c9dc] bg-white p-3.5 shadow-[0_18px_42px_rgba(31,45,61,0.18)] [backdrop-filter:none] [contain:layout_paint]"
           aria-labelledby="review-comments-title"
         >
           <div className="flex items-center justify-between gap-2">
@@ -586,10 +646,10 @@ function ReviewCommentsPopup({
               className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 ${
                 commentMode
                   ? "border-[#2563eb] bg-[#1b4d78] text-white shadow-[0_10px_22px_rgba(27,77,120,0.18)]"
-                  : "border-[#c9d3df] bg-[#1b4d78] text-white hover:bg-[#163754]"
+                  : "border-[#c9d3df] bg-white text-[#163754] hover:bg-[#eef6ff]"
               }`}
             >
-              <MessageSquare size={15} />
+              {commentMode ? <Check size={15} /> : <MessageSquare size={15} />}
               Add Comment
             </button>
             <select
@@ -806,9 +866,9 @@ function ReviewCommentDialog({
         </p>
         <label className="grid gap-1.5 text-[13px] font-extrabold text-[#1c2734]">
           <span>{state.mode === "reply" ? "Balasan" : "Komentar"} <span className="text-[#b42318]">*</span></span>
-          <textarea
+          <AutoResizeTextarea
             value={text}
-            rows={4}
+            rows={3}
             onChange={(event) => onTextChange(event.target.value)}
             className="min-h-28 resize-y rounded-md border border-[#c9d3df] px-3 py-2 text-[15px] font-semibold text-[#1c2734] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             placeholder="Tulis catatan reviewer"
@@ -1031,7 +1091,7 @@ function DevelopmentPanel({
                 <FieldLabel label="Item" fieldId={`development-item-${row.id}`} required asGroup>
                   <RichTextEditor
                     value={row.item}
-                    minHeight={92}
+                    minHeight={48}
                     onChange={(value) =>
                       setRows(rows.map((item) => (item.id === row.id ? { ...item, item: value } : item)))
                     }
@@ -1040,7 +1100,7 @@ function DevelopmentPanel({
                 <FieldLabel label="Keterangan" fieldId={`development-description-${row.id}`} required asGroup>
                   <RichTextEditor
                     value={row.description}
-                    minHeight={92}
+                    minHeight={48}
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>
@@ -1128,7 +1188,7 @@ function ActivitiesPanel({
               <FieldLabel label="Aktivitas" fieldId={`activity-text-${row.id}`} required asGroup>
                 <RichTextEditor
                   value={row.activity}
-                  minHeight={92}
+                  minHeight={48}
                   onChange={(value) =>
                     setRows(rows.map((item) => (item.id === row.id ? { ...item, activity: value } : item)))
                   }
@@ -1178,7 +1238,7 @@ function ReferencePanel({
               Memorandum ini mengacu pada.
             </div>
             <FieldLabel label="Daftar Referensi" fieldId="reference" required>
-              <textarea
+              <AutoResizeTextarea
                 value={richTextToPlainText(draft.reference)}
                 onChange={(event) =>
                   updateDraft((current) => ({
@@ -1186,8 +1246,8 @@ function ReferencePanel({
                     reference: paragraphRichText(event.target.value),
                   }))
                 }
-                rows={5}
-                className="min-h-28 rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                rows={2}
+                className="min-h-11 rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
             </FieldLabel>
           </div>
@@ -1312,13 +1372,13 @@ function AttachmentsPanel({
         </fieldset>
         {enabled ? (
           <FieldLabel label="Daftar lampiran" fieldId="attachments">
-            <textarea
+            <AutoResizeTextarea
               value={attachments}
-              rows={5}
+              rows={2}
               onChange={(event) =>
                 updateDraft((current) => ({ ...current, attachments: event.target.value }))
               }
-              className="min-h-28 w-full resize-y rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              className="min-h-11 w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             />
           </FieldLabel>
         ) : null}
@@ -1402,11 +1462,36 @@ function AppendixPanel({
   updateDraft: DraftUpdater;
   validationIssues: ValidationIssue[];
 }) {
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
+
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }), recordHistory);
   }
 
   const groups = scenarioDateGroups(rows);
+
+  function detailOpen(id: string, initialOpen: boolean) {
+    return expandedDetails[id] ?? initialOpen;
+  }
+
+  function rememberDetailState(id: string, event: React.SyntheticEvent<HTMLDetailsElement>) {
+    const open = event.currentTarget.open;
+    setExpandedDetails((current) => current[id] === open ? current : { ...current, [id]: open });
+  }
+
+  function setAllDetails(open: boolean) {
+    const next: Record<string, boolean> = {};
+    groups.forEach((group) => {
+      next[`date:${group.id}`] = open;
+      scenarioSectionGroups(group.rows).forEach((section) => {
+        next[`section:${section.id}`] = open;
+        section.rows.forEach((row) => {
+          next[`scenario:${row.id}`] = open;
+        });
+      });
+    });
+    setExpandedDetails(next);
+  }
 
   function reorderDateGroups(nextGroups: ScenarioDateGroup[]) {
     setRows(nextGroups.flatMap((group) => group.rows), true);
@@ -1576,7 +1661,21 @@ function AppendixPanel({
 
   return (
     <Panel>
-      <SectionTitle title="Lampiran Skenario" />
+      <SectionTitle
+        title="Lampiran Skenario"
+        action={(
+          <div className="flex flex-wrap justify-end gap-2" data-review-ignore>
+            <IconButton onClick={() => setAllDetails(false)}>
+              <ChevronRight size={16} />
+              Collapse All
+            </IconButton>
+            <IconButton onClick={() => setAllDetails(true)}>
+              <ChevronDown size={16} />
+              Expand All
+            </IconButton>
+          </div>
+        )}
+      />
       <div className="mt-4">
         <DragDropList
           items={groups}
@@ -1589,7 +1688,11 @@ function AppendixPanel({
               data-scenario-date-group={group.id}
               className="rounded-xl border border-[#c9d3df] bg-[#f7f9fc] p-2"
             >
-              <details open className="group/date">
+              <details
+                open={detailOpen(`date:${group.id}`, true)}
+                onToggle={(event) => rememberDetailState(`date:${group.id}`, event)}
+                className="group/date"
+              >
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
                   <span>Tanggal {groupIndex + 1}</span>
                   <span className="text-xs font-semibold text-[#5b6778]">
@@ -1619,11 +1722,20 @@ function AppendixPanel({
                     itemLabel={(section) => `bagian ${section.marker}`}
                     renderItem={(section) => (
                       <section className="rounded-xl border border-[#d8e1eb] bg-white p-2">
-                        <details open className="group/section">
-                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+                        <details
+                          open={detailOpen(`section:${section.id}`, true)}
+                          onToggle={(event) => rememberDetailState(`section:${section.id}`, event)}
+                          className="group/section"
+                        >
+                          <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
                             <span>Bagian {section.marker}</span>
-                            <span className="truncate text-xs font-semibold text-[#5b6778]">
-                              {section.title || "Belum diberi nama"} · {section.rows.length} skenario
+                            <span className="min-w-0 text-right text-xs font-semibold text-[#5b6778]">
+                              <span data-scenario-section-title className="block break-words">
+                                {section.title || "Belum diberi nama"}
+                              </span>
+                              <span data-scenario-section-count className="mt-0.5 block whitespace-nowrap">
+                                {section.rows.length} skenario
+                              </span>
                             </span>
                           </summary>
                           <div className="mt-2">
@@ -1636,11 +1748,11 @@ function AppendixPanel({
                                 <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
                                   {section.marker}
                                 </span>
-                                <textarea
+                                <AutoResizeTextarea
                                   value={section.title}
                                   rows={1}
                                   onChange={(event) => updateSectionTitle(section, event.target.value)}
-                                  className="min-h-10 resize-y border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
+                                  className="min-h-10 border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
                                 />
                               </div>
                             </FieldLabel>
@@ -1654,7 +1766,8 @@ function AppendixPanel({
                                 itemLabel={(_, index) => `skenario ${index + 1}`}
                                 renderItem={(row, rowIndex) => (
                                   <details
-                                    open={rowIndex === 0}
+                                    open={detailOpen(`scenario:${row.id}`, rowIndex === 0)}
+                                    onToggle={(event) => rememberDetailState(`scenario:${row.id}`, event)}
                                     data-scenario-row
                                     className="rounded-lg border border-slate-200 bg-slate-50"
                                   >
@@ -1684,7 +1797,7 @@ function AppendixPanel({
                                         <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
                                           <RichTextEditor
                                             value={row.scenario}
-                                            minHeight={84}
+                                            minHeight={48}
                                             onChange={(value) =>
                                               setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
                                             }
@@ -1693,7 +1806,7 @@ function AppendixPanel({
                                         <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
                                           <RichTextEditor
                                             value={row.expectedResult}
-                                            minHeight={84}
+                                            minHeight={48}
                                             onChange={(value) =>
                                               setRows(
                                                 rows.map((item) =>
@@ -1704,13 +1817,13 @@ function AppendixPanel({
                                           />
                                         </FieldLabel>
                                         <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
-                                          <textarea
+                                          <AutoResizeTextarea
                                             value={row.pic}
-                                            rows={4}
+                                            rows={2}
                                             onChange={(event) =>
                                               setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
                                             }
-                                            className="min-h-[116px] resize-y rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                                            className="min-h-11 rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                                           />
                                         </FieldLabel>
                                       </div>
@@ -1757,13 +1870,10 @@ function AppendixPanel({
         >
           <p className="font-bold">Generate Docx ditahan. Field mandatory berikut masih kosong:</p>
           <ul className="mt-2 grid gap-1">
-            {validationIssues.slice(0, 8).map((issue) => (
-              <li key={issue.id}>- {issue.label}</li>
+            {validationIssues.map((issue) => (
+              <li key={issue.id} data-validation-issue-id={issue.id}>- {issue.label}</li>
             ))}
           </ul>
-          {validationIssues.length > 8 ? (
-            <p className="mt-2 font-semibold">+ {validationIssues.length - 8} field lain.</p>
-          ) : null}
         </div>
       ) : null}
     </Panel>
@@ -1919,7 +2029,7 @@ export function MemoBuilderApp() {
   function saveDraftData() {
     downloadBlob(
       new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }),
-      `memo-draft-${draft.id}.json`,
+      `${safeFilePart(draft.metadata.projectName)}_MEMO.json`,
     );
   }
 

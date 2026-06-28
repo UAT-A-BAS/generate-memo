@@ -4,10 +4,13 @@ import {
   closestCenter,
   DndContext,
   KeyboardSensor,
+  pointerWithin,
   PointerSensor,
+  useDndContext,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -33,6 +36,13 @@ type DragDropListProps<T extends Identified> = {
   onCrossReorder?: (event: DragEndEvent) => void;
 };
 
+const pointerFirstCollision: CollisionDetection = (args) => {
+  const withoutActive = <T extends { id: string | number }>(collisions: T[]) =>
+    collisions.filter((collision) => collision.id !== args.active.id);
+  const pointerCollisions = withoutActive(pointerWithin(args));
+  return pointerCollisions.length ? pointerCollisions : withoutActive(closestCenter(args));
+};
+
 function SortableItem<T extends Identified>({
   item,
   index,
@@ -48,15 +58,35 @@ function SortableItem<T extends Identified>({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id, data: { listId } });
+  const dragContext = useDndContext();
+  const isCurrentDropTarget = Boolean(
+    dragContext.over?.id === item.id && dragContext.active?.id !== item.id,
+  );
+  const isAvailableDropTarget = Boolean(
+    dragContext.active && dragContext.active.id !== item.id,
+  );
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-xl border bg-white p-2 shadow-sm ${
-        isDragging ? "border-slate-900 shadow-md" : "border-slate-300"
+      data-drop-target-active={isAvailableDropTarget ? "true" : undefined}
+      data-drop-target-current={isCurrentDropTarget ? "true" : undefined}
+      className={`relative grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-xl border bg-white p-2 shadow-sm transition-colors ${
+        isDragging
+          ? "border-slate-900 shadow-md"
+          : isCurrentDropTarget
+            ? "border-[#0b84d8] bg-[#eef8ff] ring-4 ring-[#0b84d8]/20"
+            : isAvailableDropTarget
+              ? "border-dashed border-[#0b84d8]/70 bg-[#f7fbff] ring-2 ring-[#0b84d8]/10"
+            : "border-slate-300"
       }`}
     >
+      {isCurrentDropTarget ? (
+        <span className="pointer-events-none absolute right-3 top-2 z-10 rounded-full bg-[#0b84d8] px-2.5 py-1 text-xs font-bold text-white shadow-sm">
+          Lepaskan di sini
+        </span>
+      ) : null}
       <button
         type="button"
         className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
@@ -124,7 +154,7 @@ export function DragDropList<T extends Identified>({
   if (!withContext) return content;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={pointerFirstCollision} onDragEnd={handleDragEnd}>
       {content}
     </DndContext>
   );

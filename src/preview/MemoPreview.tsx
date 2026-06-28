@@ -92,13 +92,17 @@ function PreviewSection({
 function BulletAlignedLine({
   children,
   bullet = true,
+  marker = "-",
 }: {
   children: React.ReactNode;
   bullet?: boolean;
+  marker?: "-" | "•";
 }) {
   return (
     <p className="grid grid-cols-[1.25rem_minmax(0,1fr)]">
-      <span>{bullet ? "- " : ""}</span>
+      <span data-memo-list-marker={bullet && marker === "•" ? "bullet" : undefined}>
+        {bullet ? marker : ""}
+      </span>
       <span>{children}</span>
     </p>
   );
@@ -128,7 +132,7 @@ function AttachmentContent({ items }: { items: string[] }) {
       <p>Bersama dengan memo ini dilampirkan:</p>
       <div className="mt-1 grid gap-0.5">
         {items.map((item, index) => (
-          <BulletAlignedLine key={`${item}-${index}`}>{item}</BulletAlignedLine>
+          <BulletAlignedLine key={`${item}-${index}`} marker="•">{item}</BulletAlignedLine>
         ))}
       </div>
     </>
@@ -142,7 +146,7 @@ function ContactLine({
   children: React.ReactNode;
   single: boolean;
 }) {
-  return single ? <p>{children}</p> : <BulletAlignedLine>{children}</BulletAlignedLine>;
+  return single ? <p>{children}</p> : <BulletAlignedLine marker="•">{children}</BulletAlignedLine>;
 }
 
 function CcRecipientLine({ recipient, total }: { recipient: Recipient; total: number }) {
@@ -350,11 +354,13 @@ function renderBlock(
           }`}
         >
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
-          <div className="mt-4">
+          <div className="mt-4 grid grid-cols-[minmax(0,32%)_14px_minmax(0,1fr)] gap-y-0.5" data-preview-signers>
             {draft.signers.map((signer) => (
-              <div key={signer.id}>
-                <p><strong>{signer.name.toUpperCase()}</strong> - {signer.title}</p>
-              </div>
+              <Fragment key={signer.id}>
+                <strong>{signer.name.toUpperCase()}</strong>
+                <span> - </span>
+                <span data-preview-signer-title>{signer.title}</span>
+              </Fragment>
             ))}
           </div>
         </div>

@@ -300,7 +300,7 @@ function visibleTableBorderXml(bordersXml: string) {
     bordersXml.match(/<w:(?:top|left|bottom|insideH|insideV)\b[^>]*w:val="single"[^>]*\/>/)?.[0] ??
     "";
   const color = getAttr(source, "w:color") || "0F172A";
-  const size = getAttr(source, "w:sz") || "4";
+  const size = getAttr(source, "w:sz") || "6";
 
   return `<w:right w:val="single" w:color="${color}" w:sz="${size}"/>`;
 }

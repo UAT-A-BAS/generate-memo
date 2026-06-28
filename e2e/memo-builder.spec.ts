@@ -1483,7 +1483,7 @@ test("lampiran toggle shows attachment list in preview", async ({ page }) => {
 
   await expect(page.locator("aside")).toContainText("Bersama dengan memo ini dilampirkan:");
   await expect(page.locator("aside")).toContainText(
-    "- Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan",
+    "•Draft SE Perihal: Pengembangan Pembukaan Rekening Giro Badan",
   );
 });
 
@@ -1510,7 +1510,7 @@ test("appendix hierarchy adds date, section, and scenario in place", async ({ pa
   await expect(appendixPanel.getByRole("button", { name: "Tanggal", exact: true })).toHaveCount(2);
 });
 
-test("Lingkup wording uses only project name and document borders stay thin", async ({ page }) => {
+test("Lingkup wording uses only project name and document borders stay PDF-safe", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
@@ -1530,8 +1530,8 @@ test("Lingkup wording uses only project name and document borders stay thin", as
   expect(xml).not.toContain(
     "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
   );
-  expect(xml).toContain('w:val="single" w:color="0F172A" w:sz="4"');
-  expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
+  expect(xml).toContain('w:val="single" w:color="0F172A" w:sz="6"');
+  expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="4"');
 });
 
 test("schedule keeps the complete date range together in preview and DOCX", async ({ page }) => {
@@ -1968,4 +1968,235 @@ test("review comments use 18px text throughout", async ({ page }) => {
   ]) {
     await expect(target).toHaveCSS("font-size", "18px");
   }
+});
+
+test("appendix hierarchy wraps section metadata and supports expand or collapse all", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
+      ...row,
+      section: "Verifikasi setoran tunai di BDS IDS dengan menggunakan menu yang sangat panjang untuk cabang",
+    })),
+  });
+
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  const title = panel.locator("[data-scenario-section-title]").first();
+  const count = panel.locator("[data-scenario-section-count]").first();
+  const titleBox = await title.boundingBox();
+  const countBox = await count.boundingBox();
+  expect(titleBox).toBeTruthy();
+  expect(countBox).toBeTruthy();
+  expect(countBox?.y).toBeGreaterThan((titleBox?.y ?? 0) + 8);
+
+  await panel.getByRole("button", { name: "Collapse All" }).click();
+  await expect(panel.locator("details[open]")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Expand All" }).click();
+  await expect(panel.locator("details[open]")).toHaveCount(await panel.locator("details").count());
+});
+
+test("preview navigation reveals a collapsed appendix field before highlighting it", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  await panel.getByRole("button", { name: "Collapse All" }).click();
+  await page.locator('aside [data-preview-field-id="scenario-text-scenario-test"]').click();
+
+  await expect(panel.locator("details[open]")).toHaveCount(3);
+  await expect(page.locator('[data-field-id="scenario-text-scenario-test"]')).toHaveClass(/field-jump-highlight/);
+  await expect(page.locator('[data-field-id="scenario-text-scenario-test"] .ProseMirror')).toBeFocused();
+});
+
+test("comment mode accepts preview hyperlinks and uses clean scenario labels", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  await page.getByRole("button", { name: "Add Comment" }).click();
+  const identityDialog = page.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await identityDialog.getByLabel("Nama *").fill("Reviewer Hyperlink");
+  await identityDialog.getByRole("button", { name: "Lanjut" }).click();
+
+  await page.locator('aside [data-preview-field-id="accessLink"] a').click();
+  const commentDialog = page.getByRole("dialog", { name: "Tambah komentar" });
+  await expect(commentDialog).toContainText("URL Akses");
+  await commentDialog.getByRole("button", { name: "Batal" }).click();
+
+  await page.locator('[data-field-id="scenario-text-scenario-test"] .ProseMirror').click();
+  await expect(page.getByRole("dialog", { name: "Tambah komentar" })).toContainText("Skenario");
+  await expect(page.getByRole("dialog", { name: "Tambah komentar" })).not.toContainText("scenario-text-scenario-test");
+});
+
+test("save draft uses the project name followed by MEMO", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect((await downloadPromise).suggestedFilename()).toBe("BDS Web Gen 2 versi 4.3.0_MEMO.json");
+});
+
+test("memo list bullets, appendix title, signer wrapping, and DOCX borders follow the document rules", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const longTitle = "Kepala Sub-Divisi/Senior Adviser/Adviser/Senior Officer/Officer untuk Operasional Nasional";
+  await importDraft(page, {
+    ...completeDraft(),
+    contacts: [
+      { id: "contact-a", name: "Nama A", email: "a@example.com" },
+      { id: "contact-b", name: "Nama B", email: "b@example.com" },
+    ],
+    signers: [{ id: "signer-long", name: "NAMA PEJABAT PANJANG", title: longTitle }],
+  });
+
+  await expect(page.locator('aside [data-memo-list-marker="bullet"]')).toHaveCount(4);
+  await expect(page.locator('aside [data-memo-list-marker="bullet"]').first()).toHaveText("•");
+  await expect(page.locator('aside article[data-page-kind="appendix"] h2').first()).toHaveCSS("font-size", "13.33px");
+  const signerTitle = page.locator("aside [data-preview-signer-title]");
+  expect((await signerTitle.boundingBox())?.height).toBeGreaterThan(20);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+  expect(xml).toContain('w:val="single" w:color="0F172A" w:sz="6"');
+
+  const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
+  const appendixTitleParagraph = xml.slice(
+    xml.lastIndexOf("<w:p>", appendixTitleIndex),
+    xml.indexOf("</w:p>", appendixTitleIndex),
+  );
+  expect(appendixTitleParagraph).toContain('<w:sz w:val="20"/>');
+  expect(appendixTitleParagraph).not.toContain('<w:sz w:val="22"/>');
+
+  const signerTable = documentTableAround(xml, "NAMA PEJABAT PANJANG");
+  expect(signerTable).toContain(longTitle);
+  expect(signerTable.match(/<w:tc>/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+});
+
+test("all rendered mandatory fields block DOCX generation when empty", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const empty = richText("");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      projectName: "",
+      autoPerihal: false,
+      perihal: "",
+      accessLink: "",
+    },
+    recipients: [{ ...completeDraft().recipients[0], position: "", gender: "" }],
+    ccRecipients: [{ ...completeDraft().ccRecipients[0], position: "" }],
+    developmentRows: [{ ...completeDraft().developmentRows[0], item: empty, description: empty }],
+    pilotSchedule: { startDate: "", endDate: "", dates: [] },
+    activities: [{ ...completeDraft().activities[0], startDate: "", endDate: "", dates: [], owner: "", activity: empty }],
+    contacts: [{ ...completeDraft().contacts[0], name: "", email: "" }],
+    signers: [{ ...completeDraft().signers[0], name: "", title: "" }],
+    initials: "",
+    appendixScenarios: [{
+      ...completeDraft().appendixScenarios[0],
+      startDate: "",
+      endDate: "",
+      dates: [],
+      section: "",
+      scenario: empty,
+      expectedResult: empty,
+      pic: "",
+    }],
+  });
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  expect(await downloadPromise).toBeNull();
+  for (const id of [
+    "projectName",
+    "perihal",
+    "recipient-recipient-test",
+    "recipient-gender-recipient-test",
+    "development-item-development-test",
+    "development-description-development-test",
+    "schedule",
+    "activity-date-activity-test",
+    "activity-owner-activity-test",
+    "activity-text-activity-test",
+    "accessLink",
+    "contact-name-contact-test",
+    "contact-email-contact-test",
+    "signer-name-signer-test",
+    "signer-title-signer-test",
+    "recipient-cc-test",
+    "initials",
+    "scenario-date-scenario-test",
+    "scenario-section-scenario-test",
+    "scenario-pic-scenario-test",
+    "scenario-text-scenario-test",
+    "scenario-expected-scenario-test",
+  ]) {
+    await expect(page.locator(`[data-validation-issue-id="${id}"]`)).toHaveCount(1);
+  }
+});
+
+test("editable multi-line fields auto-resize without oversized empty space", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const activityEditor = page.locator('[data-field-id="activity-text-activity-test"] .ProseMirror');
+  const before = await activityEditor.boundingBox();
+  expect(before?.height).toBeLessThan(80);
+  await activityEditor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type("Baris 1\nBaris 2\nBaris 3\nBaris 4\nBaris 5\nBaris 6");
+  const after = await activityEditor.boundingBox();
+  expect(after?.height).toBeGreaterThan((before?.height ?? 0) + 30);
+
+  const attachments = page.getByLabel("Daftar lampiran");
+  const attachmentBefore = await attachments.boundingBox();
+  await attachments.fill("Satu\nDua\nTiga\nEmpat\nLima\nEnam");
+  const attachmentAfter = await attachments.boundingBox();
+  expect(attachmentAfter?.height).toBeGreaterThan(attachmentBefore?.height ?? 0);
+});
+
+test("review popup uses a stable opaque surface during collaboration updates", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  const popup = page.locator("#review-comments-popup");
+  await expect(popup).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(popup).toHaveCSS("backdrop-filter", "none");
+});
+
+test("cross-date dragging exposes a visible drop target before release", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1600 });
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      { ...scenarioBase, id: "drag-feedback-a", dateGroupId: "drag-feedback-date-a", sectionGroupId: "drag-feedback-section-a", section: "Bagian Alpha" },
+      { ...scenarioBase, id: "drag-feedback-b", dateGroupId: "drag-feedback-date-b", sectionGroupId: "drag-feedback-section-b", startDate: "2026-06-01", endDate: "2026-06-02", section: "Bagian Beta" },
+    ],
+  });
+
+  const groups = page.locator("[data-scenario-date-group]");
+  const source = groups.nth(0).getByRole("button", { name: "Ubah urutan bagian A" });
+  const target = groups.nth(1).getByRole("button", { name: "Ubah urutan bagian A" });
+  await page.evaluate(() => {
+    (window as typeof window & { __dropTargetSeen?: boolean }).__dropTargetSeen = false;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-drop-target-active="true"]')) {
+        (window as typeof window & { __dropTargetSeen?: boolean }).__dropTargetSeen = true;
+      }
+    });
+    observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+  });
+  await source.dragTo(target);
+  expect(await page.evaluate(() =>
+    (window as typeof window & { __dropTargetSeen?: boolean }).__dropTargetSeen,
+  )).toBe(true);
 });

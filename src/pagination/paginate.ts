@@ -422,7 +422,14 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
     {
       id: "signature",
       type: "signature",
-      estimatedHeight: 104 + draft.signers.length * 28,
+      estimatedHeight: 104 + draft.signers.reduce(
+        (height, signer) => height + Math.max(
+          1,
+          Math.ceil(signer.name.length / 24),
+          Math.ceil(signer.title.length / 44),
+        ) * 28,
+        0,
+      ),
     },
     {
       id: "cc",
