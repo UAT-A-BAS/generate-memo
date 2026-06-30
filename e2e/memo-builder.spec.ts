@@ -704,6 +704,42 @@ test("attachment-sized main content moves to the next A4 page instead of clippin
   expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
 });
 
+test("hard-break rich text continues on the next page instead of crossing the A4 boundary", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const symbols = Array.from({ length: 45 }, (_, index) => `${index % 2 ? "@#$" : "$@#"}${index}`);
+  const descriptionContent = [
+    { type: "text", text: "Penjelasan alur pembukaan rekening dan tahapan verifikasi dokumen. ".repeat(9) },
+    ...symbols.flatMap((text) => [
+      { type: "hardBreak" },
+      { type: "text", text },
+    ]),
+  ];
+
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [{
+      id: "hard-break-development",
+      item: richText("Penambahan alur pembukaan rekening giro badan pada aplikasi BDS Web Gen 2"),
+      description: {
+        type: "doc",
+        content: [{ type: "paragraph", content: descriptionContent }],
+      },
+    }],
+  });
+
+  const mainPages = page.locator('aside article[data-page-kind="main"]');
+  expect(await mainPages.count()).toBeGreaterThan(1);
+  const pageOverflow = await mainPages
+    .locator("[data-preview-page-content]")
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+  await expect(
+    page.locator("aside").getByText("Lingkup Pengembangan, Sambungan", { exact: true }).first(),
+  ).toBeVisible();
+});
+
 test("uses exact continuation wording and only the floating generate button", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
@@ -2079,8 +2115,12 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   await expect(page.locator('aside article[data-page-kind="appendix"] h2').first()).toHaveCSS("font-size", "13.33px");
   const signerRows = page.locator("aside [data-preview-signer-row]");
   await expect(signerRows).toHaveCount(2);
+  const firstNameBox = await signerRows.nth(0).locator("strong").boundingBox();
+  const firstSeparatorBox = await signerRows.nth(0).locator("span").nth(0).boundingBox();
   const firstTitleBox = await signerRows.nth(0).locator("[data-preview-signer-title]").boundingBox();
   const secondTitleBox = await signerRows.nth(1).locator("[data-preview-signer-title]").boundingBox();
+  expect((firstSeparatorBox?.x ?? 0) - ((firstNameBox?.x ?? 0) + (firstNameBox?.width ?? 0))).toBeGreaterThanOrEqual(2);
+  expect((firstTitleBox?.x ?? 0) - ((firstSeparatorBox?.x ?? 0) + (firstSeparatorBox?.width ?? 0))).toBeGreaterThanOrEqual(2);
   expect((secondTitleBox?.x ?? 0) - (firstTitleBox?.x ?? 0)).toBeGreaterThan(40);
   expect(secondTitleBox?.height).toBeGreaterThan(20);
 

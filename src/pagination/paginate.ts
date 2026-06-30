@@ -98,6 +98,54 @@ function nodeCount(node?: RichTextNode): number {
   return 1 + (node.content ?? []).reduce((total, child) => total + nodeCount(child), 0);
 }
 
+function inlineVisualLineCount(content: RichTextNode[], charsPerLine: number) {
+  let lines = 1;
+  let used = 0;
+
+  for (const node of content) {
+    if (node.type === "hardBreak") {
+      lines += 1;
+      used = 0;
+      continue;
+    }
+
+    const length = typeof node.text === "string"
+      ? node.text.length
+      : richTextToPlainText({ type: "doc", content: [node] }).length;
+    if (!length) continue;
+    const total = used + length;
+    lines += Math.floor((total - 1) / charsPerLine);
+    used = ((total - 1) % charsPerLine) + 1;
+  }
+
+  return lines;
+}
+
+function nodeVisualLineCount(node: RichTextNode, charsPerLine: number): number {
+  if (node.type === "paragraph" || node.type === "heading") {
+    return inlineVisualLineCount(node.content ?? [], charsPerLine);
+  }
+  if (node.type === "hardBreak") return 1;
+  if (node.type === "text") {
+    return Math.max(1, Math.ceil((node.text?.length ?? 0) / charsPerLine));
+  }
+  if (node.content?.length) {
+    return node.content.reduce(
+      (total, child) => total + nodeVisualLineCount(child, charsPerLine),
+      0,
+    );
+  }
+  return 1;
+}
+
+function visualBudgetLength(node: RichTextNode, charsPerLine: number) {
+  return Math.max(
+    1,
+    richTextToPlainText({ type: "doc", content: [node] }).length,
+    nodeVisualLineCount(node, charsPerLine) * charsPerLine,
+  );
+}
+
 function richBlockHeight(doc: RichTextDoc, base = 42, charsPerLine = 56) {
   const text = richTextToPlainText(doc);
   const textLines = Math.max(1, visualLineCount(text, charsPerLine));
@@ -109,7 +157,14 @@ function richVisualBlockHeight(doc: RichTextDoc, base = 0, charsPerLine = 56) {
   const text = richTextToPlainText(doc);
   const paragraphCount = Math.max(1, doc.content.length);
   const textLines = Math.max(1, visualLineCount(text, charsPerLine));
-  return base + Math.max(textLines, paragraphCount) * 22 + Math.max(0, paragraphCount - 1) * 4;
+  const structuralLines = Math.max(
+    1,
+    doc.content.reduce(
+      (total, node) => total + nodeVisualLineCount(node, charsPerLine),
+      0,
+    ),
+  );
+  return base + Math.max(textLines, structuralLines) * 22 + Math.max(0, paragraphCount - 1) * 4;
 }
 
 function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
@@ -155,19 +210,21 @@ function splitTextAtBudget(text: string, maxChars: number) {
   return chunks;
 }
 
-function splitInlineContent(content: RichTextNode[], maxChars: number) {
+function splitInlineContent(
+  content: RichTextNode[],
+  maxChars: number,
+  visualCharsPerLine: number,
+) {
   const chunks: RichTextNode[][] = [[]];
   let used = 0;
 
   for (const node of content) {
     if (typeof node.text !== "string") {
-      const nodeLength = Math.max(
-        1,
-        richTextToPlainText({ type: "doc", content: [node] }).length,
-      );
+      const nodeLength = visualBudgetLength(node, visualCharsPerLine);
       if (used && used + nodeLength > maxChars) {
         chunks.push([]);
         used = 0;
+        if (node.type === "hardBreak") continue;
       }
       chunks.at(-1)?.push(JSON.parse(JSON.stringify(node)) as RichTextNode);
       used += nodeLength;
@@ -187,14 +244,20 @@ function splitInlineContent(content: RichTextNode[], maxChars: number) {
   return chunks.filter((chunk) => chunk.length);
 }
 
-function splitOversizedNode(node: RichTextNode, maxChars: number) {
-  const nodeText = richTextToPlainText({ type: "doc", content: [node] });
-  if (nodeText.length <= maxChars || !node.content?.length) {
+function splitOversizedNode(
+  node: RichTextNode,
+  maxChars: number,
+  visualCharsPerLine: number,
+) {
+  if (
+    visualBudgetLength(node, visualCharsPerLine) <= maxChars ||
+    !node.content?.length
+  ) {
     return [JSON.parse(JSON.stringify(node)) as RichTextNode];
   }
 
   if (node.type === "paragraph" || node.type === "heading") {
-    return splitInlineContent(node.content, maxChars).map((content) => ({
+    return splitInlineContent(node.content, maxChars, visualCharsPerLine).map((content) => ({
       ...node,
       content,
     }));
@@ -206,10 +269,7 @@ function splitOversizedNode(node: RichTextNode, maxChars: number) {
     let currentLength = 0;
 
     for (const item of node.content) {
-      const itemLength = Math.max(
-        1,
-        richTextToPlainText({ type: "doc", content: [item] }).length,
-      );
+      const itemLength = visualBudgetLength(item, visualCharsPerLine);
       if (current.length && currentLength + itemLength > maxChars) {
         chunks.push(current);
         current = [];
@@ -239,16 +299,17 @@ function splitOversizedNode(node: RichTextNode, maxChars: number) {
   return [JSON.parse(JSON.stringify(node)) as RichTextNode];
 }
 
-function splitDoc(doc: RichTextDoc, maxChars: number) {
+function splitDoc(doc: RichTextDoc, maxChars: number, visualCharsPerLine = 48) {
   const chunks: RichTextNode[][] = [];
   let current: RichTextNode[] = [];
   let currentLength = 0;
 
-  const nodes = doc.content.flatMap((node) => splitOversizedNode(node, maxChars));
+  const nodes = doc.content.flatMap((node) =>
+    splitOversizedNode(node, maxChars, visualCharsPerLine),
+  );
 
   for (const node of nodes) {
-    const nodeText = richTextToPlainText({ type: "doc", content: [node] });
-    const nodeLength = Math.max(1, nodeText.length);
+    const nodeLength = visualBudgetLength(node, visualCharsPerLine);
 
     if (current.length && currentLength + nodeLength > maxChars) {
       chunks.push(current);
@@ -292,8 +353,8 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
   }
 
   if (block.type === "development-row" && block.estimatedHeight > 540) {
-    const itemParts = splitDoc(block.row.item, 520);
-    const descriptionParts = splitDoc(block.row.description, 700);
+    const itemParts = splitDoc(block.row.item, 520, 30);
+    const descriptionParts = splitDoc(block.row.description, 700, 52);
     const total = Math.max(itemParts.length, descriptionParts.length);
 
     return Array.from({ length: total }, (_, part) => {
@@ -314,7 +375,7 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
   }
 
   if (block.type === "activity-row" && block.estimatedHeight > 540) {
-    return splitDoc(block.row.activity, 650).map((activity, part) => ({
+    return splitDoc(block.row.activity, 650, 44).map((activity, part) => ({
       ...block,
       id: `${block.id}-part-${part + 1}`,
       row: { ...block.row, activity },
@@ -328,8 +389,8 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
 function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
   if (block.type !== "appendix-row" || block.estimatedHeight <= 360) return [block];
 
-  const scenarioParts = splitDoc(block.row.scenario, 420);
-  const expectedParts = splitDoc(block.row.expectedResult, 420);
+  const scenarioParts = splitDoc(block.row.scenario, 420, 48);
+  const expectedParts = splitDoc(block.row.expectedResult, 420, 50);
   const total = Math.max(scenarioParts.length, expectedParts.length);
 
   return Array.from({ length: total }, (_, part) => {

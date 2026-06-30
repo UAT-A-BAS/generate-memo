@@ -358,7 +358,7 @@ function renderBlock(
             {draft.signers.map((signer) => (
               <div
                 key={signer.id}
-                className="grid min-w-0 grid-cols-[fit-content(45%)_14px_minmax(0,1fr)] items-start"
+                className="grid min-w-0 grid-cols-[fit-content(45%)_auto_minmax(0,1fr)] items-start gap-x-[0.25em]"
                 data-preview-signer-row
               >
                 <strong className="min-w-0 [overflow-wrap:anywhere]">
