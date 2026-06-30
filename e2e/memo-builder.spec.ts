@@ -2028,10 +2028,17 @@ test("appendix hierarchy wraps section metadata and supports expand or collapse 
   expect(countBox).toBeTruthy();
   expect(countBox?.y).toBeGreaterThan((titleBox?.y ?? 0) + 8);
 
-  await panel.getByRole("button", { name: "Collapse All" }).click();
+  const toggleAll = panel.locator("[data-appendix-toggle-all]");
+  await expect(toggleAll).toHaveCount(1);
+  await expect(toggleAll).toHaveAccessibleName("Collapse All");
+  await expect(toggleAll).toHaveAttribute("aria-expanded", "true");
+  await toggleAll.click();
   await expect(panel.locator("details[open]")).toHaveCount(0);
-  await panel.getByRole("button", { name: "Expand All" }).click();
+  await expect(toggleAll).toHaveAccessibleName("Expand All");
+  await expect(toggleAll).toHaveAttribute("aria-expanded", "false");
+  await toggleAll.click();
   await expect(panel.locator("details[open]")).toHaveCount(await panel.locator("details").count());
+  await expect(toggleAll).toHaveAccessibleName("Collapse All");
 });
 
 test("a newly added scenario stays expanded", async ({ page }) => {

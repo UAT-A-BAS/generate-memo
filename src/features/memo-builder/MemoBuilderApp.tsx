@@ -283,12 +283,15 @@ function IconButton({
   onClick,
   variant = "secondary",
   disabled,
+  className = "",
+  ...buttonProps
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   variant?: "primary" | "secondary" | "danger" | "word";
   disabled?: boolean;
-}) {
+  className?: string;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "onClick" | "disabled">) {
   const variants = {
     primary: "border-[#1b4d78] bg-[#1b4d78] text-white shadow-[0_10px_24px_rgba(27,77,120,0.18)] hover:bg-[#163754]",
     secondary: "border-[#c9d3df] bg-[#eef4fa] text-[#1b4d78] hover:bg-[#e3edf7]",
@@ -301,7 +304,8 @@ function IconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-9 items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/15 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`}
+      {...buttonProps}
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/15 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
     >
       {children}
     </button>
@@ -1493,6 +1497,16 @@ function AppendixPanel({
     setExpandedDetails(next);
   }
 
+  const allDetailsOpen = groups.length > 0 && groups.every((group) =>
+    detailOpen(`date:${group.id}`, true) &&
+    scenarioSectionGroups(group.rows).every((section) =>
+      detailOpen(`section:${section.id}`, true) &&
+      section.rows.every((row, rowIndex) =>
+        detailOpen(`scenario:${row.id}`, rowIndex === 0),
+      ),
+    ),
+  );
+
   function reorderDateGroups(nextGroups: ScenarioDateGroup[]) {
     setRows(nextGroups.flatMap((group) => group.rows), true);
   }
@@ -1669,19 +1683,21 @@ function AppendixPanel({
       <SectionTitle
         title="Lampiran Skenario"
         action={(
-          <div className="flex flex-wrap justify-end gap-2" data-review-ignore>
-            <IconButton onClick={() => setAllDetails(false)}>
-              <ChevronRight size={16} />
-              Collapse All
-            </IconButton>
-            <IconButton onClick={() => setAllDetails(true)}>
-              <ChevronDown size={16} />
-              Expand All
+          <div data-review-ignore>
+            <IconButton
+              onClick={() => setAllDetails(!allDetailsOpen)}
+              aria-expanded={allDetailsOpen}
+              aria-controls="appendix-scenario-groups"
+              data-appendix-toggle-all
+              className="h-11"
+            >
+              {allDetailsOpen ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+              {allDetailsOpen ? "Collapse All" : "Expand All"}
             </IconButton>
           </div>
         )}
       />
-      <div className="mt-4">
+      <div id="appendix-scenario-groups" className="mt-4">
         <DragDropList
           items={groups}
           onReorder={reorderDateGroups}
