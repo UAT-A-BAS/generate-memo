@@ -25,7 +25,7 @@ import {
   type ISectionOptions,
   type TableVerticalAlign,
 } from "docx";
-import type { MemoDraft, Recipient, SignerRow } from "@/types/memo";
+import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewOrientation, PreviewPage } from "@/pagination/paginate";
 import {
   ACTIVITY_COLUMN_WIDTHS,
@@ -559,35 +559,15 @@ function closingParagraph(text: string, withTopBorder = true, spacingBefore = 22
   });
 }
 
-function signerCell(text: string, width: number, bold = false) {
-  return new TableCell({
-    verticalAlign: VerticalAlign.TOP,
-    margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    width: {
-      size: Math.round((MAIN_BODY_CONTENT_WIDTH * width) / 100),
-      type: WidthType.DXA,
-    },
-    borders: noBorder,
-    children: [paragraph(text, { bold, size: 22, spacingAfter: 70 })],
+function signerParagraph(name: string, title: string) {
+  return new Paragraph({
+    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    spacing: wordSpacing({ after: 70 }),
+    children: [
+      run(name.toUpperCase(), { bold: true, size: 22 }),
+      run(` - ${title}`, { size: 22 }),
+    ],
   });
-}
-
-function signerTable(signers: SignerRow[]) {
-  const widths = [32, 3, 65];
-  return bodyTable(
-    signers.map((signer) => new TableRow({
-      cantSplit: true,
-      children: [
-        signerCell(signer.name.toUpperCase(), widths[0], true),
-        signerCell("-", widths[1]),
-        signerCell(signer.title, widths[2]),
-      ],
-    })),
-    widths,
-    BODY_COLUMN_INDENT,
-    noTableBorder,
-    MAIN_BODY_CONTENT_WIDTH,
-  );
 }
 
 function header() {
@@ -1187,7 +1167,7 @@ function blockChildren(
           !options.firstBlockOnPage,
           options.firstBlockOnPage ? 0 : 220,
         ),
-        signerTable(draft.signers),
+        ...draft.signers.map((signer) => signerParagraph(signer.name, signer.title)),
       ];
     case "cc":
       return [

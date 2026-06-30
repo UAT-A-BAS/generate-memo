@@ -1998,6 +1998,21 @@ test("appendix hierarchy wraps section metadata and supports expand or collapse 
   await expect(panel.locator("details[open]")).toHaveCount(await panel.locator("details").count());
 });
 
+test("a newly added scenario stays expanded", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  await panel.getByRole("button", { name: "Skenario", exact: true }).click();
+
+  const scenarios = panel.locator("details[data-scenario-row]");
+  await expect(scenarios).toHaveCount(2);
+  await expect(scenarios.last()).toHaveAttribute("open", "");
+});
+
 test("preview navigation reveals a collapsed appendix field before highlighting it", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
@@ -2046,20 +2061,42 @@ test("save draft uses the project name followed by MEMO", async ({ page }) => {
 test("memo list bullets, appendix title, signer wrapping, and DOCX borders follow the document rules", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const longTitle = "Kepala Sub-Divisi/Senior Adviser/Adviser/Senior Officer/Officer untuk Operasional Nasional";
+  const longName = `ASD${"D".repeat(90)}`;
   await importDraft(page, {
     ...completeDraft(),
     contacts: [
       { id: "contact-a", name: "Nama A", email: "a@example.com" },
       { id: "contact-b", name: "Nama B", email: "b@example.com" },
     ],
-    signers: [{ id: "signer-long", name: "NAMA PEJABAT PANJANG", title: longTitle }],
+    signers: [
+      { id: "signer-short", name: "SILVIAN", title: "Application & User Acceptance Test Bureau Head A" },
+      { id: "signer-long", name: longName, title: longTitle },
+    ],
   });
 
   await expect(page.locator('aside [data-memo-list-marker="bullet"]')).toHaveCount(4);
   await expect(page.locator('aside [data-memo-list-marker="bullet"]').first()).toHaveText("•");
   await expect(page.locator('aside article[data-page-kind="appendix"] h2').first()).toHaveCSS("font-size", "13.33px");
-  const signerTitle = page.locator("aside [data-preview-signer-title]");
-  expect((await signerTitle.boundingBox())?.height).toBeGreaterThan(20);
+  const signerRows = page.locator("aside [data-preview-signer-row]");
+  await expect(signerRows).toHaveCount(2);
+  const firstTitleBox = await signerRows.nth(0).locator("[data-preview-signer-title]").boundingBox();
+  const secondTitleBox = await signerRows.nth(1).locator("[data-preview-signer-title]").boundingBox();
+  expect((secondTitleBox?.x ?? 0) - (firstTitleBox?.x ?? 0)).toBeGreaterThan(40);
+  expect(secondTitleBox?.height).toBeGreaterThan(20);
+
+  const pageWidths = await page.locator("aside [data-preview-page-content]").evaluateAll((nodes) =>
+    nodes.map((node, index) => {
+      const pageRect = node.getBoundingClientRect();
+      const offenders = Array.from(node.querySelectorAll("*")).flatMap((child) => {
+        const rect = child.getBoundingClientRect();
+        return rect.right > pageRect.right + 1
+          ? [`${child.tagName}.${child.className}: ${Math.round(rect.right - pageRect.right)}`]
+          : [];
+      });
+      return { index, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, offenders: offenders.slice(0, 8) };
+    }),
+  );
+  expect(pageWidths.filter(({ clientWidth, scrollWidth }) => scrollWidth > clientWidth + 1), JSON.stringify(pageWidths)).toEqual([]);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
@@ -2075,9 +2112,45 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   expect(appendixTitleParagraph).toContain('<w:sz w:val="20"/>');
   expect(appendixTitleParagraph).not.toContain('<w:sz w:val="22"/>');
 
-  const signerTable = documentTableAround(xml, "NAMA PEJABAT PANJANG");
-  expect(signerTable).toContain(longTitle);
-  expect(signerTable.match(/<w:tc>/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  const signerIndex = xml.indexOf("SILVIAN");
+  const signerParagraph = xml.slice(
+    xml.lastIndexOf("<w:p>", signerIndex),
+    xml.indexOf("</w:p>", signerIndex),
+  );
+  expect(signerParagraph).toContain("Application &amp; User Acceptance Test Bureau Head A");
+  expect(xml.lastIndexOf("<w:tbl>", signerIndex)).toBeLessThan(
+    xml.lastIndexOf("</w:tbl>", signerIndex),
+  );
+});
+
+test("closing, tembusan, and initials use the same page when they fit", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    contacts: Array.from({ length: 6 }, (_, index) => ({
+      id: `contact-pack-${index}`,
+      name: `PIC ${index + 1}`,
+      email: `pic${index + 1}@example.com`,
+    })),
+    signers: [
+      { id: "signer-pack-a", name: "SILVIAN", title: "Application & User Acceptance Test Bureau Head A" },
+      { id: "signer-pack-b", name: `ASD${"D".repeat(55)}`, title: "Senior Officer Application & User Acceptance Test Bureau A" },
+      { id: "signer-pack-c", name: "TAZYA", title: "Officer Application & User Acceptance Test Bureau A" },
+    ],
+    ccRecipients: Array.from({ length: 15 }, (_, index) => ({
+      id: `cc-pack-${index}`,
+      gender: "",
+      name: "",
+      position: `Unit Kerja Tembusan ${index + 1}`,
+    })),
+  });
+
+  const closingPage = page.locator('aside article[data-page-kind="main"]').filter({
+    has: page.locator("[data-preview-closing]"),
+  });
+  await expect(closingPage).toHaveCount(1);
+  await expect(closingPage.getByText("Tembusan:", { exact: true })).toHaveCount(1);
+  await expect(closingPage.getByText("abc/uat-a", { exact: true })).toHaveCount(1);
 });
 
 test("all rendered mandatory fields block DOCX generation when empty", async ({ page }) => {

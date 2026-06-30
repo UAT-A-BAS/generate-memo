@@ -417,17 +417,20 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
     {
       id: "contacts",
       type: "contacts",
-      estimatedHeight: 58 + draft.contacts.length * 28,
+      estimatedHeight: 58 + draft.contacts.reduce(
+        (height, contact) =>
+          height + compactTextHeight(`${contact.name} - ${contact.email}`, 58) + 2,
+        0,
+      ),
     },
     {
       id: "signature",
       type: "signature",
       estimatedHeight: 104 + draft.signers.reduce(
         (height, signer) => height + Math.max(
-          1,
-          Math.ceil(signer.name.length / 24),
-          Math.ceil(signer.title.length / 44),
-        ) * 28,
+          compactTextHeight(signer.name, 28),
+          compactTextHeight(signer.title, 52),
+        ) + 2,
         0,
       ),
     },

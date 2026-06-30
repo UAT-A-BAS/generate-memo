@@ -1617,6 +1617,11 @@ function AppendixPanel({
       section: section.title,
     });
 
+    setExpandedDetails((current) => ({
+      ...current,
+      [`scenario:${nextRow.id}`]: true,
+    }));
+
     setRows([
       ...rows.slice(0, lastIndex + 1),
       nextRow,

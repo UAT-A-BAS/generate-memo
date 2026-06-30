@@ -176,6 +176,13 @@ main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich
   white-space: normal;
 }
 
+.memo-page :where(p, span, strong, h1, h2, h3, td, th, a, li) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
 .memo-preview-table td.preserve-lines {
   white-space: pre-line;
 }

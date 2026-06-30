@@ -79,7 +79,7 @@ function PreviewSection({
       role={fieldId ? "button" : undefined}
       tabIndex={fieldId ? 0 : undefined}
     >
-      <div className="grid grid-cols-[120px_1fr] gap-5 text-[14.67px] leading-[1.08]">
+      <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-5 text-[14.67px] leading-[1.08]">
         <h3 className={`${titleRuleClass} text-[13.33px] leading-[1.08]`}>
           {typeof title === "string" ? <strong>{title}</strong> : title}
         </h3>
@@ -354,13 +354,24 @@ function renderBlock(
           }`}
         >
           <p>Demikian informasi ini kami sampaikan, atas perhatian Bapak/Ibu kami ucapkan terima kasih.</p>
-          <div className="mt-4 grid grid-cols-[minmax(0,32%)_14px_minmax(0,1fr)] gap-y-0.5" data-preview-signers>
+          <div className="mt-4 grid gap-0.5" data-preview-signers>
             {draft.signers.map((signer) => (
-              <Fragment key={signer.id}>
-                <strong>{signer.name.toUpperCase()}</strong>
+              <div
+                key={signer.id}
+                className="grid min-w-0 grid-cols-[fit-content(45%)_14px_minmax(0,1fr)] items-start"
+                data-preview-signer-row
+              >
+                <strong className="min-w-0 [overflow-wrap:anywhere]">
+                  {signer.name.toUpperCase()}
+                </strong>
                 <span> - </span>
-                <span data-preview-signer-title>{signer.title}</span>
-              </Fragment>
+                <span
+                  className="min-w-0 flex-1 [overflow-wrap:anywhere]"
+                  data-preview-signer-title
+                >
+                  {signer.title}
+                </span>
+              </div>
             ))}
           </div>
         </div>
