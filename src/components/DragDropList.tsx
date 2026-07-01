@@ -62,23 +62,17 @@ function SortableItem<T extends Identified>({
   const isCurrentDropTarget = Boolean(
     dragContext.over?.id === item.id && dragContext.active?.id !== item.id,
   );
-  const isAvailableDropTarget = Boolean(
-    dragContext.active && dragContext.active.id !== item.id,
-  );
-
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      data-drop-target-active={isAvailableDropTarget ? "true" : undefined}
+      data-drop-target-active={isCurrentDropTarget ? "true" : undefined}
       data-drop-target-current={isCurrentDropTarget ? "true" : undefined}
       className={`relative grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-xl border bg-white p-2 shadow-sm transition-colors ${
         isDragging
-          ? "border-slate-900 shadow-md"
+          ? "z-20 border-slate-900 bg-slate-50 opacity-60 shadow-md"
           : isCurrentDropTarget
             ? "border-[#0b84d8] bg-[#eef8ff] ring-4 ring-[#0b84d8]/20"
-            : isAvailableDropTarget
-              ? "border-dashed border-[#0b84d8]/70 bg-[#f7fbff] ring-2 ring-[#0b84d8]/10"
             : "border-slate-300"
       }`}
     >

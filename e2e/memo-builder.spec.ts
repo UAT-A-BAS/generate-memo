@@ -704,6 +704,22 @@ test("attachment-sized main content moves to the next A4 page instead of clippin
   expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
 });
 
+test("memo source heading includes the dynamic UAT bureau in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: { ...completeDraft().metadata, bureau: "D" },
+  });
+
+  const source = "POL Application & User Acceptance Test Bureau D (UAT D)";
+  await expect(page.locator("aside").getByText(source, { exact: true })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain(source.replace("&", "&amp;"));
+});
+
 test("hard-break rich text continues on the next page instead of crossing the A4 boundary", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const symbols = Array.from({ length: 45 }, (_, index) => `${index % 2 ? "@#$" : "$@#"}${index}`);
@@ -1171,7 +1187,7 @@ test("consecutive duplicate table values keep each column default alignment", as
   expect((xml.match(/<w:vMerge w:val="restart"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
   expect((xml.match(/<w:vMerge w:val="continue"\/>/g) ?? []).length).toBeGreaterThanOrEqual(8);
   expect(xml).not.toContain('w:val="single" w:color="FFFFFF"');
-  expect(xml).toContain('w:color="0F172A"');
+  expect(xml).toContain('w:color="000000"');
   for (const text of [
     "Nilai pengembangan sama",
     "Keterangan sama",
@@ -1249,7 +1265,7 @@ test("DOCX data tables close the right border", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const rightBorder = /<w:right w:val="single"[^>]*w:color="0F172A"[^>]*\/>/;
+  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*\/>/;
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -1566,8 +1582,9 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain(
     "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
   );
-  expect(xml).toContain('w:val="single" w:color="0F172A" w:sz="6"');
-  expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="4"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
+  expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
 });
 
 test("schedule keeps the complete date range together in preview and DOCX", async ({ page }) => {
@@ -2104,7 +2121,7 @@ test("save draft uses the project name followed by MEMO", async ({ page }) => {
 test("memo list bullets, appendix title, signer wrapping, and DOCX borders follow the document rules", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const longTitle = "Kepala Sub-Divisi/Senior Adviser/Adviser/Senior Officer/Officer untuk Operasional Nasional";
-  const longName = `ASD${"D".repeat(90)}`;
+  const longName = "NAMA PEJABAT DENGAN EMPAT KATA";
   await importDraft(page, {
     ...completeDraft(),
     contacts: [
@@ -2123,12 +2140,14 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   const signerRows = page.locator("aside [data-preview-signer-row]");
   await expect(signerRows).toHaveCount(2);
   const firstNameBox = await signerRows.nth(0).locator("strong").boundingBox();
+  const secondNameBox = await signerRows.nth(1).locator("strong").boundingBox();
   const firstSeparatorBox = await signerRows.nth(0).locator("span").nth(0).boundingBox();
   const firstTitleBox = await signerRows.nth(0).locator("[data-preview-signer-title]").boundingBox();
   const secondTitleBox = await signerRows.nth(1).locator("[data-preview-signer-title]").boundingBox();
   expect((firstSeparatorBox?.x ?? 0) - ((firstNameBox?.x ?? 0) + (firstNameBox?.width ?? 0))).toBeGreaterThanOrEqual(2);
   expect((firstTitleBox?.x ?? 0) - ((firstSeparatorBox?.x ?? 0) + (firstSeparatorBox?.width ?? 0))).toBeGreaterThanOrEqual(2);
   expect((secondTitleBox?.x ?? 0) - (firstTitleBox?.x ?? 0)).toBeGreaterThan(40);
+  expect(secondNameBox?.height).toBeLessThanOrEqual(firstNameBox?.height ?? 0);
   expect(secondTitleBox?.height).toBeGreaterThan(20);
 
   const pageWidths = await page.locator("aside [data-preview-page-content]").evaluateAll((nodes) =>
@@ -2149,7 +2168,7 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-  expect(xml).toContain('w:val="single" w:color="0F172A" w:sz="6"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(
@@ -2165,6 +2184,7 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
     xml.indexOf("</w:p>", signerIndex),
   );
   expect(signerParagraph).toContain("Application &amp; User Acceptance Test Bureau Head A");
+  expect(xml).toContain(longName.replaceAll(" ", "\u00A0"));
   expect(xml.lastIndexOf("<w:tbl>", signerIndex)).toBeLessThan(
     xml.lastIndexOf("</w:tbl>", signerIndex),
   );
@@ -2308,10 +2328,14 @@ test("cross-date dragging exposes a visible drop target before release", async (
   const target = groups.nth(1).getByRole("button", { name: "Ubah urutan bagian A" });
   await page.evaluate(() => {
     (window as typeof window & { __dropTargetSeen?: boolean }).__dropTargetSeen = false;
+    (window as typeof window & { __maxDropTargets?: number }).__maxDropTargets = 0;
     const observer = new MutationObserver(() => {
-      if (document.querySelector('[data-drop-target-active="true"]')) {
+      const activeTargets = document.querySelectorAll('[data-drop-target-active="true"]');
+      if (activeTargets.length) {
         (window as typeof window & { __dropTargetSeen?: boolean }).__dropTargetSeen = true;
       }
+      const state = window as typeof window & { __maxDropTargets?: number };
+      state.__maxDropTargets = Math.max(state.__maxDropTargets ?? 0, activeTargets.length);
     });
     observer.observe(document.body, { attributes: true, childList: true, subtree: true });
   });
@@ -2319,4 +2343,7 @@ test("cross-date dragging exposes a visible drop target before release", async (
   expect(await page.evaluate(() =>
     (window as typeof window & { __dropTargetSeen?: boolean }).__dropTargetSeen,
   )).toBe(true);
+  expect(await page.evaluate(() =>
+    (window as typeof window & { __maxDropTargets?: number }).__maxDropTargets,
+  )).toBe(1);
 });

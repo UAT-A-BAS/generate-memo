@@ -249,7 +249,9 @@ function renderBlock(
             </div>
             <span>Dari</span>
             <span>:</span>
-            <span>POL Application &amp; User Acceptance Test Bureau {draft.metadata.bureau}</span>
+            <span>
+              POL Application &amp; User Acceptance Test Bureau {draft.metadata.bureau} (UAT {draft.metadata.bureau})
+            </span>
             <span>Jenis Informasi</span>
             <span>:</span>
             <span>INTERNAL BCA</span>
@@ -358,10 +360,10 @@ function renderBlock(
             {draft.signers.map((signer) => (
               <div
                 key={signer.id}
-                className="grid min-w-0 grid-cols-[fit-content(45%)_auto_minmax(0,1fr)] items-start gap-x-[0.25em]"
+                className="grid min-w-0 grid-cols-[max-content_auto_minmax(0,1fr)] items-start gap-x-[0.25em]"
                 data-preview-signer-row
               >
-                <strong className="min-w-0 [overflow-wrap:anywhere]">
+                <strong className="whitespace-nowrap [overflow-wrap:normal]">
                   {signer.name.toUpperCase()}
                 </strong>
                 <span> - </span>

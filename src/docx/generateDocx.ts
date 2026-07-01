@@ -68,8 +68,8 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 6,
-  color: "0F172A",
+  size: 8,
+  color: "000000",
 };
 
 const hiddenBorder = {
@@ -94,8 +94,8 @@ const rightClosedTableBorder = {
 
 const sectionTopBorder = {
   style: BorderStyle.SINGLE,
-  size: 4,
-  color: "1F2937",
+  size: 8,
+  color: "000000",
 };
 const LIST_TEXT_OFFSET = 300;
 
@@ -552,7 +552,7 @@ function closingParagraph(text: string, withTopBorder = true, spacingBefore = 22
     spacing: wordSpacing({ before: spacingBefore, after: 220 }),
     border: withTopBorder
       ? {
-          top: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 8 },
+          top: { ...sectionTopBorder, space: 8 },
         }
       : undefined,
     children: multilineRuns(text, { size: 22 }),
@@ -560,12 +560,18 @@ function closingParagraph(text: string, withTopBorder = true, spacingBefore = 22
 }
 
 function signerParagraph(name: string, title: string) {
+  const nonBreakingName = name.trim().toUpperCase().replace(/\s+/g, "\u00A0");
   return new Paragraph({
     indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
     spacing: wordSpacing({ after: 70 }),
     children: [
-      run(name.toUpperCase(), { bold: true, size: 22 }),
-      run(` - ${title}`, { size: 22 }),
+      new TextRun({
+        text: `${nonBreakingName}\u00A0-\u00A0`,
+        bold: true,
+        size: 22,
+        font: "Times New Roman",
+      }),
+      run(title, { size: 22 }),
     ],
   });
 }
@@ -1063,7 +1069,7 @@ function blockChildren(
             children: [
               new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Dari", { size: 22 })] }),
               new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau}`, { size: 22 })] }),
+              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau} (UAT ${draft.metadata.bureau})`, { size: 22 })] }),
             ],
           }),
           new TableRow({
