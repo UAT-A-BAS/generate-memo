@@ -68,7 +68,7 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 8,
+  size: 12,
   color: "000000",
 };
 

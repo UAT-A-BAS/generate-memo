@@ -1288,7 +1288,7 @@ test("DOCX data tables close the right border", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*\/>/;
+  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="12"[^>]*\/>/;
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -1605,9 +1605,13 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain(
     "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
   );
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="12"');
   expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
+  const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
+  expect(appendixTable).not.toMatch(
+    /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="8"/,
+  );
 });
 
 test("schedule keeps the complete date range together in preview and DOCX", async ({ page }) => {
@@ -2191,7 +2195,7 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="12"');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(
