@@ -938,6 +938,29 @@ test("tembusan can be generated without a salutation", async ({ page }) => {
   expect(xml).toContain("U.p. Yth. Verry Iskandar");
 });
 
+test("kepada can be generated without a salutation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    recipients: [{
+      ...completeDraft().recipients[0],
+      gender: "",
+    }],
+  });
+
+  const recipientPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Kepada" }) })
+    .first();
+  await expect(recipientPanel).not.toContainText("Sapaan *");
+  await expect(recipientPanel.getByLabel("Sapaan")).toHaveValue("");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("U.p. Yth. Agustina");
+});
+
 test("closing wording stays directly after PIC and only later blocks continue", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
@@ -2190,6 +2213,37 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   );
 });
 
+test("DOCX signer title wraps with a hanging indent aligned like preview", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const signerName = "PUTRI RIAWAN PATAMORGANA ERIKA NINDATI";
+  const signerTitle = `Officer ${"d".repeat(80)}`;
+  await importDraft(page, {
+    ...completeDraft(),
+    signers: [{ id: "signer-pdf-wrap", name: signerName, title: signerTitle }],
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const normalizedName = signerName.replaceAll(" ", "\u00A0");
+  const signerIndex = xml.indexOf("PUTRI");
+  const titleIndex = xml.indexOf("Officer", signerIndex);
+  expect(signerIndex).toBeGreaterThan(-1);
+  expect(titleIndex).toBeGreaterThan(signerIndex);
+  expect(xml).toContain(normalizedName);
+  const signerParagraph = xml.slice(
+    xml.lastIndexOf("<w:p>", signerIndex),
+    xml.indexOf("</w:p>", signerIndex) + "</w:p>".length,
+  );
+  const indent = signerParagraph.match(/<w:ind\b[^>]*\/>/)?.[0] ?? "";
+  const left = Number(indent.match(/w:left="(\d+)"/)?.[1]);
+  const hanging = Number(indent.match(/w:hanging="(\d+)"/)?.[1]);
+
+  expect(indent).toContain("w:hanging");
+  expect(left - hanging).toBe(2100);
+  expect(signerParagraph.replaceAll("\u200B", "")).toContain(signerTitle);
+});
+
 test("closing, tembusan, and initials use the same page when they fit", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
@@ -2259,7 +2313,6 @@ test("all rendered mandatory fields block DOCX generation when empty", async ({ 
     "projectName",
     "perihal",
     "recipient-recipient-test",
-    "recipient-gender-recipient-test",
     "development-item-development-test",
     "development-description-development-test",
     "schedule",

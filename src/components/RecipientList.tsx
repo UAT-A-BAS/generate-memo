@@ -28,7 +28,7 @@ export function RecipientList({
   onChange,
   minRows = 1,
   required = true,
-  genderRequired = required,
+  genderRequired = false,
   genderPlaceholder = "Sapaan",
   defaultGender = "",
 }: RecipientListProps) {

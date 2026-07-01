@@ -195,7 +195,6 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
 
   draft.recipients.forEach((recipient, index) => {
     if (!hasText(recipient.position)) add(`recipient-${recipient.id}`, `Kepada ${index + 1}: Jabatan / Unit`);
-    if (!hasText(recipient.gender)) add(`recipient-gender-${recipient.id}`, `Kepada ${index + 1}: Sapaan`);
   });
 
   draft.ccRecipients.forEach((recipient, index) => {

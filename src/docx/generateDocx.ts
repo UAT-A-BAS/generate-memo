@@ -559,19 +559,51 @@ function closingParagraph(text: string, withTopBorder = true, spacingBefore = 22
   });
 }
 
+function signerNameWidthTwips(text: string, fontSize: number) {
+  if (typeof document !== "undefined") {
+    const context = document.createElement("canvas").getContext("2d");
+    if (context) {
+      context.font = `700 ${fontSize / 2}pt "Times New Roman"`;
+      return Math.ceil(context.measureText(text).width * 15);
+    }
+  }
+
+  return Math.ceil(text.length * fontSize * 5.5);
+}
+
 function signerParagraph(name: string, title: string) {
   const nonBreakingName = name.trim().toUpperCase().replace(/\s+/g, "\u00A0");
+  const measuredText = `${name.trim().toUpperCase()} - `;
+  const maximumNameWidth = MAIN_BODY_CONTENT_WIDTH - 1200;
+  const naturalWidth = signerNameWidthTwips(measuredText, 22) + 20;
+  const nameFontSize = naturalWidth > maximumNameWidth
+    ? Math.max(8, Math.floor((22 * maximumNameWidth) / naturalWidth))
+    : 22;
+  const nameWidth = Math.min(
+    maximumNameWidth,
+    signerNameWidthTwips(measuredText, nameFontSize) + 20,
+  );
+
   return new Paragraph({
-    indent: { left: BODY_COLUMN_INDENT, right: BODY_COLUMN_RIGHT_INDENT },
+    indent: {
+      left: BODY_COLUMN_INDENT + nameWidth,
+      hanging: nameWidth,
+      right: BODY_COLUMN_RIGHT_INDENT,
+    },
+    keepLines: true,
     spacing: wordSpacing({ after: 70 }),
     children: [
       new TextRun({
         text: `${nonBreakingName}\u00A0-\u00A0`,
         bold: true,
+        size: nameFontSize,
+        font: "Times New Roman",
+      }),
+      new TextRun({
+        text: breakLongWords(title, 1),
         size: 22,
         font: "Times New Roman",
       }),
-      run(title, { size: 22 }),
     ],
   });
 }
