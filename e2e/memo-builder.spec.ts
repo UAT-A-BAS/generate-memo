@@ -148,9 +148,11 @@ async function docxPartsFrom(download: Download) {
   const zip = await JSZip.loadAsync(await readFile(path as string));
   const xml = await zip.file("word/document.xml")?.async("string");
   const rels = await zip.file("word/_rels/document.xml.rels")?.async("string");
+  const styles = await zip.file("word/styles.xml")?.async("string");
   expect(xml).toBeTruthy();
   expect(rels).toBeTruthy();
-  return { xml: xml as string, rels: rels as string };
+  expect(styles).toBeTruthy();
+  return { xml: xml as string, rels: rels as string, styles: styles as string };
 }
 
 async function docxHeaderXmlFrom(download: Download) {
@@ -1288,7 +1290,7 @@ test("DOCX data tables close the right border", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*\/>/;
+  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="12"[^>]*\/>/;
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -1605,12 +1607,12 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain(
     "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
   );
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="12"');
   expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
   expect(appendixTable).not.toMatch(
-    /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="12"/,
+    /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="8"/,
   );
 });
 
@@ -2146,11 +2148,41 @@ test("DOCX data tables use one canonical border grid for stable PDF rendering", 
     const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
     for (const edge of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
       expect(tableProperties).toMatch(
-        new RegExp(`<w:${edge} w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*/>`),
+        new RegExp(`<w:${edge} w:val="single"[^>]*w:color="000000"[^>]*w:sz="12"[^>]*/>`),
       );
     }
     expect(table).not.toMatch(/<w:tcBorders>[\s\S]*?<w:(?:top|left|bottom|right)\b[^>]*w:val="single"/);
   }
+});
+
+test("DOCX defines Times New Roman as the default main-document font", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const { styles } = await docxPartsFrom(await downloadPromise);
+  const defaults = styles.match(/<w:docDefaults>[\s\S]*?<\/w:docDefaults>/)?.[0] ?? "";
+
+  expect(defaults).toBeTruthy();
+  for (const attribute of ["ascii", "hAnsi", "eastAsia", "cs"]) {
+    expect(defaults).toMatch(new RegExp(`w:${attribute}="Times New Roman"`));
+  }
+});
+
+test("DOCX appendix rows keep compact margins after the PDF-safe border increase", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
+
+  expect(appendixTable).toContain('<w:top w:type="dxa" w:w="30"/>');
+  expect(appendixTable).toContain('<w:bottom w:type="dxa" w:w="30"/>');
+  expect(appendixTable).not.toContain('<w:top w:type="dxa" w:w="35"/>');
+  expect(appendixTable).not.toContain('<w:bottom w:type="dxa" w:w="35"/>');
 });
 
 test("appendix hierarchy wraps section metadata and supports expand or collapse all", async ({ page }) => {
@@ -2298,7 +2330,7 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="12"');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(

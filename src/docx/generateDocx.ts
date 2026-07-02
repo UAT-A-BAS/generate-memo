@@ -68,7 +68,7 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 8,
+  size: 12,
   color: "000000",
 };
 
@@ -503,7 +503,7 @@ function compactCell(
 ) {
   return new TableCell({
     verticalAlign,
-    margins: { top: 35, bottom: 35, left: 55, right: 55 },
+    margins: { top: 30, bottom: 30, left: 55, right: 55 },
     shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
     children,
@@ -514,7 +514,7 @@ function compactSpanningCell(children: Paragraph[], span: number, shaded = false
   return new TableCell({
     columnSpan: span,
     verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 35, bottom: 35, left: 55, right: 55 },
+    margins: { top: 30, bottom: 30, left: 55, right: 55 },
     shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     children,
   });
@@ -528,7 +528,7 @@ function mergedCompactCell(
   return new TableCell({
     rowSpan: merge.span > 1 ? merge.span : undefined,
     verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 35, bottom: 35, left: 55, right: 55 },
+    margins: { top: 30, bottom: 30, left: 55, right: 55 },
     width: { size: pct(width), type: WidthType.PERCENTAGE },
     children,
   });
@@ -928,7 +928,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
                 new TableCell({
                   columnSpan: 3,
                   verticalAlign: VerticalAlign.CENTER,
-                  margins: { top: 35, bottom: 35, left: 55, right: 55 },
+                  margins: { top: 30, bottom: 30, left: 55, right: 55 },
                   shading: { fill: APPENDIX_HEADER_FILL },
                   width: { size: pct(95), type: WidthType.PERCENTAGE },
                   children: [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
@@ -1405,6 +1405,16 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
     title: draft.metadata.perihal,
     creator: "Memo Builder",
     description: "Generated memo document",
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: "Times New Roman",
+            size: 22,
+          },
+        },
+      },
+    },
     sections: [
       buildSection(draft, mainPages),
       ...(appendixPages.length ? [buildSection(draft, appendixPages)] : []),
