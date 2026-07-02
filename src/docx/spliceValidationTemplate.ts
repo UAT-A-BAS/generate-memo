@@ -300,7 +300,7 @@ function visibleTableBorderXml(bordersXml: string) {
     bordersXml.match(/<w:(?:top|left|bottom|insideH|insideV)\b[^>]*w:val="single"[^>]*\/>/)?.[0] ??
     "";
   const color = getAttr(source, "w:color") || "000000";
-  const size = getAttr(source, "w:sz") || "12";
+  const size = getAttr(source, "w:sz") || "8";
 
   return `<w:right w:val="single" w:color="${color}" w:sz="${size}"/>`;
 }
@@ -374,16 +374,47 @@ function closesRightBorderCandidate(tableXml: string) {
   return rowCount > 1 && /<w:(?:tblBorders|tcBorders)\b[\s\S]*?w:val="single"/.test(tableXml);
 }
 
+function closeVisibleLeafTableRightBorder(tableXml: string) {
+  if (!closesRightBorderCandidate(tableXml)) {
+    return tableXml;
+  }
+
+  const tableProperties = tableXml.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+  const tableOwnsVisibleGrid = /<w:tblBorders\b[\s\S]*?w:val="single"/.test(tableProperties);
+  if (tableOwnsVisibleGrid) {
+    return tableXml.replace(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/, ensureRightBorderOnTablePr);
+  }
+
+  return tableXml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, ensureRightBorderOnLastCell);
+}
+
 function closeVisibleTableRightBorders(xml: string) {
-  return xml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, (tableXml) => {
-    if (!closesRightBorderCandidate(tableXml)) {
-      return tableXml;
+  const stack: Array<{ start: number; hasNestedTable: boolean }> = [];
+  const leafTables: Array<{ start: number; end: number }> = [];
+  const tags = /<w:tbl(?=[\s>])[^>]*>|<\/w:tbl>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = tags.exec(xml))) {
+    if (match[0].startsWith("</")) {
+      const current = stack.pop();
+      if (current && !current.hasNestedTable) {
+        leafTables.push({ start: current.start, end: tags.lastIndex });
+      }
+      continue;
     }
 
-    return tableXml
-      .replace(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/, ensureRightBorderOnTablePr)
-      .replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, ensureRightBorderOnLastCell);
-  });
+    if (stack.length) {
+      stack[stack.length - 1].hasNestedTable = true;
+    }
+    stack.push({ start: match.index, hasNestedTable: false });
+  }
+
+  return leafTables
+    .sort((left, right) => right.start - left.start)
+    .reduce((result, table) => {
+      const tableXml = result.slice(table.start, table.end);
+      return `${result.slice(0, table.start)}${closeVisibleLeafTableRightBorder(tableXml)}${result.slice(table.end)}`;
+    }, xml);
 }
 
 function validationTopSpacerParagraph() {

@@ -237,11 +237,23 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
   if (!hasText(draft.initials)) add("initials", "Inisial");
   if (!hasText(draft.initialsBureau)) add("initialsBureau", "UAT");
 
-  let effectiveSection = "";
+  const validatedDateGroups = new Set<string>();
+  const validatedSectionGroups = new Set<string>();
   draft.appendixScenarios.forEach((row, index) => {
-    if (hasText(row.section)) effectiveSection = row.section;
-    if (!hasText(row.startDate) || !hasText(row.endDate)) add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal`);
-    if (!hasText(effectiveSection)) add(`scenario-section-${row.id}`, `Lampiran Skenario ${index + 1}: Bagian`);
+    const dateGroupKey = row.dateGroupId ?? row.id;
+    const sectionGroupKey = row.sectionGroupId ?? row.id;
+    if (!validatedDateGroups.has(dateGroupKey)) {
+      validatedDateGroups.add(dateGroupKey);
+      if (!hasText(row.startDate) || !hasText(row.endDate)) {
+        add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal`);
+      }
+    }
+    if (!validatedSectionGroups.has(sectionGroupKey)) {
+      validatedSectionGroups.add(sectionGroupKey);
+      if (!hasText(row.section)) {
+        add(`scenario-section-${row.id}`, `Lampiran Skenario ${index + 1}: Bagian`);
+      }
+    }
     if (!hasText(row.pic)) add(`scenario-pic-${row.id}`, `Lampiran Skenario ${index + 1}: PIC`);
     if (!hasRichText(row.scenario)) add(`scenario-text-${row.id}`, `Lampiran Skenario ${index + 1}: Skenario`);
     if (!hasRichText(row.expectedResult)) add(`scenario-expected-${row.id}`, `Lampiran Skenario ${index + 1}: Expected Result`);
@@ -1405,6 +1417,12 @@ type ScenarioSectionGroup = {
   rows: ScenarioRow[];
 };
 
+const SCENARIO_LIST_PREFIX = "scenario-section:";
+
+function scenarioListId(sectionId: string) {
+  return `${SCENARIO_LIST_PREFIX}${sectionId}`;
+}
+
 function scenarioDateGroups(rows: ScenarioRow[]) {
   const groups: ScenarioDateGroup[] = [];
   const indexByKey = new Map<string, number>();
@@ -1562,6 +1580,90 @@ function AppendixPanel({
     ], true);
   }
 
+  function moveScenarioAcrossHierarchy(event: DragEndEvent) {
+    if (!event.over) return;
+    const activeId = String(event.active.id);
+    const sourceRow = rows.find((row) => row.id === activeId);
+    if (!sourceRow) return;
+
+    const targetRow = rows.find((row) => row.id === String(event.over?.id));
+    const overListId = String(event.over.data.current?.listId ?? "");
+    const targetSectionId = overListId.startsWith(SCENARIO_LIST_PREFIX)
+      ? overListId.slice(SCENARIO_LIST_PREFIX.length)
+      : targetRow?.sectionGroupId ?? String(event.over.id);
+    let targetGroup: ScenarioDateGroup | undefined;
+    let targetSection: ScenarioSectionGroup | undefined;
+
+    for (const group of groups) {
+      const sections = scenarioSectionGroups(group.rows);
+      const section = sections.find((candidate) =>
+        candidate.id === targetSectionId || candidate.rows.some((row) => row.id === targetRow?.id),
+      );
+      if (section) {
+        targetGroup = group;
+        targetSection = section;
+        break;
+      }
+    }
+
+    if (!targetSection) {
+      targetGroup = groups.find((group) =>
+        group.id === String(event.over?.id) || group.id === overListId,
+      );
+      targetSection = targetGroup
+        ? scenarioSectionGroups(targetGroup.rows)[0]
+        : undefined;
+    }
+    if (!targetGroup || !targetSection) return;
+
+    const sourceSectionId = sourceRow.sectionGroupId ?? sourceRow.id;
+    if (sourceSectionId === targetSection.id) {
+      const sectionRows = [...targetSection.rows];
+      const from = sectionRows.findIndex((row) => row.id === activeId);
+      const to = targetRow
+        ? sectionRows.findIndex((row) => row.id === targetRow.id)
+        : sectionRows.length - 1;
+      if (from < 0 || to < 0 || from === to) return;
+      const [moved] = sectionRows.splice(from, 1);
+      sectionRows.splice(to, 0, moved);
+      replaceSectionRows(targetSection, sectionRows);
+      return;
+    }
+
+    const remaining = rows.filter((row) => row.id !== activeId);
+    const movedRow: ScenarioRow = {
+      ...sourceRow,
+      dateGroupId: targetGroup.id,
+      sectionGroupId: targetSection.id,
+      startDate: targetGroup.startDate,
+      endDate: targetGroup.endDate,
+      dates: targetGroup.dates,
+      section: targetSection.title,
+    };
+    const targetIndex = targetRow
+      ? remaining.findIndex((row) => row.id === targetRow.id)
+      : remaining.reduce(
+          (last, row, index) =>
+            (row.sectionGroupId ?? row.id) === targetSection.id ? index + 1 : last,
+          remaining.length,
+        );
+    const insertAt = targetIndex >= 0 ? targetIndex : remaining.length;
+    setRows([
+      ...remaining.slice(0, insertAt),
+      movedRow,
+      ...remaining.slice(insertAt),
+    ], true);
+  }
+
+  function moveAppendixItem(event: DragEndEvent) {
+    const sourceListId = String(event.active.data.current?.listId ?? "");
+    if (sourceListId.startsWith(SCENARIO_LIST_PREFIX)) {
+      moveScenarioAcrossHierarchy(event);
+      return;
+    }
+    moveSectionAcrossDates(event);
+  }
+
   function reorderSections(
     group: ScenarioDateGroup,
     nextSections: ScenarioSectionGroup[],
@@ -1701,7 +1803,7 @@ function AppendixPanel({
           items={groups}
           onReorder={reorderDateGroups}
           listId="scenario-dates"
-          onCrossReorder={moveSectionAcrossDates}
+          onCrossReorder={moveAppendixItem}
           itemLabel={(_, index) => `tanggal ${index + 1}`}
           renderItem={(group, groupIndex) => (
             <section
@@ -1783,6 +1885,8 @@ function AppendixPanel({
                                 onReorder={(nextSectionRows) =>
                                   replaceSectionRows(section, nextSectionRows)
                                 }
+                                listId={scenarioListId(section.id)}
+                                withContext={false}
                                 itemLabel={(_, index) => `skenario ${index + 1}`}
                                 renderItem={(row, rowIndex) => (
                                   <details

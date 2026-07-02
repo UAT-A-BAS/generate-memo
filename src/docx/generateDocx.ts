@@ -68,7 +68,7 @@ import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
 const border = {
   style: BorderStyle.SINGLE,
-  size: 12,
+  size: 8,
   color: "000000",
 };
 
@@ -87,9 +87,13 @@ const noTableBorder = {
   insideHorizontal: hiddenBorder,
   insideVertical: hiddenBorder,
 };
-const rightClosedTableBorder = {
-  ...noTableBorder,
+const dataTableBorders = {
+  top: border,
+  bottom: border,
+  left: border,
   right: border,
+  insideHorizontal: border,
+  insideVertical: border,
 };
 
 const sectionTopBorder = {
@@ -419,7 +423,6 @@ function bodyCell(children: Paragraph[], width: number, shaded = false) {
       size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
       type: WidthType.DXA,
     },
-    borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
 }
@@ -475,7 +478,6 @@ function mergedCell(
       size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
       type: WidthType.DXA,
     },
-    borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
 }
@@ -504,7 +506,6 @@ function compactCell(
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
     shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
-    borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
 }
@@ -515,7 +516,6 @@ function compactSpanningCell(children: Paragraph[], span: number, shaded = false
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
     shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
-    borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
 }
@@ -530,7 +530,6 @@ function mergedCompactCell(
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 35, bottom: 35, left: 55, right: 55 },
     width: { size: pct(width), type: WidthType.PERCENTAGE },
-    borders: { top: border, bottom: border, left: border, right: border },
     children,
   });
 }
@@ -781,7 +780,7 @@ function developmentTable(
         );
       },
     ),
-  ], columnWidths, indent, rightClosedTableBorder);
+  ], columnWidths, indent, dataTableBorders);
 }
 
 function activityTable(
@@ -882,7 +881,7 @@ function activityTable(
         );
       },
     ),
-  ], columnWidths, indent, rightClosedTableBorder);
+  ], columnWidths, indent, dataTableBorders);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -932,7 +931,6 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
                   margins: { top: 35, bottom: 35, left: 55, right: 55 },
                   shading: { fill: APPENDIX_HEADER_FILL },
                   width: { size: pct(95), type: WidthType.PERCENTAGE },
-                  borders: { top: border, bottom: border, left: border, right: border },
                   children: [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
                 }),
               ],
@@ -1012,7 +1010,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
     ...bodyRows,
   ], APPENDIX_TABLE_WIDTH, APPENDIX_COLUMN_WIDTHS.map((columnWidth) =>
     Math.round((APPENDIX_TABLE_WIDTH * columnWidth) / 100),
-  ), rightClosedTableBorder);
+  ), dataTableBorders);
 }
 
 function consumeTableRows(

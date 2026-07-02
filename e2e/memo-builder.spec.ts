@@ -1288,7 +1288,7 @@ test("DOCX data tables close the right border", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="12"[^>]*\/>/;
+  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*\/>/;
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -1605,12 +1605,12 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain(
     "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
   );
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="12"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
   expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
   expect(appendixTable).not.toMatch(
-    /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="8"/,
+    /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="12"/,
   );
 });
 
@@ -1960,6 +1960,85 @@ test("appendix sections can move between date groups", async ({ page }) => {
   await expect(dateGroups.nth(0)).toContainText("Bagian Beta");
 });
 
+test("appendix scenarios can move between sections and date groups", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      {
+        ...scenarioBase,
+        id: "move-scenario-alpha",
+        dateGroupId: "move-date-a",
+        sectionGroupId: "move-section-a",
+        section: "Bagian Alpha",
+        pic: "PIC Alpha",
+      },
+      {
+        ...scenarioBase,
+        id: "move-scenario-stay",
+        dateGroupId: "move-date-a",
+        sectionGroupId: "move-section-a",
+        section: "Bagian Alpha",
+        pic: "PIC Tetap",
+      },
+      {
+        ...scenarioBase,
+        id: "move-scenario-beta",
+        dateGroupId: "move-date-b",
+        sectionGroupId: "move-section-b",
+        startDate: "2026-06-01",
+        endDate: "2026-06-02",
+        section: "Bagian Beta",
+        pic: "PIC Beta",
+      },
+    ],
+  });
+
+  const dateGroups = page.locator("[data-scenario-date-group]");
+  await expect(dateGroups).toHaveCount(2);
+  const source = dateGroups.nth(0).getByRole("button", { name: "Ubah urutan skenario 1" });
+  const target = dateGroups.nth(1).getByRole("button", { name: "Ubah urutan skenario 1" });
+  await source.dragTo(target);
+
+  await expect(dateGroups.nth(0).locator("[data-scenario-row]")).toHaveCount(1);
+  await expect(dateGroups.nth(1).locator("[data-scenario-row]")).toHaveCount(2);
+  await expect(dateGroups.nth(1).locator('[data-field-id="scenario-pic-move-scenario-alpha"]')).toHaveCount(1);
+});
+
+test("appendix scenarios can reorder inside the same section", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      {
+        ...scenarioBase,
+        id: "reorder-scenario-first",
+        dateGroupId: "reorder-date",
+        sectionGroupId: "reorder-section",
+        pic: "PIC Pertama",
+      },
+      {
+        ...scenarioBase,
+        id: "reorder-scenario-second",
+        dateGroupId: "reorder-date",
+        sectionGroupId: "reorder-section",
+        pic: "PIC Kedua",
+      },
+    ],
+  });
+
+  const dateGroup = page.locator("[data-scenario-date-group]").first();
+  await dateGroup.getByRole("button", { name: "Ubah urutan skenario 1" }).dragTo(
+    dateGroup.getByRole("button", { name: "Ubah urutan skenario 2" }),
+  );
+
+  const scenarioRows = dateGroup.locator("[data-scenario-row]");
+  await expect(scenarioRows.nth(0).locator('[data-field-id="scenario-pic-reorder-scenario-second"]')).toHaveCount(1);
+  await expect(scenarioRows.nth(1).locator('[data-field-id="scenario-pic-reorder-scenario-first"]')).toHaveCount(1);
+});
+
 test("editor and preview split can be resized", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("http://localhost:3002");
@@ -2047,6 +2126,30 @@ test("review comments use 18px text throughout", async ({ page }) => {
     popup.getByRole("button", { name: "Lihat field: Nama Project" }),
   ]) {
     await expect(target).toHaveCSS("font-size", "18px");
+  }
+});
+
+test("DOCX data tables use one canonical border grid for stable PDF rendering", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+
+  for (const marker of [
+    ">Keterangan</w:t>",
+    ">Waktu</w:t>",
+    ">Hasil/Keterangan</w:t>",
+  ]) {
+    const table = documentTableAround(xml, marker);
+    const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
+    for (const edge of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
+      expect(tableProperties).toMatch(
+        new RegExp(`<w:${edge} w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*/>`),
+      );
+    }
+    expect(table).not.toMatch(/<w:tcBorders>[\s\S]*?<w:(?:top|left|bottom|right)\b[^>]*w:val="single"/);
   }
 });
 
@@ -2195,7 +2298,7 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="12"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(
@@ -2285,6 +2388,8 @@ test("all rendered mandatory fields block DOCX generation when empty", async ({ 
     ...completeDraft(),
     metadata: {
       ...completeDraft().metadata,
+      memoType: "",
+      bureau: "",
       projectName: "",
       autoPerihal: false,
       perihal: "",
@@ -2298,6 +2403,7 @@ test("all rendered mandatory fields block DOCX generation when empty", async ({ 
     contacts: [{ ...completeDraft().contacts[0], name: "", email: "" }],
     signers: [{ ...completeDraft().signers[0], name: "", title: "" }],
     initials: "",
+    initialsBureau: "",
     appendixScenarios: [{
       ...completeDraft().appendixScenarios[0],
       startDate: "",
@@ -2314,6 +2420,8 @@ test("all rendered mandatory fields block DOCX generation when empty", async ({ 
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   expect(await downloadPromise).toBeNull();
   for (const id of [
+    "memoType",
+    "bureau",
     "projectName",
     "perihal",
     "recipient-recipient-test",
@@ -2330,12 +2438,90 @@ test("all rendered mandatory fields block DOCX generation when empty", async ({ 
     "signer-title-signer-test",
     "recipient-cc-test",
     "initials",
+    "initialsBureau",
     "scenario-date-scenario-test",
     "scenario-section-scenario-test",
     "scenario-pic-scenario-test",
     "scenario-text-scenario-test",
     "scenario-expected-scenario-test",
   ]) {
+    await expect(page.locator(`[data-validation-issue-id="${id}"]`)).toHaveCount(1);
+  }
+});
+
+test("newly added mandatory appendix fields also block DOCX generation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const appendixPanel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  await appendixPanel.getByRole("button", { name: "Bagian", exact: true }).click();
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  expect(await downloadPromise).toBeNull();
+  await expect(
+    page.locator("[data-validation-panel]").getByText(/Lampiran Skenario 2: Bagian/),
+  ).toHaveCount(1);
+});
+
+test("every newly added repeatable mandatory row blocks DOCX generation while empty", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const panel = (heading: string) => page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: heading, exact: true }) })
+    .first();
+  await panel("Kepada").getByRole("button", { name: "Tambah baris" }).click();
+  await panel("Lingkup Pengembangan").getByRole("button", { name: "Row", exact: true }).click();
+  await panel("Aktivitas Cabang dan Unit Kerja").getByRole("button", { name: "Aktivitas", exact: true }).click();
+  await panel("PIC yang Dapat Dihubungi").getByRole("button", { name: "PIC", exact: true }).click();
+  await panel("Signature").getByRole("button", { name: "Signer", exact: true }).click();
+  await panel("Tembusan").getByRole("button", { name: "Tambah baris" }).click();
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  expect(await downloadPromise).toBeNull();
+
+  const validation = page.locator("[data-validation-panel]");
+  for (const label of [
+    "Kepada 2: Jabatan / Unit",
+    "Lingkup Pengembangan 2: Item",
+    "Lingkup Pengembangan 2: Keterangan",
+    "Aktivitas 2: Tanggal",
+    "Aktivitas 2: PIC",
+    "Aktivitas 2: Aktivitas",
+    "PIC yang Dapat Dihubungi 2: Nama",
+    "PIC yang Dapat Dihubungi 2: Email",
+    "Signature 2: Nama",
+    "Signature 2: Jabatan",
+    "Tembusan 2: Jabatan / Unit",
+  ]) {
+    await expect(validation.getByText(label)).toHaveCount(1);
+  }
+});
+
+test("top-level and conditional mandatory fields block DOCX generation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      bureau: "",
+      memoType: "Nasional",
+    },
+    referenceEnabled: true,
+    reference: richText(""),
+    initialsBureau: "",
+  });
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  expect(await downloadPromise).toBeNull();
+  for (const id of ["bureau", "reference", "initialsBureau"]) {
     await expect(page.locator(`[data-validation-issue-id="${id}"]`)).toHaveCount(1);
   }
 });
