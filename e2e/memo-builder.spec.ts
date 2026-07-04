@@ -2022,6 +2022,7 @@ test("scenario header aligns its delete action", async ({ page }) => {
 });
 
 test("appendix sections can move between date groups", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1800 });
   await page.goto("http://localhost:3002");
   const scenarioBase = completeDraft().appendixScenarios[0];
   await importDraft(page, {
@@ -2058,6 +2059,7 @@ test("appendix sections can move between date groups", async ({ page }) => {
 });
 
 test("appendix scenarios can move between sections and date groups", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1800 });
   await page.goto("http://localhost:3002");
   const scenarioBase = completeDraft().appendixScenarios[0];
   await importDraft(page, {
