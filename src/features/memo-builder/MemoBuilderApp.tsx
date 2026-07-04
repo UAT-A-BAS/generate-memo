@@ -50,6 +50,7 @@ import { generateMemoDocxBlob, memoDocxFileName } from "@/docx/generateDocx";
 import { paginateMemoDraft } from "@/pagination/paginate";
 import { useMemoDraftStore } from "@/store/useMemoDraftStore";
 import { generateMomJsonToMemoDraft } from "@/utils/generateMomJsonToMemoDraft";
+import { importMomScenarioRows } from "@/utils/importMomScenarios";
 import { MemoPreview } from "@/preview/MemoPreview";
 import { useMemoCollaboration } from "@/collaboration/useMemoCollaboration";
 import {
@@ -1484,9 +1485,28 @@ function AppendixPanel({
   validationIssues: ValidationIssue[];
 }) {
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
+  const [scenarioImportError, setScenarioImportError] = useState("");
+  const scenarioImportInputRef = useRef<HTMLInputElement>(null);
 
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }), recordHistory);
+  }
+
+  async function handleScenarioImport(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const importedRows = importMomScenarioRows(JSON.parse(await file.text()));
+      setRows([...rows, ...importedRows], true);
+      setScenarioImportError("");
+    } catch (error) {
+      setScenarioImportError(
+        error instanceof Error ? error.message : "File MOM tidak dapat dibaca.",
+      );
+    } finally {
+      event.target.value = "";
+    }
   }
 
   const groups = scenarioDateGroups(rows);
@@ -1784,7 +1804,22 @@ function AppendixPanel({
       <SectionTitle
         title="Lampiran Skenario"
         action={(
-          <div data-review-ignore>
+          <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
+            <input
+              ref={scenarioImportInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleScenarioImport}
+              data-scenario-import-input
+            />
+            <IconButton
+              onClick={() => scenarioImportInputRef.current?.click()}
+              className="h-11"
+            >
+              <Upload size={16} />
+              Import Skenario
+            </IconButton>
             <IconButton
               onClick={() => setAllDetails(!allDetailsOpen)}
               aria-expanded={allDetailsOpen}
@@ -1798,6 +1833,16 @@ function AppendixPanel({
           </div>
         )}
       />
+      {scenarioImportError ? (
+        <div
+          className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
+          role="alert"
+          aria-live="polite"
+          data-scenario-import-error
+        >
+          {scenarioImportError}
+        </div>
+      ) : null}
       <div id="appendix-scenario-groups" className="mt-4">
         <DragDropList
           items={groups}
@@ -2531,6 +2576,7 @@ export function MemoBuilderApp() {
         accept="application/json,.json"
         className="hidden"
         onChange={handleImport}
+        data-draft-import-input
       />
       <header className="sticky z-30 border-b border-[#d8e2ec] bg-white/95 backdrop-blur">
         <div className="flex w-full flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between xl:px-6">

@@ -114,8 +114,39 @@ function denseAppendixDraft() {
   };
 }
 
+function momScenarioPayload() {
+  return {
+    version: "mom-generator-draft-v1",
+    projectName: "MUST NOT REPLACE MEMO",
+    recipients: [{ position: "MUST NOT REPLACE RECIPIENTS" }],
+    lampiranState: [
+      {
+        date: "01-07-2026",
+        features: [
+          {
+            title: "Fitur Alpha",
+            scenarios: [
+              { activity: "Langkah Alpha 1", result: "Hasil Alpha 1" },
+              { activity: "Langkah Alpha 2", result: "Hasil Alpha 2" },
+            ],
+          },
+        ],
+      },
+      {
+        date: "08-07-2026 - 09-07-2026",
+        features: [
+          {
+            title: "Fitur Beta",
+            scenarios: [{ activity: "Langkah Beta", result: "Hasil Beta" }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 async function importDraft(page: Page, payload: unknown) {
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator("[data-draft-import-input]").setInputFiles({
     name: "draft.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(payload)),
@@ -188,6 +219,63 @@ test("shows memo generator credit at page end", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await expect(page.getByText("Developed by Alex Surya Marcelo (UAT - A) • Memo Generator")).toBeVisible();
+});
+
+test("MOM scenario import appends only appendix scenarios", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+  const originalProject = await page.getByLabel("Nama Project").inputValue();
+  const originalRows = await page.locator("[data-scenario-row]").count();
+
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "mom.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(momScenarioPayload())),
+  });
+
+  await expect(page.getByLabel("Nama Project")).toHaveValue(originalProject);
+  await expect(page.getByLabel("Jabatan / Unit").first()).toHaveValue("Kepala Operasi Cabang Pluit");
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(originalRows + 3);
+  await expect(page.getByRole("textbox", { name: /Bagian \* [A-Z]+/ }).nth(1)).toHaveValue("Fitur Alpha");
+  await expect(page.locator('[data-field-id^="scenario-pic-"] textarea').last()).toHaveValue("");
+  await expect(page.getByRole("button", { name: /Tanggal \d+ \*/ }).last()).toContainText("8 – 9 Juli 2026");
+  await expect(page.locator("[data-scenario-row]").last()).toContainText("Langkah Beta");
+});
+
+test("invalid MOM scenario import preserves appendix data and reports the error", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+  const before = await page.locator("[data-scenario-row]").count();
+
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "invalid.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ lampiranState: [] })),
+  });
+
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(before);
+  await expect(page.locator("[data-scenario-import-error]")).toHaveRole("alert");
+  await expect(page.locator("[data-scenario-import-error]")).toContainText(
+    "tidak memiliki skenario",
+  );
+});
+
+test("imported MOM PIC remains mandatory for DOCX export", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "mom.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(momScenarioPayload())),
+  });
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+
+  expect(await downloadPromise).toBeNull();
+  await expect(page.locator("[data-validation-panel]")).toContainText(
+    "Lampiran Skenario 2: PIC",
+  );
 });
 
 test("preview renders URL akses as clickable link", async ({ page }) => {
