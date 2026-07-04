@@ -319,20 +319,6 @@ function ensureRightBorderOnBorders(bordersXml: string) {
   return bordersXml.replace(/<\/w:(?:tblBorders|tcBorders)>/, `${rightBorder}$&`);
 }
 
-function ensureRightBorderOnTablePr(tablePrXml: string) {
-  if (/<w:tblBorders\b/.test(tablePrXml)) {
-    return tablePrXml.replace(
-      /<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/,
-      ensureRightBorderOnBorders,
-    );
-  }
-
-  return tablePrXml.replace(
-    "</w:tblPr>",
-    `<w:tblBorders>${visibleTableBorderXml("")}</w:tblBorders></w:tblPr>`,
-  );
-}
-
 function ensureRightBorderOnCell(cellXml: string) {
   if (/<w:tcPr\b/.test(cellXml)) {
     return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) => {
@@ -369,26 +355,93 @@ function ensureRightBorderOnLastCell(rowXml: string) {
   )}`;
 }
 
-function closesRightBorderCandidate(tableXml: string) {
+function visibleGridCandidate(tableXml: string) {
   const rowCount = tableXml.match(/<w:tr\b/g)?.length ?? 0;
   return rowCount > 1 && /<w:(?:tblBorders|tcBorders)\b[\s\S]*?w:val="single"/.test(tableXml);
 }
 
-function closeVisibleLeafTableRightBorder(tableXml: string) {
-  if (!closesRightBorderCandidate(tableXml)) {
+const PDF_GRID_CELL_SPACING_TWIPS = 10;
+
+function insertBeforeFirstProperty(
+  propertiesXml: string,
+  propertyXml: string,
+  successorNames: string[],
+) {
+  const successor = new RegExp(`<w:(?:${successorNames.join("|")})\\b`).exec(propertiesXml);
+  if (successor?.index === undefined) {
+    return propertiesXml.replace(/<\/w:(?:tblPr|tcPr)>/, `${propertyXml}$&`);
+  }
+
+  return `${propertiesXml.slice(0, successor.index)}${propertyXml}${propertiesXml.slice(successor.index)}`;
+}
+
+function stableGridTableProperties(tablePrXml: string) {
+  const spacing = `<w:tblCellSpacing w:w="${PDF_GRID_CELL_SPACING_TWIPS}" w:type="dxa"/>`;
+  const shading = '<w:shd w:val="clear" w:color="auto" w:fill="000000"/>';
+  let result = tablePrXml
+    .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
+    .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
+    .replace(/<w:shd\b[^>]*\/>/g, "");
+
+  result = insertBeforeFirstProperty(
+    result,
+    spacing,
+    ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
+  );
+  return insertBeforeFirstProperty(
+    result,
+    shading,
+    ["tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
+  );
+}
+
+function stableGridCellProperties(cellPrXml: string) {
+  const result = cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
+  if (/<w:shd\b/.test(result)) {
+    return result;
+  }
+
+  return insertBeforeFirstProperty(
+    result,
+    '<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/>',
+    ["noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
+  );
+}
+
+function stableGridCell(cellXml: string) {
+  if (/<w:tcPr\b/.test(cellXml)) {
+    return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, stableGridCellProperties);
+  }
+
+  return cellXml.replace(
+    /<w:tc(?=[\s>])[^>]*>/,
+    '$&<w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/></w:tcPr>',
+  );
+}
+
+function stableBackgroundGrid(tableXml: string) {
+  const withTableProperties = tableXml.replace(
+    /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
+    stableGridTableProperties,
+  );
+  return withTableProperties.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, stableGridCell);
+}
+
+function stabilizeVisibleLeafTableGrid(tableXml: string) {
+  if (!visibleGridCandidate(tableXml)) {
     return tableXml;
   }
 
   const tableProperties = tableXml.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
   const tableOwnsVisibleGrid = /<w:tblBorders\b[\s\S]*?w:val="single"/.test(tableProperties);
   if (tableOwnsVisibleGrid) {
-    return tableXml.replace(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/, ensureRightBorderOnTablePr);
+    return stableBackgroundGrid(tableXml);
   }
 
   return tableXml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, ensureRightBorderOnLastCell);
 }
 
-function closeVisibleTableRightBorders(xml: string) {
+function stabilizeVisibleTableGrids(xml: string) {
   const stack: Array<{ start: number; hasNestedTable: boolean }> = [];
   const leafTables: Array<{ start: number; end: number }> = [];
   const tags = /<w:tbl(?=[\s>])[^>]*>|<\/w:tbl>/g;
@@ -413,7 +466,7 @@ function closeVisibleTableRightBorders(xml: string) {
     .sort((left, right) => right.start - left.start)
     .reduce((result, table) => {
       const tableXml = result.slice(table.start, table.end);
-      return `${result.slice(0, table.start)}${closeVisibleLeafTableRightBorder(tableXml)}${result.slice(table.end)}`;
+      return `${result.slice(0, table.start)}${stabilizeVisibleLeafTableGrid(tableXml)}${result.slice(table.end)}`;
     }, xml);
 }
 
@@ -530,7 +583,7 @@ export async function spliceValidationTemplate(
   const mergedBody = `${content}${sectionBreakParagraph(sectPr)}${templateBody}`;
 
   outputDocumentXml = normalizeValidationColors(
-    closeVisibleTableRightBorders(
+    stabilizeVisibleTableGrids(
       mergeDocumentNamespaces(replaceBodyInner(outputDocumentXml, mergedBody), templateDocumentXml),
     ),
   );
