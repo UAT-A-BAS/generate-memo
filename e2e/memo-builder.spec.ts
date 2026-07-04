@@ -257,6 +257,7 @@ test("MOM scenario import replaces the completely empty appendix placeholder", a
   });
 
   await expect(page.locator("[data-scenario-row]")).toHaveCount(3);
+  await expect(page.locator("[data-scenario-row]:not([open])")).toHaveCount(0);
   await expect(page.locator("[data-scenario-date-group]")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("1 Juli 2026");
   await expect(page.getByRole("textbox", { name: /Bagian \* A/ }).first()).toHaveValue("Fitur Alpha");

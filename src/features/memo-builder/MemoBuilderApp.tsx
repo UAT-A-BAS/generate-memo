@@ -1554,8 +1554,8 @@ function AppendixPanel({
     detailOpen(`date:${group.id}`, true) &&
     scenarioSectionGroups(group.rows).every((section) =>
       detailOpen(`section:${section.id}`, true) &&
-      section.rows.every((row, rowIndex) =>
-        detailOpen(`scenario:${row.id}`, rowIndex === 0),
+      section.rows.every((row) =>
+        detailOpen(`scenario:${row.id}`, true),
       ),
     ),
   );
@@ -1951,7 +1951,7 @@ function AppendixPanel({
                                 itemLabel={(_, index) => `skenario ${index + 1}`}
                                 renderItem={(row, rowIndex) => (
                                   <details
-                                    open={detailOpen(`scenario:${row.id}`, rowIndex === 0)}
+                                    open={detailOpen(`scenario:${row.id}`, true)}
                                     onToggle={(event) => rememberDetailState(`scenario:${row.id}`, event)}
                                     data-scenario-row
                                     className="rounded-lg border border-slate-200 bg-slate-50"
