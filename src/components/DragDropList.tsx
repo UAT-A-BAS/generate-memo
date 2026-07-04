@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   closestCenter,
   DndContext,
@@ -104,6 +105,7 @@ export function DragDropList<T extends Identified>({
   withContext = true,
   onCrossReorder,
 }: DragDropListProps<T>) {
+  const pointerIntentRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -111,10 +113,33 @@ export function DragDropList<T extends Identified>({
     }),
   );
 
+  function rememberPointerStart(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    pointerIntentRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      moved: false,
+    };
+  }
+
+  function rememberPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const intent = pointerIntentRef.current;
+    if (!intent || intent.moved) return;
+
+    intent.moved = Math.hypot(event.clientX - intent.x, event.clientY - intent.y) >= 4;
+  }
+
+  function resetPointerIntent() {
+    pointerIntentRef.current = null;
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
-    const pointerTravel = Math.hypot(event.delta.x, event.delta.y);
-    if (event.activatorEvent.type === "pointerdown" && pointerTravel < 4) return;
+    const pointerMoved =
+      (pointerIntentRef.current?.moved ?? false) ||
+      Math.hypot(event.delta.x, event.delta.y) >= 4;
+    resetPointerIntent();
+    if (event.activatorEvent.type === "pointerdown" && !pointerMoved) return;
     if (!over || active.id === over.id) return;
 
     if (
@@ -150,8 +175,19 @@ export function DragDropList<T extends Identified>({
   if (!withContext) return content;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={pointerFirstCollision} onDragEnd={handleDragEnd}>
-      {content}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={pointerFirstCollision}
+      onDragCancel={resetPointerIntent}
+      onDragEnd={handleDragEnd}
+    >
+      <div
+        className="contents"
+        onPointerDownCapture={rememberPointerStart}
+        onPointerMoveCapture={rememberPointerMove}
+      >
+        {content}
+      </div>
     </DndContext>
   );
 }
