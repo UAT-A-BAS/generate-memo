@@ -2,13 +2,13 @@
 
 ## Objective
 
-Allow users to append scenario data exported by the legacy MOM generator into only the memo's `Lampiran Skenario`, restore reversible salutation selection, prevent click-only scenario reordering, and make generated DOCX/PDF table grids consistently use a single 1 pt stroke.
+Allow users to import scenario data exported by the legacy MOM generator into only the memo's `Lampiran Skenario`, restore reversible salutation selection, prevent click-only scenario reordering, and make generated DOCX/PDF table grids rasterize with one consistent stroke.
 
 ## Scope and data ownership
 
-The MOM import is deliberately appendix-only. It may read `lampiranState` from a MOM JSON file and append mapped rows to `draft.appendixScenarios`, but it must not read, replace, or derive memo metadata, recipients, development rows, activities, attachments, contacts, signers, CC recipients, initials, review data, or any other memo field.
+The MOM import is deliberately appendix-only. It may read `lampiranState` from a MOM JSON file and place mapped rows in `draft.appendixScenarios`, but it must not read, replace, or derive memo metadata, recipients, development rows, activities, attachments, contacts, signers, CC recipients, initials, review data, or any other memo field.
 
-Existing appendix scenarios remain in their current order. Imported date groups are appended after them in source order. Each imported date, feature, and scenario receives fresh stable memo IDs so imported groups cannot merge accidentally with existing groups or with one another.
+When the appendix contains only completely empty placeholder rows, those placeholders are replaced so the import starts at Tanggal 1 / Bagian A. Once any appendix field contains data, existing scenarios remain in their current order and imported date groups are appended after them in source order. Each imported date, feature, and scenario receives fresh stable memo IDs so imported groups cannot merge accidentally with existing groups or with one another.
 
 ## MOM mapping contract
 
@@ -28,7 +28,7 @@ The parser returns scenario rows only. It never constructs or normalizes a compl
 
 A dedicated **Import Skenario** button appears immediately to the left of **Collapse All / Expand All** in the `Lampiran Skenario` header. It uses a separate hidden JSON file input from the global **Load** action.
 
-On a valid file, mapped rows are appended atomically and the newly imported hierarchy is available in the editor. PIC remains mandatory, so DOCX generation continues to block until every imported PIC is filled.
+On a valid file, mapped rows atomically replace a wholly empty appendix placeholder or append after an appendix that already contains data. The newly imported hierarchy is then available in the editor. PIC remains mandatory, so DOCX generation continues to block until every imported PIC is filled.
 
 On malformed JSON, an unsupported `lampiranState` shape, or a file with no importable scenarios, the existing memo and appendix remain unchanged. A concise recovery message is shown within the `Lampiran Skenario` panel and announced through an accessible alert region. Selecting the same file again remains possible after either success or failure.
 
@@ -44,9 +44,9 @@ Pointer sorting requires deliberate pointer movement before activation. A normal
 
 All visible data tables in generated DOCX use one canonical table-level border grid:
 
-- `top`, `left`, `bottom`, `right`, `insideH`, and `insideV` use a black single line with OOXML size `8`, equal to 1 pt;
+- `top`, `left`, `bottom`, `right`, `insideH`, and `insideV` use a black single line with OOXML size `6`, equal to 0.75 pt; Microsoft Word exports this as a 0.72 pt PDF rectangle that rasterizes consistently at standard 100% PDF zoom;
 - visible cell-level borders are not emitted, preventing coincident table and cell strokes;
-- the right-border normalization step inherits the same 1 pt size and must not introduce a second visible border source;
+- the right-border normalization step inherits the same 0.75 pt size and must not introduce a second visible border source;
 - section divider rules are unchanged;
 - browser preview tables retain their existing collapsed 1 px border grid.
 
@@ -58,10 +58,10 @@ Regression coverage is written before implementation and proves:
 
 - a selected salutation can be changed back to `Sapaan` in required and optional recipient lists;
 - clicking a scenario drag handle leaves the order unchanged, while actual drag reordering still succeeds;
-- the supplied MOM fixture appends only mapped appendix rows, preserves all other memo fields, retains source order, converts dates, and leaves PIC empty;
+- the supplied MOM fixture replaces a wholly empty appendix placeholder, otherwise appends only mapped appendix rows, preserves all other memo fields, retains source order, converts dates, and leaves PIC empty;
 - malformed or empty MOM input leaves state unchanged and shows an appendix-local error;
 - imported empty PIC values remain part of mandatory export validation;
-- DOCX tables use exactly one table-level `w:sz="8"` grid and no visible cell-level border grid.
+- DOCX tables use exactly one table-level `w:sz="6"` grid and no visible cell-level border grid.
 
 The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, rendered page-by-page to PNG, converted to PDF, and every page is visually inspected at 100% for doubled borders, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
 

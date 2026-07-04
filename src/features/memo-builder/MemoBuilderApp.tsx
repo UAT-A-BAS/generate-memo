@@ -1475,6 +1475,19 @@ function scenarioSectionGroups(rows: ScenarioRow[]) {
   return sections;
 }
 
+function scenarioRowsAreCompletelyEmpty(rows: ScenarioRow[]) {
+  return rows.length === 0 || rows.every((row) =>
+    !hasText(row.startDate) &&
+    !hasText(row.endDate) &&
+    !(row.dates ?? []).some(hasText) &&
+    !hasText(row.section) &&
+    !hasRichText(row.scenario) &&
+    !hasRichText(row.expectedResult) &&
+    !hasText(row.pic) &&
+    !hasRichText(row.notes)
+  );
+}
+
 function AppendixPanel({
   rows,
   updateDraft,
@@ -1498,7 +1511,10 @@ function AppendixPanel({
 
     try {
       const importedRows = importMomScenarioRows(JSON.parse(await file.text()));
-      setRows([...rows, ...importedRows], true);
+      setRows(
+        scenarioRowsAreCompletelyEmpty(rows) ? importedRows : [...rows, ...importedRows],
+        true,
+      );
       setScenarioImportError("");
     } catch (error) {
       setScenarioImportError(

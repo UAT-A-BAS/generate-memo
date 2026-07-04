@@ -145,6 +145,31 @@ function momScenarioPayload() {
   };
 }
 
+function pdfBorderStressDraft() {
+  const base = completeDraft();
+  const scenario = base.appendixScenarios[0];
+
+  return {
+    ...base,
+    developmentRows: [
+      { id: "development-alpha", item: richText("Pengembangan Alpha"), description: richText("Keterangan Alpha") },
+      { id: "development-beta", item: richText("Pengembangan Beta"), description: richText("Keterangan Beta") },
+    ],
+    activities: [
+      { id: "activity-alpha", startDate: "2026-07-02", endDate: "2026-07-03", owner: "PIC Alpha", activity: richText("Aktivitas Alpha") },
+      { id: "activity-beta", startDate: "2026-07-31", endDate: "2026-07-31", owner: "PIC Beta", activity: richText("Aktivitas Beta") },
+    ],
+    appendixScenarios: [
+      { ...scenario, id: "border-a1", dateGroupId: "border-date-a", sectionGroupId: "border-section-a", startDate: "2026-07-09", endDate: "2026-07-10", section: "Bagian Alpha", scenario: richText("Skenario Alpha 1"), expectedResult: richText("Hasil Alpha 1"), pic: "PIC Alpha" },
+      { ...scenario, id: "border-a2", dateGroupId: "border-date-a", sectionGroupId: "border-section-a", startDate: "2026-07-09", endDate: "2026-07-10", section: "Bagian Alpha", scenario: richText("Skenario Alpha 2"), expectedResult: richText("Hasil Alpha 2"), pic: "PIC Alpha 2" },
+      { ...scenario, id: "border-b1", dateGroupId: "border-date-a", sectionGroupId: "border-section-b", startDate: "2026-07-09", endDate: "2026-07-10", section: "Bagian Beta", scenario: richText("Skenario Beta 1"), expectedResult: richText("Hasil Beta 1"), pic: "PIC Beta" },
+      { ...scenario, id: "border-b2", dateGroupId: "border-date-a", sectionGroupId: "border-section-b", startDate: "2026-07-09", endDate: "2026-07-10", section: "Bagian Beta", scenario: richText("Skenario Beta 2"), expectedResult: richText("Hasil Beta 2"), pic: "PIC Beta 2" },
+      { ...scenario, id: "border-c1", dateGroupId: "border-date-b", sectionGroupId: "border-section-c", startDate: "2026-07-30", endDate: "2026-07-30", section: "Bagian Gamma", scenario: richText("Skenario Gamma 1"), expectedResult: richText("Hasil Gamma 1"), pic: "PIC Gamma" },
+      { ...scenario, id: "border-c2", dateGroupId: "border-date-b", sectionGroupId: "border-section-c", startDate: "2026-07-30", endDate: "2026-07-30", section: "Bagian Gamma", scenario: richText("Skenario Gamma 2"), expectedResult: richText("Hasil Gamma 2"), pic: "PIC Gamma 2" },
+    ],
+  };
+}
+
 async function importDraft(page: Page, payload: unknown) {
   await page.locator("[data-draft-import-input]").setInputFiles({
     name: "draft.json",
@@ -219,6 +244,23 @@ test("shows memo generator credit at page end", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await expect(page.getByText("Developed by Alex Surya Marcelo (UAT - A) • Memo Generator")).toBeVisible();
+});
+
+test("MOM scenario import replaces the completely empty appendix placeholder", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(1);
+
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "mom.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(momScenarioPayload())),
+  });
+
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(3);
+  await expect(page.locator("[data-scenario-date-group]")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("1 Juli 2026");
+  await expect(page.getByRole("textbox", { name: /Bagian \* A/ }).first()).toHaveValue("Fitur Alpha");
+  await expect(page.getByLabel("Nama Project")).toHaveValue("");
 });
 
 test("MOM scenario import appends only appendix scenarios", async ({ page }) => {
@@ -1385,7 +1427,7 @@ test("DOCX data tables close the right border", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*\/>/;
+  const rightBorder = /<w:right w:val="single"[^>]*w:color="000000"[^>]*w:sz="6"[^>]*\/>/;
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -1702,7 +1744,7 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain(
     "Berikut adalah fitur pengembangan pada Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
   );
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
@@ -2262,7 +2304,7 @@ test("review comments use 18px text throughout", async ({ page }) => {
 
 test("DOCX data tables use one canonical border grid for stable PDF rendering", async ({ page }) => {
   await page.goto("http://localhost:3002");
-  await importDraft(page, completeDraft());
+  await importDraft(page, pdfBorderStressDraft());
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
@@ -2277,9 +2319,12 @@ test("DOCX data tables use one canonical border grid for stable PDF rendering", 
     const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
     for (const edge of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
       expect(tableProperties).toMatch(
-        new RegExp(`<w:${edge} w:val="single"[^>]*w:color="000000"[^>]*w:sz="8"[^>]*/>`),
+        new RegExp(`<w:${edge} w:val="single"[^>]*w:color="000000"[^>]*w:sz="6"[^>]*/>`),
       );
     }
+    expect(tableProperties).not.toMatch(
+      /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="(?:8|12)"/,
+    );
     expect(table).not.toMatch(/<w:tcBorders>[\s\S]*?<w:(?:top|left|bottom|right)\b[^>]*w:val="single"/);
   }
 });
@@ -2459,7 +2504,7 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-  expect(xml).toContain('w:val="single" w:color="000000" w:sz="8"');
+  expect(xml).toContain('w:val="single" w:color="000000" w:sz="6"');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(
