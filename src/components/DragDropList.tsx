@@ -113,6 +113,8 @@ export function DragDropList<T extends Identified>({
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    const pointerTravel = Math.hypot(event.delta.x, event.delta.y);
+    if (event.activatorEvent.type === "pointerdown" && pointerTravel < 4) return;
     if (!over || active.id === over.id) return;
 
     if (

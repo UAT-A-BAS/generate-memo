@@ -2103,6 +2103,38 @@ test("appendix scenarios can move between sections and date groups", async ({ pa
   await expect(dateGroups.nth(1).locator('[data-field-id="scenario-pic-move-scenario-alpha"]')).toHaveCount(1);
 });
 
+test("clicking a scenario drag handle does not reorder scenarios", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const scenarioBase = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      {
+        ...scenarioBase,
+        id: "click-first",
+        sectionGroupId: "click-section",
+        pic: "PIC Pertama",
+      },
+      {
+        ...scenarioBase,
+        id: "click-second",
+        sectionGroupId: "click-section",
+        pic: "PIC Kedua",
+      },
+    ],
+  });
+
+  const scenarioRows = page.locator("[data-scenario-row]");
+  await page.getByRole("button", { name: "Ubah urutan skenario 1" }).click();
+
+  await expect(
+    scenarioRows.nth(0).locator('[data-field-id="scenario-pic-click-first"]'),
+  ).toHaveCount(1);
+  await expect(
+    scenarioRows.nth(1).locator('[data-field-id="scenario-pic-click-second"]'),
+  ).toHaveCount(1);
+});
+
 test("appendix scenarios can reorder inside the same section", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const scenarioBase = completeDraft().appendixScenarios[0];
