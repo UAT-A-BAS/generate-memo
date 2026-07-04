@@ -964,12 +964,15 @@ test("tembusan shows mandatory markers", async ({ page }) => {
   await expect(ccPanel).not.toContainText("Sapaan *");
   const salutation = ccPanel.getByLabel("Sapaan");
   const placeholder = salutation.locator('option[value=""]');
-  await expect(placeholder).toHaveAttribute("disabled", "");
+  await expect(placeholder).not.toHaveAttribute("disabled", "");
   await expect(placeholder).not.toHaveAttribute("hidden", "");
   await expect(salutation).toHaveClass(/text-slate-400/);
 
   await salutation.selectOption("Bapak");
   await expect(salutation).toHaveClass(/text-slate-900/);
+  await salutation.selectOption("");
+  await expect(salutation).toHaveValue("");
+  await expect(salutation).toHaveClass(/text-slate-400/);
 });
 
 test("all salutation fields start with the Sapaan placeholder", async ({ page }) => {
@@ -989,7 +992,7 @@ test("all salutation fields start with the Sapaan placeholder", async ({ page })
     ).toBe("rgb(148, 163, 184)");
     const placeholder = salutation.locator('option[value=""]');
     await expect(placeholder).toHaveText("Sapaan");
-    await expect(placeholder).toHaveAttribute("disabled", "");
+    await expect(placeholder).not.toHaveAttribute("disabled", "");
     await expect(placeholder).not.toHaveAttribute("hidden", "");
     expect(
       await salutation.evaluate((element) =>
@@ -1003,6 +1006,10 @@ test("all salutation fields start with the Sapaan placeholder", async ({ page })
       "Ibu",
       "Tim",
     ]);
+    await salutation.selectOption("Ibu");
+    await expect(salutation).toHaveValue("Ibu");
+    await salutation.selectOption("");
+    await expect(salutation).toHaveValue("");
   }
 });
 

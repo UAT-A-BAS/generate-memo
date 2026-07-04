@@ -85,7 +85,7 @@ export function RecipientList({
                   data-placeholder-selected={recipient.gender ? "false" : "true"}
                 >
                   {genderPlaceholder ? (
-                    <option value="" disabled>
+                    <option value="">
                       {genderPlaceholder}
                     </option>
                   ) : null}
