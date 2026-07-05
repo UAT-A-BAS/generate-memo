@@ -66,12 +66,14 @@ import { richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
 import { spliceValidationTemplate } from "./spliceValidationTemplate";
 
-const onePointBorder = {
-  style: BorderStyle.SINGLE,
-  size: 8,
-  color: "000000",
-  space: 0,
-};
+function createOnePointDocxBorder() {
+  return {
+    style: BorderStyle.SINGLE,
+    size: 8,
+    color: "000000",
+    space: 0,
+  } as const;
+}
 
 const hiddenBorder = {
   style: BorderStyle.NIL,
@@ -88,25 +90,20 @@ const noTableBorder = {
   insideHorizontal: hiddenBorder,
   insideVertical: hiddenBorder,
 };
-function createDocxTableBorders() {
+function createStableDocxTableBorders() {
   return {
-    top: onePointBorder,
-    bottom: onePointBorder,
-    left: onePointBorder,
-    right: onePointBorder,
-    insideHorizontal: onePointBorder,
-    insideVertical: onePointBorder,
+    top: createOnePointDocxBorder(),
+    bottom: createOnePointDocxBorder(),
+    left: createOnePointDocxBorder(),
+    right: createOnePointDocxBorder(),
+    insideHorizontal: createOnePointDocxBorder(),
+    insideVertical: createOnePointDocxBorder(),
   };
 }
 
-const dataTableBorders = createDocxTableBorders();
+const dataTableBorders = createStableDocxTableBorders();
 
-const sectionTopBorder = {
-  style: BorderStyle.SINGLE,
-  size: 8,
-  color: "000000",
-  space: 0,
-};
+const sectionTopBorder = createOnePointDocxBorder();
 const LIST_TEXT_OFFSET = 300;
 
 type SectionRule = "full" | "content" | "none";

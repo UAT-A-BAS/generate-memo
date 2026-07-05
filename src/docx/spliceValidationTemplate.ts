@@ -299,8 +299,12 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-const PDF_GRID_CELL_SPACING_TWIPS = 10;
-const PDF_GRID_OUTER_BORDER_EIGHTHS = 2;
+const ONE_POINT_TABLE_BORDER_XML = TABLE_BORDER_EDGES
+  .map(
+    (edge) =>
+      `<w:${edge} w:val="single" w:sz="8" w:space="0" w:color="000000"/>`,
+  )
+  .join("");
 
 const DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
@@ -347,63 +351,33 @@ function removeCellBorders(tableXml: string) {
   return tableXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
 }
 
-function pdfGridTableProperties(tablePrXml: string) {
-  const outerBorders = ["top", "left", "bottom", "right"]
-    .map(
-      (edge) =>
-        `<w:${edge} w:val="single" w:sz="${PDF_GRID_OUTER_BORDER_EIGHTHS}" w:space="0" w:color="000000"/>`,
-    )
-    .join("");
-  const borders = `<w:tblBorders>${outerBorders}<w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>`;
-  let result = tablePrXml
+function stableDataTableProperties(tablePrXml: string) {
+  const borders = `<w:tblBorders>${ONE_POINT_TABLE_BORDER_XML}</w:tblBorders>`;
+  const result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
-    .replace(/<w:shd\b[^>]*\/>/g, "");
+    .replace(/<w:shd\b[^>]*\/>/g, (tag) =>
+      getAttr(tag, "w:fill").toUpperCase() === "000000" ? "" : tag,
+    );
 
-  result = insertBeforeFirstProperty(
-    result,
-    `<w:tblCellSpacing w:w="${PDF_GRID_CELL_SPACING_TWIPS}" w:type="dxa"/>`,
-    ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook"],
-  );
-  result = insertBeforeFirstProperty(
+  return insertBeforeFirstProperty(
     result,
     borders,
-    ["shd", "tblLayout", "tblCellMar", "tblLook"],
-  );
-  return insertBeforeFirstProperty(
-    result,
-    '<w:shd w:val="clear" w:color="auto" w:fill="000000"/>',
-    ["tblLayout", "tblCellMar", "tblLook"],
+    ["shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
   );
 }
 
-function pdfGridCellProperties(cellPrXml: string) {
-  const result = cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
-  if (/<w:shd\b/.test(result)) {
-    return result;
-  }
-
-  return insertBeforeFirstProperty(
-    result,
-    '<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/>',
-    ["noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
-  );
-}
-
-function pdfSafeOnePointGrid(tableXml: string) {
+function stableNativeTableGrid(tableXml: string) {
   const withTableProperties = tableXml.replace(
     /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
-    pdfGridTableProperties,
+    stableDataTableProperties,
   );
-  return withTableProperties.replace(
-    /<w:tcPr\b[\s\S]*?<\/w:tcPr>/g,
-    pdfGridCellProperties,
-  );
+  return removeCellBorders(withTableProperties);
 }
 
 function normalizeTableGrid(tableXml: string) {
   if (DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
-    return pdfSafeOnePointGrid(tableXml);
+    return stableNativeTableGrid(tableXml);
   }
 
   if (BORDERLESS_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {

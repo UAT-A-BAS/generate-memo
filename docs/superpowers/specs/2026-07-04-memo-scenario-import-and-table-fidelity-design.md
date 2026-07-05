@@ -44,9 +44,9 @@ Pointer sorting requires deliberate pointer movement before activation. A normal
 
 Only the Lingkup, Aktivitas, and Lampiran Skenario data tables have a visible grid in generated DOCX. Metadata and validation/document-details tables remain borderless.
 
-- internal grid lines come from one black table background exposed through `w:tblCellSpacing w:w="10"`, while every cell has an explicit white or existing gray fill and no `w:tcBorders`; this prevents neighboring cells from exporting duplicate PDF rectangles;
-- the outside frame uses black `single` table borders at `w:sz="2"`, `space="0"`. Together with the half-spacing at the table perimeter, Microsoft Word PDF/XPS exports an effective approximately 1 pt outside edge matching the internal grid;
-- `insideH` and `insideV` table borders are `nil`, so the background layer remains the sole owner of every internal edge;
+- each target table has exactly one native `w:tblBorders` source containing `top`, `left`, `bottom`, `right`, `insideH`, and `insideV`;
+- every table border is black `single`, `w:sz="8"`, and `space="0"`, equal to 1 pt;
+- target tables contain no `w:tblCellSpacing`, black table shading, or visible `w:tcBorders`; merged `gridSpan` cells rely on the table grid so internal rules do not cross the merged area;
 - section divider rules are unchanged;
 - browser preview tables retain their existing collapsed 1 px border grid.
 
@@ -61,9 +61,9 @@ Regression coverage is written before implementation and proves:
 - the supplied MOM fixture replaces a wholly empty appendix placeholder, otherwise appends only mapped appendix rows, preserves all other memo fields, retains source order, converts dates, and leaves PIC empty;
 - malformed or empty MOM input leaves state unchanged and shows an appendix-local error;
 - imported empty PIC values remain part of mandatory export validation;
-- Lingkup, Aktivitas, and Lampiran Skenario use the calibrated single-layer background grid; metadata and validation stay borderless; no data-table cell owns an overlapping border.
+- Lingkup, Aktivitas, and Lampiran Skenario use complete native 1 pt table borders; metadata and validation stay borderless; no data-table cell owns an overlapping border.
 
-The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, rendered page-by-page to PNG, converted through Microsoft Word PDF/XPS, and visually inspected at 25%, 50%, 67%, 75%, 100%, 125%, 150%, and 200% for doubled borders, missing lines, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
+The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, visually checked in Microsoft Word at 80%, 100%, 120%, and 140%, converted through Microsoft Word PDF/XPS, and visually inspected in Acrobat at 75%, 100%, 125%, 150%, and 200% for doubled borders, missing lines, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
 
 ## Baseline note
 
