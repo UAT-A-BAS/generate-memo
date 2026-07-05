@@ -42,11 +42,11 @@ Pointer sorting requires deliberate pointer movement before activation. A normal
 
 ## Table border contract
 
-All visible data tables in generated DOCX use one non-overlapping background grid:
+All semantic and visible tables in generated DOCX use one native OOXML border grid:
 
-- the table owns a black background and uses `w:tblCellSpacing w:w="10" w:type="dxa"`, producing a continuous grid of approximately 1 pt after Microsoft Word PDF/XPS export;
-- every cell has an explicit white or header-gray fill, so the grid comes from a single background layer instead of intersecting border strokes;
-- visible table-level and cell-level border strokes are removed, preventing coincident vectors at outer corners, internal intersections, merged rows, and appendix group rows;
+- `top`, `left`, `bottom`, `right`, `insideH`, and `insideV` are black `single` borders with OOXML size `8`, `space="0"`, equal to 1 pt;
+- `w:tblCellSpacing` and black table shading are forbidden as border substitutes;
+- cell-level border overrides are removed so only the complete table-level grid owns each visible edge;
 - section divider rules are unchanged;
 - browser preview tables retain their existing collapsed 1 px border grid.
 
@@ -61,7 +61,7 @@ Regression coverage is written before implementation and proves:
 - the supplied MOM fixture replaces a wholly empty appendix placeholder, otherwise appends only mapped appendix rows, preserves all other memo fields, retains source order, converts dates, and leaves PIC empty;
 - malformed or empty MOM input leaves state unchanged and shows an appendix-local error;
 - imported empty PIC values remain part of mandatory export validation;
-- DOCX tables use the 10-twip background-grid contract with explicit cell fills and no visible table-level or cell-level border strokes.
+- DOCX tables use six complete native `w:tblBorders` edges at `w:sz="8"`, with no cell spacing, black table shading, or cell-level border overrides.
 
 The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, rendered page-by-page to PNG, converted to PDF, and every page is visually inspected at 100% for doubled borders, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
 
