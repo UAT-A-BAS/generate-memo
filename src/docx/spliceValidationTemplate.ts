@@ -295,15 +295,20 @@ function normalizeValidationColors(xml: string) {
   });
 }
 
-const ONE_POINT_TABLE_BORDER_XML = ["top", "left", "bottom", "right", "insideH", "insideV"]
-  .map((edge) => `<w:${edge} w:val="single" w:sz="8" w:space="0" w:color="000000"/>`)
+const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "insideV"];
+const CELL_BORDER_EDGES = ["top", "left", "bottom", "right"];
+const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
+  .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
 
-const SEMANTIC_TABLE_MARKERS = [
-  ">Kepada</w:t>",
+const DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
   ">Waktu</w:t>",
   ">Hasil/Keterangan</w:t>",
+];
+
+const BORDERLESS_TABLE_MARKERS = [
+  ">Kepada</w:t>",
   ">Nomor Dokumen</w:t>",
   ">Ditujukan Kepada</w:t>",
 ];
@@ -321,8 +326,8 @@ function insertBeforeFirstProperty(
   return `${propertiesXml.slice(0, successor.index)}${propertyXml}${propertiesXml.slice(successor.index)}`;
 }
 
-function nativeGridTableProperties(tablePrXml: string) {
-  const borders = `<w:tblBorders>${ONE_POINT_TABLE_BORDER_XML}</w:tblBorders>`;
+function borderlessTableProperties(tablePrXml: string) {
+  const borders = `<w:tblBorders>${NIL_TABLE_BORDER_XML}</w:tblBorders>`;
   const result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
@@ -337,24 +342,87 @@ function nativeGridTableProperties(tablePrXml: string) {
   );
 }
 
-function removeCellBorderOverrides(tableXml: string) {
+function removeCellBorders(tableXml: string) {
   return tableXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
 }
 
-function shouldNormalizeTableGrid(tableXml: string) {
-  return SEMANTIC_TABLE_MARKERS.some((marker) => tableXml.includes(marker));
+function onePointCellBorders(isLastCell: boolean, isLastRow: boolean) {
+  const visibleEdges = new Set([
+    "top",
+    "left",
+    ...(isLastCell ? ["right"] : []),
+    ...(isLastRow ? ["bottom"] : []),
+  ]);
+  const borders = CELL_BORDER_EDGES.map((edge) =>
+    visibleEdges.has(edge)
+      ? `<w:${edge} w:val="single" w:sz="8" w:space="0" w:color="000000"/>`
+      : `<w:${edge} w:val="nil"/>`,
+  ).join("");
+  return `<w:tcBorders>${borders}</w:tcBorders>`;
 }
 
-function nativeOnePointGrid(tableXml: string) {
-  if (!shouldNormalizeTableGrid(tableXml)) {
-    return tableXml;
+function exclusiveCellBorders(cellXml: string, isLastCell: boolean, isLastRow: boolean) {
+  const borders = onePointCellBorders(isLastCell, isLastRow);
+  if (/<w:tcPr\b[\s\S]*?<\/w:tcPr>/.test(cellXml)) {
+    return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) =>
+      insertBeforeFirstProperty(
+        cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, ""),
+        borders,
+        ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
+      ),
+    );
   }
 
+  return cellXml.replace(
+    /<w:tc(?=[\s>])[^>]*>/,
+    `$&<w:tcPr>${borders}</w:tcPr>`,
+  );
+}
+
+function exclusiveRowBorders(rowXml: string, isLastRow: boolean) {
+  const cells = [...rowXml.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)];
+  return cells.reduceRight((result, cell, cellIndex) => {
+    if (cell.index === undefined) {
+      return result;
+    }
+
+    const replacement = exclusiveCellBorders(
+      cell[0],
+      cellIndex === cells.length - 1,
+      isLastRow,
+    );
+    return `${result.slice(0, cell.index)}${replacement}${result.slice(cell.index + cell[0].length)}`;
+  }, rowXml);
+}
+
+function exclusiveOnePointGrid(tableXml: string) {
   const withTableProperties = tableXml.replace(
     /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
-    nativeGridTableProperties,
+    borderlessTableProperties,
   );
-  return removeCellBorderOverrides(withTableProperties);
+  const rows = [...withTableProperties.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)];
+  return rows.reduceRight((result, row, rowIndex) => {
+    if (row.index === undefined) {
+      return result;
+    }
+
+    const replacement = exclusiveRowBorders(row[0], rowIndex === rows.length - 1);
+    return `${result.slice(0, row.index)}${replacement}${result.slice(row.index + row[0].length)}`;
+  }, withTableProperties);
+}
+
+function normalizeTableGrid(tableXml: string) {
+  if (DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
+    return exclusiveOnePointGrid(tableXml);
+  }
+
+  if (BORDERLESS_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
+    return removeCellBorders(
+      tableXml.replace(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/, borderlessTableProperties),
+    );
+  }
+
+  return tableXml;
 }
 
 function normalizeExportTableBorders(xml: string) {
@@ -382,7 +450,7 @@ function normalizeExportTableBorders(xml: string) {
     .sort((left, right) => right.start - left.start)
     .reduce((result, table) => {
       const tableXml = result.slice(table.start, table.end);
-      return `${result.slice(0, table.start)}${nativeOnePointGrid(tableXml)}${result.slice(table.end)}`;
+      return `${result.slice(0, table.start)}${normalizeTableGrid(tableXml)}${result.slice(table.end)}`;
     }, xml);
 }
 

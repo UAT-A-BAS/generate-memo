@@ -42,11 +42,11 @@ Pointer sorting requires deliberate pointer movement before activation. A normal
 
 ## Table border contract
 
-All semantic and visible tables in generated DOCX use one native OOXML border grid:
+Only the Lingkup, Aktivitas, and Lampiran Skenario data tables have a visible grid in generated DOCX. Metadata and validation/document-details tables remain borderless.
 
-- `top`, `left`, `bottom`, `right`, `insideH`, and `insideV` are black `single` borders with OOXML size `8`, `space="0"`, equal to 1 pt;
+- every physical data-table edge has exactly one owner at cell level: every cell owns its top and left edge, only the final cell in a row owns the right edge, and only cells in the final row own the bottom edge;
+- every visible edge is a black `single` border with OOXML size `8`, `space="0"`, equal to 1 pt, while unused neighboring edges and table-level borders are `nil`;
 - `w:tblCellSpacing` and black table shading are forbidden as border substitutes;
-- cell-level border overrides are removed so only the complete table-level grid owns each visible edge;
 - section divider rules are unchanged;
 - browser preview tables retain their existing collapsed 1 px border grid.
 
@@ -61,7 +61,7 @@ Regression coverage is written before implementation and proves:
 - the supplied MOM fixture replaces a wholly empty appendix placeholder, otherwise appends only mapped appendix rows, preserves all other memo fields, retains source order, converts dates, and leaves PIC empty;
 - malformed or empty MOM input leaves state unchanged and shows an appendix-local error;
 - imported empty PIC values remain part of mandatory export validation;
-- DOCX tables use six complete native `w:tblBorders` edges at `w:sz="8"`, with no cell spacing, black table shading, or cell-level border overrides.
+- Lingkup, Aktivitas, and Lampiran Skenario use exclusive native `w:tcBorders` at `w:sz="8"`; metadata and validation stay borderless; no exported table uses cell spacing or black table shading.
 
 The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, rendered page-by-page to PNG, converted to PDF, and every page is visually inspected at 100% for doubled borders, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
 
