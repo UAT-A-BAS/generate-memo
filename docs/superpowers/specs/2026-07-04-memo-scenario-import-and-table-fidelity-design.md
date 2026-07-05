@@ -44,13 +44,13 @@ Pointer sorting requires deliberate pointer movement before activation. A normal
 
 Only the Lingkup, Aktivitas, and Lampiran Skenario data tables have a visible grid in generated DOCX. Metadata and validation/document-details tables remain borderless.
 
-- every physical data-table edge has exactly one owner at cell level: every cell owns its top and left edge, only the final cell in a row owns the right edge, and only cells in the final row own the bottom edge;
-- every visible edge is a black `single` border with OOXML size `8`, `space="0"`, equal to 1 pt, while unused neighboring edges and table-level borders are `nil`;
-- `w:tblCellSpacing` and black table shading are forbidden as border substitutes;
+- internal grid lines come from one black table background exposed through `w:tblCellSpacing w:w="10"`, while every cell has an explicit white or existing gray fill and no `w:tcBorders`; this prevents neighboring cells from exporting duplicate PDF rectangles;
+- the outside frame uses black `single` table borders at `w:sz="2"`, `space="0"`. Together with the half-spacing at the table perimeter, Microsoft Word PDF/XPS exports an effective approximately 1 pt outside edge matching the internal grid;
+- `insideH` and `insideV` table borders are `nil`, so the background layer remains the sole owner of every internal edge;
 - section divider rules are unchanged;
 - browser preview tables retain their existing collapsed 1 px border grid.
 
-The DOCX is converted to PDF during verification so rasterized table intersections, outside edges, merged rows, and appendix group rows can be inspected rather than inferred from XML alone.
+The application and preview continue to generate DOCX only. During verification, the DOCX is converted externally through Microsoft Word PDF/XPS so rasterized table intersections, outside edges, merged rows, and appendix group rows can be inspected rather than inferred from XML alone.
 
 ## Testing and verification
 
@@ -61,9 +61,9 @@ Regression coverage is written before implementation and proves:
 - the supplied MOM fixture replaces a wholly empty appendix placeholder, otherwise appends only mapped appendix rows, preserves all other memo fields, retains source order, converts dates, and leaves PIC empty;
 - malformed or empty MOM input leaves state unchanged and shows an appendix-local error;
 - imported empty PIC values remain part of mandatory export validation;
-- Lingkup, Aktivitas, and Lampiran Skenario use exclusive native `w:tcBorders` at `w:sz="8"`; metadata and validation stay borderless; no exported table uses cell spacing or black table shading.
+- Lingkup, Aktivitas, and Lampiran Skenario use the calibrated single-layer background grid; metadata and validation stay borderless; no data-table cell owns an overlapping border.
 
-The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, rendered page-by-page to PNG, converted to PDF, and every page is visually inspected at 100% for doubled borders, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
+The release gate runs ESLint, the production Next.js build, relevant Playwright regressions, and the full Playwright suite. A representative DOCX is generated, structurally inspected, rendered page-by-page to PNG, converted through Microsoft Word PDF/XPS, and visually inspected at 25%, 50%, 67%, 75%, 100%, 125%, 150%, and 200% for doubled borders, missing lines, clipping, overlap, and inconsistent table edges. After verification, the completed change is integrated into and pushed to `main`, then the Cloudflare production deployment and live workflow are checked.
 
 ## Baseline note
 

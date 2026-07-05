@@ -296,10 +296,11 @@ function normalizeValidationColors(xml: string) {
 }
 
 const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "insideV"];
-const CELL_BORDER_EDGES = ["top", "left", "bottom", "right"];
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
+const PDF_GRID_CELL_SPACING_TWIPS = 10;
+const PDF_GRID_OUTER_BORDER_EIGHTHS = 2;
 
 const DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
@@ -346,74 +347,63 @@ function removeCellBorders(tableXml: string) {
   return tableXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
 }
 
-function onePointCellBorders(isLastCell: boolean, isLastRow: boolean) {
-  const visibleEdges = new Set([
-    "top",
-    "left",
-    ...(isLastCell ? ["right"] : []),
-    ...(isLastRow ? ["bottom"] : []),
-  ]);
-  const borders = CELL_BORDER_EDGES.map((edge) =>
-    visibleEdges.has(edge)
-      ? `<w:${edge} w:val="single" w:sz="8" w:space="0" w:color="000000"/>`
-      : `<w:${edge} w:val="nil"/>`,
-  ).join("");
-  return `<w:tcBorders>${borders}</w:tcBorders>`;
+function pdfGridTableProperties(tablePrXml: string) {
+  const outerBorders = ["top", "left", "bottom", "right"]
+    .map(
+      (edge) =>
+        `<w:${edge} w:val="single" w:sz="${PDF_GRID_OUTER_BORDER_EIGHTHS}" w:space="0" w:color="000000"/>`,
+    )
+    .join("");
+  const borders = `<w:tblBorders>${outerBorders}<w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>`;
+  let result = tablePrXml
+    .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
+    .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
+    .replace(/<w:shd\b[^>]*\/>/g, "");
+
+  result = insertBeforeFirstProperty(
+    result,
+    `<w:tblCellSpacing w:w="${PDF_GRID_CELL_SPACING_TWIPS}" w:type="dxa"/>`,
+    ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook"],
+  );
+  result = insertBeforeFirstProperty(
+    result,
+    borders,
+    ["shd", "tblLayout", "tblCellMar", "tblLook"],
+  );
+  return insertBeforeFirstProperty(
+    result,
+    '<w:shd w:val="clear" w:color="auto" w:fill="000000"/>',
+    ["tblLayout", "tblCellMar", "tblLook"],
+  );
 }
 
-function exclusiveCellBorders(cellXml: string, isLastCell: boolean, isLastRow: boolean) {
-  const borders = onePointCellBorders(isLastCell, isLastRow);
-  if (/<w:tcPr\b[\s\S]*?<\/w:tcPr>/.test(cellXml)) {
-    return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) =>
-      insertBeforeFirstProperty(
-        cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, ""),
-        borders,
-        ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
-      ),
-    );
+function pdfGridCellProperties(cellPrXml: string) {
+  const result = cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
+  if (/<w:shd\b/.test(result)) {
+    return result;
   }
 
-  return cellXml.replace(
-    /<w:tc(?=[\s>])[^>]*>/,
-    `$&<w:tcPr>${borders}</w:tcPr>`,
+  return insertBeforeFirstProperty(
+    result,
+    '<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/>',
+    ["noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
   );
 }
 
-function exclusiveRowBorders(rowXml: string, isLastRow: boolean) {
-  const cells = [...rowXml.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)];
-  return cells.reduceRight((result, cell, cellIndex) => {
-    if (cell.index === undefined) {
-      return result;
-    }
-
-    const replacement = exclusiveCellBorders(
-      cell[0],
-      cellIndex === cells.length - 1,
-      isLastRow,
-    );
-    return `${result.slice(0, cell.index)}${replacement}${result.slice(cell.index + cell[0].length)}`;
-  }, rowXml);
-}
-
-function exclusiveOnePointGrid(tableXml: string) {
+function pdfSafeOnePointGrid(tableXml: string) {
   const withTableProperties = tableXml.replace(
     /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
-    borderlessTableProperties,
+    pdfGridTableProperties,
   );
-  const rows = [...withTableProperties.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)];
-  return rows.reduceRight((result, row, rowIndex) => {
-    if (row.index === undefined) {
-      return result;
-    }
-
-    const replacement = exclusiveRowBorders(row[0], rowIndex === rows.length - 1);
-    return `${result.slice(0, row.index)}${replacement}${result.slice(row.index + row[0].length)}`;
-  }, withTableProperties);
+  return withTableProperties.replace(
+    /<w:tcPr\b[\s\S]*?<\/w:tcPr>/g,
+    pdfGridCellProperties,
+  );
 }
 
 function normalizeTableGrid(tableXml: string) {
   if (DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
-    return exclusiveOnePointGrid(tableXml);
+    return pdfSafeOnePointGrid(tableXml);
   }
 
   if (BORDERLESS_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {

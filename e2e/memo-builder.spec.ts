@@ -1363,9 +1363,8 @@ test("consecutive duplicate table values keep each column default alignment", as
     const cellStart = xml.lastIndexOf("<w:tc>", textIndex);
     const cellEnd = xml.indexOf("</w:tc>", textIndex);
     const cellXml = xml.slice(cellStart, cellEnd);
-    expect(cellXml).toMatch(/<w:top\b[^>]*w:val="single"[^>]*w:sz="8"/);
-    expect(cellXml).toMatch(/<w:left\b[^>]*w:val="single"[^>]*w:sz="8"/);
-    expect(cellXml).not.toContain('w:color="FFFFFF"');
+    expect(cellXml).not.toContain("<w:tcBorders");
+    expect(cellXml).toMatch(/<w:shd\b[^>]*w:fill="FFFFFF"/);
     const paragraphStart = xml.lastIndexOf("<w:p>", textIndex);
     const paragraphEnd = xml.indexOf("</w:p>", textIndex);
     const paragraphXml = xml.slice(paragraphStart, paragraphEnd);
@@ -1425,7 +1424,7 @@ test("DOCX data tables stay inside the A4 content grid without spacer columns", 
   expect((appendixTable.match(/<w:gridCol /g) ?? []).length).toBe(4);
 });
 
-test("DOCX data tables close every edge with exclusive one-point cell borders", async ({ page }) => {
+test("DOCX data tables use a PDF-safe single-layer one-point grid", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
@@ -1439,13 +1438,16 @@ test("DOCX data tables close every edge with exclusive one-point cell borders", 
   ]) {
     const table = documentTableAround(xml, marker);
     const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
-    expect(tableProperties).not.toMatch(/<w:tblBorders>[\s\S]*?w:val="single"/);
-    expect(table).not.toContain("<w:tblCellSpacing");
-    expect(tableProperties).not.toMatch(/<w:shd\b[^>]*w:fill="000000"/);
-    expect(table).toMatch(/<w:tcBorders>[\s\S]*?<w:top\b[^>]*w:val="single"[^>]*w:sz="8"/);
-    expect(table).toMatch(/<w:tcBorders>[\s\S]*?<w:left\b[^>]*w:val="single"[^>]*w:sz="8"/);
-    expect(table).toMatch(/<w:tcBorders>[\s\S]*?<w:right\b[^>]*w:val="single"[^>]*w:sz="8"/);
-    expect(table).toMatch(/<w:tcBorders>[\s\S]*?<w:bottom\b[^>]*w:val="single"[^>]*w:sz="8"/);
+    expect(tableProperties).toContain('<w:tblCellSpacing w:w="10" w:type="dxa"/>');
+    expect(tableProperties).toMatch(/<w:shd\b[^>]*w:fill="000000"/);
+    for (const edge of ["top", "left", "bottom", "right"]) {
+      expect(tableProperties).toMatch(
+        new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="2")(?=[^>]*w:color="000000")[^>]*/>`),
+      );
+    }
+    expect(tableProperties).toMatch(/<w:insideH\b[^>]*w:val="nil"/);
+    expect(tableProperties).toMatch(/<w:insideV\b[^>]*w:val="nil"/);
+    expect(table).not.toContain("<w:tcBorders");
   }
 });
 
@@ -1756,8 +1758,8 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
-  expect(appendixTable).not.toContain("<w:tblCellSpacing");
-  expect(appendixTable).not.toMatch(/<w:tblPr>[\s\S]*?<w:shd\b[^>]*w:fill="000000"[^>]*\/>/);
+  expect(appendixTable).toContain('<w:tblCellSpacing w:w="10" w:type="dxa"/>');
+  expect(appendixTable).toMatch(/<w:tblPr>[\s\S]*?<w:shd\b[^>]*w:fill="000000"[^>]*\/>/);
   expect(appendixTable).not.toMatch(
     /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="12"/,
   );
@@ -2312,15 +2314,15 @@ test("review comments use 18px text throughout", async ({ page }) => {
   }
 });
 
-test("DOCX keeps one exclusive one-point owner for each PDF/XPS table edge", async ({ page }) => {
+test("DOCX keeps a calibrated single-layer grid for Word PDF/XPS", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, pdfBorderStressDraft());
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const visibleBorder = (edge: string) =>
-    new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="8")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`);
+  const outerBorder = (edge: string) =>
+    new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="2")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`);
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -2329,23 +2331,25 @@ test("DOCX keeps one exclusive one-point owner for each PDF/XPS table edge", asy
   ]) {
     const table = documentTableAround(xml, marker);
     const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
-    expect(tableProperties).not.toMatch(/<w:tblBorders>[\s\S]*?w:val="single"/);
-    expect(tableProperties).not.toContain("<w:tblCellSpacing");
+    expect(tableProperties).toContain('<w:tblCellSpacing w:w="10" w:type="dxa"/>');
+    expect(tableProperties).toMatch(/<w:shd\b[^>]*w:fill="000000"/);
+    for (const edge of ["top", "left", "bottom", "right"]) {
+      expect(tableProperties).toMatch(outerBorder(edge));
+    }
+    expect(tableProperties).toMatch(/<w:insideH\b[^>]*w:val="nil"/);
+    expect(tableProperties).toMatch(/<w:insideV\b[^>]*w:val="nil"/);
 
     const rows = table.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [];
     expect(rows.length).toBeGreaterThan(0);
-    for (const [rowIndex, row] of rows.entries()) {
+    for (const row of rows) {
       const cells = row.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [];
       expect(cells.length).toBeGreaterThan(0);
-      for (const [cellIndex, cell] of cells.entries()) {
+      for (const cell of cells) {
         const cellProperties = cell.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/)?.[0] ?? "";
-        expect(cellProperties).toMatch(visibleBorder("top"));
-        expect(cellProperties).toMatch(visibleBorder("left"));
-        expect(visibleBorder("right").test(cellProperties)).toBe(cellIndex === cells.length - 1);
-        expect(visibleBorder("bottom").test(cellProperties)).toBe(rowIndex === rows.length - 1);
+        expect(cellProperties).not.toContain("<w:tcBorders");
+        expect(cellProperties).toMatch(/<w:shd\b[^>]*w:fill="(?:FFFFFF|D9D9D9|D9E1F2)"/);
       }
     }
-    expect(tableProperties).not.toMatch(/<w:shd\b[^>]*w:fill="000000"/);
   }
 
   for (const marker of [
@@ -2554,9 +2558,9 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
     0,
     appendixTable.indexOf("</w:tblPr>") + "</w:tblPr>".length,
   );
-  expect(appendixTableProperties).not.toMatch(/<w:tblBorders>[\s\S]*?w:val="single"/);
-  expect(appendixTable).toMatch(/<w:tcBorders>[\s\S]*?<w:right\b[^>]*w:sz="8"/);
-  expect(appendixTable).not.toContain("<w:tblCellSpacing");
+  expect(appendixTableProperties).toMatch(/<w:tblBorders>[\s\S]*?<w:right\b[^>]*w:sz="2"/);
+  expect(appendixTable).not.toContain("<w:tcBorders");
+  expect(appendixTable).toContain('<w:tblCellSpacing w:w="10" w:type="dxa"/>');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(
