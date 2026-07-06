@@ -438,6 +438,7 @@ test("XLSX scenario import recognizes a standalone merged date row", async ({ pa
   const dialog = page.getByRole("dialog", { name: "Preview import skenario" });
   await dialog.getByLabel("Sheet").selectOption("Skenario Lain");
   await expect(dialog).toContainText("1 skenario");
+  await expect(dialog).toContainText("0 baris dilewati");
   await dialog.getByRole("button", { name: "Import 1 skenario" }).click();
 
   await expect(page.locator("[data-scenario-row]")).toHaveCount(1);

@@ -359,6 +359,7 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
 
       const parsedRange = dateRangeFromRow(row, columns);
       if (parsedRange) currentRange = parsedRange;
+      if (parsedRange && new Set(values).size === 1) return;
 
       const heading = headingDefinition(numberText);
       if (
