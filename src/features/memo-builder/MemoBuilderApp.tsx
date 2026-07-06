@@ -77,6 +77,8 @@ const memoTypes: MemoType[] = [
   "Nasional",
 ];
 
+const FIELD_NAVIGATION_EVENT = "memo-builder:navigate-field";
+
 const bureaus: Bureau[] = [
   "A",
   "B",
@@ -1553,12 +1555,53 @@ function AppendixPanel({
       scenarioRowsAreCompletelyEmpty(rows) ? sheet.rows : [...rows, ...sheet.rows],
       true,
     );
+    setExpandedDetails((current) => {
+      const next = { ...current };
+      sheet.rows.forEach((row) => {
+        next[`scenario:${row.id}`] = false;
+      });
+      return next;
+    });
     setWorkbookPreview(null);
     setSelectedWorkbookSheet("");
     setScenarioImportError("");
   }
 
   const groups = scenarioDateGroups(rows);
+
+  useEffect(() => {
+    function openField(event: Event) {
+      const fieldId = (event as CustomEvent<{ fieldId?: string }>).detail?.fieldId;
+      if (!fieldId?.startsWith("scenario-")) return;
+
+      const rowId = fieldId.match(/^scenario-(?:date|section|text|expected|pic)-(.+)$/)?.[1];
+      const row = rows.find((item) => item.id === rowId) ??
+        rows.find((item) =>
+          scenarioHeadingPath(item).some((heading) => `scenario-heading-${heading.id}` === fieldId),
+        );
+      if (!row) return;
+
+      setExpandedDetails((current) => {
+        const next = { ...current };
+        next[`date:${row.dateGroupId ?? row.id}`] = true;
+        const path = scenarioHeadingPath(row);
+        const sectionId = path[0]?.id ?? row.sectionGroupId ?? row.id;
+        next[`section:${sectionId}`] = true;
+        path.forEach((heading) => {
+          next[`heading:${heading.id}`] = true;
+        });
+        next[`scenario:${row.id}`] = true;
+        return next;
+      });
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => focusEditorField(fieldId));
+      });
+    }
+
+    window.addEventListener(FIELD_NAVIGATION_EVENT, openField);
+    return () => window.removeEventListener(FIELD_NAVIGATION_EVENT, openField);
+  }, [rows]);
 
   function detailOpen(id: string, initialOpen: boolean) {
     return expandedDetails[id] ?? initialOpen;
@@ -1992,9 +2035,11 @@ function AppendixPanel({
   }
 
   function scenarioEditor(row: ScenarioRow, rowIndex: number) {
+    const scenarioOpen = detailOpen(`scenario:${row.id}`, true);
+
     return (
       <details
-        open={detailOpen(`scenario:${row.id}`, true)}
+        open={scenarioOpen}
         onToggle={(event) => rememberDetailState(`scenario:${row.id}`, event)}
         data-scenario-row
         className="rounded-lg border border-slate-200 bg-slate-50"
@@ -2018,32 +2063,34 @@ function AppendixPanel({
             </button>
           </span>
         </summary>
-        <div className="grid gap-3 border-t border-slate-200 p-3">
-          <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
-            <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
-              <RichTextEditor
-                value={row.scenario}
-                minHeight={48}
-                onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, scenario: value } : item))}
-              />
-            </FieldLabel>
-            <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
-              <RichTextEditor
-                value={row.expectedResult}
-                minHeight={48}
-                onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, expectedResult: value } : item))}
-              />
-            </FieldLabel>
-            <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
-              <AutoResizeTextarea
-                value={row.pic}
-                rows={2}
-                onChange={(event) => setRows(rows.map((item) => item.id === row.id ? { ...item, pic: event.target.value } : item))}
-                className="min-h-11 rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-              />
-            </FieldLabel>
+        {scenarioOpen ? (
+          <div className="grid gap-3 border-t border-slate-200 p-3">
+            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
+              <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
+                <RichTextEditor
+                  value={row.scenario}
+                  minHeight={48}
+                  onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, scenario: value } : item))}
+                />
+              </FieldLabel>
+              <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
+                <RichTextEditor
+                  value={row.expectedResult}
+                  minHeight={48}
+                  onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, expectedResult: value } : item))}
+                />
+              </FieldLabel>
+              <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
+                <AutoResizeTextarea
+                  value={row.pic}
+                  rows={2}
+                  onChange={(event) => setRows(rows.map((item) => item.id === row.id ? { ...item, pic: event.target.value } : item))}
+                  className="min-h-11 rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </FieldLabel>
+            </div>
           </div>
-        </div>
+        ) : null}
       </details>
     );
   }
@@ -2277,72 +2324,7 @@ function AppendixPanel({
                                 listId={scenarioListId(section.id)}
                                 withContext={false}
                                 itemLabel={(_, index) => `skenario ${index + 1}`}
-                                renderItem={(row, rowIndex) => (
-                                  <details
-                                    open={detailOpen(`scenario:${row.id}`, true)}
-                                    onToggle={(event) => rememberDetailState(`scenario:${row.id}`, event)}
-                                    data-scenario-row
-                                    className="rounded-lg border border-slate-200 bg-slate-50"
-                                  >
-                                    <summary data-scenario-header className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
-                                      <span>Skenario {rowIndex + 1}</span>
-                                      <span className="flex min-w-0 items-center gap-2">
-                                        <span className="truncate text-xs font-medium text-slate-500">
-                                          {row.pic || "PIC belum diisi"}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            const nextRows = rows.filter((item) => item.id !== row.id);
-                                            setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
-                                          }}
-                                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                                          aria-label="Hapus skenario"
-                                        >
-                                          <Trash2 size={15} />
-                                        </button>
-                                      </span>
-                                    </summary>
-                                    <div className="grid gap-3 border-t border-slate-200 p-3">
-                                      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
-                                        <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
-                                          <RichTextEditor
-                                            value={row.scenario}
-                                            minHeight={48}
-                                            onChange={(value) =>
-                                              setRows(rows.map((item) => (item.id === row.id ? { ...item, scenario: value } : item)))
-                                            }
-                                          />
-                                        </FieldLabel>
-                                        <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
-                                          <RichTextEditor
-                                            value={row.expectedResult}
-                                            minHeight={48}
-                                            onChange={(value) =>
-                                              setRows(
-                                                rows.map((item) =>
-                                                  item.id === row.id ? { ...item, expectedResult: value } : item,
-                                                ),
-                                              )
-                                            }
-                                          />
-                                        </FieldLabel>
-                                        <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
-                                          <AutoResizeTextarea
-                                            value={row.pic}
-                                            rows={2}
-                                            onChange={(event) =>
-                                              setRows(rows.map((item) => (item.id === row.id ? { ...item, pic: event.target.value } : item)))
-                                            }
-                                            className="min-h-11 rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                                          />
-                                        </FieldLabel>
-                                      </div>
-                                    </div>
-                                  </details>
-                                )}
+                                renderItem={(row, rowIndex) => scenarioEditor(row, rowIndex)}
                               />
                             </div>
 
@@ -2689,6 +2671,12 @@ export function MemoBuilderApp() {
     event.preventDefault();
     event.stopPropagation();
     openCommentDialog(target);
+  }
+
+  function navigatePreviewField(fieldId: string) {
+    const focused = focusEditorField(fieldId);
+    window.dispatchEvent(new CustomEvent(FIELD_NAVIGATION_EVENT, { detail: { fieldId } }));
+    return focused;
   }
 
   function createAuditEntry(
@@ -3260,7 +3248,7 @@ export function MemoBuilderApp() {
               </span>
             </div>
             <div className="min-w-[1144px]">
-              <MemoPreview draft={draft} onNavigateField={focusEditorField} />
+              <MemoPreview draft={draft} onNavigateField={navigatePreviewField} />
             </div>
           </div>
         </aside>

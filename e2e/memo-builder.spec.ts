@@ -402,6 +402,7 @@ test("XLSX scenario import uses the same button and recognizes optional hierarch
   await dialog.getByRole("button", { name: "Import 4 skenario" }).click();
 
   await expect(page.locator("[data-scenario-row]")).toHaveCount(5);
+  await expect(page.locator("[data-scenario-row]:not([open])")).toHaveCount(4);
   await expect(page.getByText("Bagian A", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Subbagian A.1", { exact: true })).toBeVisible();
   await expect(page.getByText("Sub-subbagian A.1.1", { exact: true })).toBeVisible();
@@ -1224,8 +1225,51 @@ test("appendix rows with import-style bullet lists stay inside preview pages", a
     .locator('aside article[data-page-kind="appendix"] [data-preview-page-content]')
     .evaluateAll((contents) =>
       contents.map((content) => content.scrollHeight - content.clientHeight),
+  );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+});
+
+test("appendix split rows repeat activity on continuation pages and stay merged per page", async ({ page }) => {
+  const base = completeDraft();
+  const scenarioBase = base.appendixScenarios[0];
+  const repeatedActivity = "Aktivitas Split Repeat";
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...base,
+    appendixScenarios: [{
+      ...scenarioBase,
+      id: "appendix-split-repeat",
+      scenario: richText(repeatedActivity),
+      expectedResult: richList(
+        "bulletList",
+        Array.from({ length: 88 }, (_, index) => `Field hasil sambungan ${index + 1}`),
+      ),
+      pic: "PIC Split",
+    }],
+  });
+
+  const appendixPages = page.locator('aside article[data-page-kind="appendix"]');
+  expect(await appendixPages.count()).toBeGreaterThan(1);
+
+  const pageTexts = await appendixPages.allTextContents();
+  const activityCount = pageTexts.join("\n").match(new RegExp(repeatedActivity, "g"))?.length ?? 0;
+  expect(activityCount).toBeGreaterThanOrEqual(2);
+  for (const text of pageTexts) {
+    expect(text.match(new RegExp(repeatedActivity, "g"))?.length ?? 0).toBeLessThanOrEqual(1);
+  }
+
+  const pageOverflow = await appendixPages
+    .locator("[data-preview-page-content]")
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
     );
   expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const plainXmlText = xml.replace(/<[^>]+>/g, "");
+  expect((plainXmlText.match(new RegExp(repeatedActivity, "g")) ?? []).length).toBeGreaterThanOrEqual(2);
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {

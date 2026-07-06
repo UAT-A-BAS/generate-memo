@@ -403,8 +403,10 @@ function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
   const total = Math.max(scenarioParts.length, expectedParts.length);
 
   return Array.from({ length: total }, (_, part) => {
-    const scenario = scenarioParts[part] ?? paragraphRichText("");
-    const expectedResult = expectedParts[part] ?? paragraphRichText("");
+    const scenario = scenarioParts[part] ??
+      (scenarioParts.length === 1 ? block.row.scenario : paragraphRichText(""));
+    const expectedResult = expectedParts[part] ??
+      (expectedParts.length === 1 ? block.row.expectedResult : paragraphRichText(""));
     const row = { ...block.row, scenario, expectedResult };
     return {
       ...block,
