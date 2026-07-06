@@ -280,16 +280,20 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
 }
 
 function jumpToValidationIssue(issues: ValidationIssue[]) {
-  const firstAvailable = issues.find((issue) =>
-    document.querySelector(`[data-field-id="${CSS.escape(issue.id)}"]`),
-  );
+  const firstIssue = issues[0];
+  if (!firstIssue) return;
 
-  if (!firstAvailable || !focusEditorField(firstAvailable.id)) {
-    document.querySelector("[data-validation-panel]")?.scrollIntoView({
-      block: "center",
-      behavior: "smooth",
-    });
-  }
+  if (focusEditorField(firstIssue.id)) return;
+
+  window.dispatchEvent(new CustomEvent(FIELD_NAVIGATION_EVENT, { detail: { fieldId: firstIssue.id } }));
+  window.setTimeout(() => {
+    if (!focusEditorField(firstIssue.id)) {
+      document.querySelector("[data-validation-panel]")?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+    }
+  }, 120);
 }
 
 function Panel({
@@ -1514,6 +1518,7 @@ function AppendixPanel({
   validationIssues: ValidationIssue[];
 }) {
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
+  const [mountedScenarioEditors, setMountedScenarioEditors] = useState<Record<string, boolean>>({});
   const [scenarioImportError, setScenarioImportError] = useState("");
   const [workbookPreview, setWorkbookPreview] = useState<ScenarioWorkbookPreview | null>(null);
   const [selectedWorkbookSheet, setSelectedWorkbookSheet] = useState("");
@@ -1555,10 +1560,11 @@ function AppendixPanel({
       scenarioRowsAreCompletelyEmpty(rows) ? sheet.rows : [...rows, ...sheet.rows],
       true,
     );
-    setExpandedDetails((current) => {
+    setExpandedDetails({});
+    setMountedScenarioEditors((current) => {
       const next = { ...current };
       sheet.rows.forEach((row) => {
-        next[`scenario:${row.id}`] = false;
+        next[row.id] = false;
       });
       return next;
     });
@@ -1593,6 +1599,7 @@ function AppendixPanel({
         next[`scenario:${row.id}`] = true;
         return next;
       });
+      setMountedScenarioEditors((current) => ({ ...current, [row.id]: true }));
 
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => focusEditorField(fieldId));
@@ -1865,6 +1872,10 @@ function AppendixPanel({
       ...current,
       [`scenario:${row.id}`]: true,
     }));
+    setMountedScenarioEditors((current) => ({
+      ...current,
+      [row.id]: true,
+    }));
   }
 
   function updateSectionTitle(section: ScenarioSectionGroup, title: string) {
@@ -2036,6 +2047,28 @@ function AppendixPanel({
 
   function scenarioEditor(row: ScenarioRow, rowIndex: number) {
     const scenarioOpen = detailOpen(`scenario:${row.id}`, true);
+    const editorMounted = mountedScenarioEditors[row.id] ?? true;
+    const mountEditor = (fieldId: string) => {
+      setMountedScenarioEditors((current) => ({ ...current, [row.id]: true }));
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => focusEditorField(fieldId));
+      });
+    };
+    const lightRichField = (
+      fieldId: string,
+      value: ScenarioRow["scenario"],
+      placeholder: string,
+    ) => (
+      <button
+        type="button"
+        onClick={() => mountEditor(fieldId)}
+        className="min-h-11 rounded-lg border border-slate-400 bg-white px-3 py-2 text-left text-[15px] font-medium leading-[1.35] text-slate-900 outline-none hover:bg-slate-50 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+      >
+        <span className="block whitespace-pre-wrap">
+          {richTextToPlainText(value) || placeholder}
+        </span>
+      </button>
+    );
 
     return (
       <details
@@ -2067,18 +2100,22 @@ function AppendixPanel({
           <div className="grid gap-3 border-t border-slate-200 p-3">
             <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
               <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
-                <RichTextEditor
-                  value={row.scenario}
-                  minHeight={48}
-                  onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, scenario: value } : item))}
-                />
+                {editorMounted ? (
+                  <RichTextEditor
+                    value={row.scenario}
+                    minHeight={48}
+                    onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, scenario: value } : item))}
+                  />
+                ) : lightRichField(`scenario-text-${row.id}`, row.scenario, "Klik untuk edit skenario")}
               </FieldLabel>
               <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
-                <RichTextEditor
-                  value={row.expectedResult}
-                  minHeight={48}
-                  onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, expectedResult: value } : item))}
-                />
+                {editorMounted ? (
+                  <RichTextEditor
+                    value={row.expectedResult}
+                    minHeight={48}
+                    onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, expectedResult: value } : item))}
+                  />
+                ) : lightRichField(`scenario-expected-${row.id}`, row.expectedResult, "Klik untuk edit hasil")}
               </FieldLabel>
               <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
                 <AutoResizeTextarea

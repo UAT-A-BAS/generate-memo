@@ -51,7 +51,7 @@ import {
   WORD_LINE_MULTIPLE_108,
   WORD_LINE_MULTIPLE_115,
 } from "@/documentLayout";
-import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/paginate";
+import { isTableSectionContinuation, paginateMemoDraft, sourceBlockId } from "@/pagination/paginate";
 import {
   formatDateRangeID,
   formatDateRangeNonBreakingID,
@@ -65,6 +65,7 @@ import {
 import { richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
 import { spliceValidationTemplate } from "./spliceValidationTemplate";
+import type { RichTextDoc } from "@/types/richText";
 
 function createOnePointDocxBorder() {
   return {
@@ -532,11 +533,14 @@ function mergedCompactCell(
   children: Paragraph[],
   width: number,
   merge: ConsecutiveMergeState,
+  shaded = false,
+  verticalAlign: TableVerticalAlign = VerticalAlign.CENTER,
 ) {
   return new TableCell({
     rowSpan: merge.span > 1 ? merge.span : undefined,
-    verticalAlign: VerticalAlign.CENTER,
+    verticalAlign,
     margins: { top: 30, bottom: 30, left: 55, right: 55 },
+    shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
     width: {
       size: Math.round((APPENDIX_TABLE_WIDTH * width) / 100),
       type: WidthType.DXA,
@@ -896,18 +900,49 @@ function activityTable(
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
+  const splitAwareMergeKey = (
+    row: Extract<PreviewBlock, { type: "appendix-row" }>,
+    value: string,
+  ) => /-part-\d+$/.test(row.id) ? sourceBlockId(row.id) : value;
+  const splitAwareRowKey = (row: Extract<PreviewBlock, { type: "appendix-row" }>) =>
+    /-part-\d+$/.test(row.id) ? sourceBlockId(row.id) : row.id;
+  const mergedRichTextDoc = (
+    start: number,
+    span: number,
+    value: (row: Extract<PreviewBlock, { type: "appendix-row" }>) => RichTextDoc,
+  ) => {
+    const seen = new Set<string>();
+    return {
+      type: "doc" as const,
+      content: rows.slice(start, start + span).flatMap((row) => {
+        const doc = value(row);
+        const key = richTextToPlainText(doc);
+        if (key && seen.has(key)) return [];
+        seen.add(key);
+        return doc.content;
+      }),
+    };
+  };
+
   const bodyRows = rows.flatMap((block, index) => {
     const startsGroup = (row: typeof block) => row.meta.showDate || row.meta.headingRows.length > 0;
+    const sourceMerge = consecutiveMergeState(
+      rows,
+      index,
+      splitAwareRowKey,
+      startsGroup,
+    );
+    const numberMerge = sourceMerge;
     const scenarioMerge = consecutiveMergeState(
       rows,
       index,
-      (row) => richTextToPlainText(row.row.scenario),
+      (row) => splitAwareMergeKey(row, richTextToPlainText(row.row.scenario)),
       startsGroup,
     );
     const resultMerge = consecutiveMergeState(
       rows,
       index,
-      (row) => richTextToPlainText(row.row.expectedResult),
+      (row) => splitAwareMergeKey(row, richTextToPlainText(row.row.expectedResult)),
       startsGroup,
     );
     const picMerge = consecutiveMergeState(
@@ -916,6 +951,8 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       (row) => row.row.pic,
       startsGroup,
     );
+    const scenarioDoc = mergedRichTextDoc(index, scenarioMerge.span, (row) => row.row.scenario);
+    const resultDoc = mergedRichTextDoc(index, resultMerge.span, (row) => row.row.expectedResult);
     const dateRows =
       block.meta.showDate
         ? [
@@ -948,17 +985,22 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
       new TableRow({
         cantSplit: true,
         children: [
-          compactCell(
-            [appendixParagraph(`${block.meta.number}.`, { size: 22, align: AlignmentType.CENTER })],
-            APPENDIX_COLUMN_WIDTHS[0],
-            false,
-            VerticalAlign.CENTER,
-          ),
+          ...(numberMerge.hidden
+            ? []
+            : [
+                mergedCompactCell(
+                  [appendixParagraph(`${block.meta.number}.`, { size: 22, align: AlignmentType.CENTER })],
+                  APPENDIX_COLUMN_WIDTHS[0],
+                  numberMerge,
+                  false,
+                  VerticalAlign.CENTER,
+                ),
+              ]),
           ...(scenarioMerge.hidden
             ? []
             : [
                 mergedCompactCell(
-                  richTextToDocxParagraphs(block.row.scenario, {
+                  richTextToDocxParagraphs(scenarioDoc, {
                     size: 22,
                     spacingBefore: 0,
                     spacingAfter: 0,
@@ -972,7 +1014,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             ? []
             : [
                 mergedCompactCell(
-                  richTextToDocxParagraphs(block.row.expectedResult, {
+                  richTextToDocxParagraphs(resultDoc, {
                     size: 22,
                     spacingBefore: 0,
                     spacingAfter: 0,

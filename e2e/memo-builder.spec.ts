@@ -402,7 +402,7 @@ test("XLSX scenario import uses the same button and recognizes optional hierarch
   await dialog.getByRole("button", { name: "Import 4 skenario" }).click();
 
   await expect(page.locator("[data-scenario-row]")).toHaveCount(5);
-  await expect(page.locator("[data-scenario-row]:not([open])")).toHaveCount(4);
+  await expect(page.locator("[data-scenario-row]:not([open])")).toHaveCount(0);
   await expect(page.getByText("Bagian A", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Subbagian A.1", { exact: true })).toBeVisible();
   await expect(page.getByText("Sub-subbagian A.1.1", { exact: true })).toBeVisible();
@@ -1257,6 +1257,12 @@ test("appendix split rows repeat activity on continuation pages and stay merged 
   for (const text of pageTexts) {
     expect(text.match(new RegExp(repeatedActivity, "g"))?.length ?? 0).toBeLessThanOrEqual(1);
   }
+  await expect(
+    appendixPages.first().locator("td[rowspan]").filter({ hasText: "1." }).first(),
+  ).toBeVisible();
+  await expect(
+    appendixPages.first().locator("td[rowspan]").filter({ hasText: "Field hasil sambungan" }).first(),
+  ).toBeVisible();
 
   const pageOverflow = await appendixPages
     .locator("[data-preview-page-content]")
@@ -1270,6 +1276,28 @@ test("appendix split rows repeat activity on continuation pages and stay merged 
   const xml = await documentXmlFrom(await downloadPromise);
   const plainXmlText = xml.replace(/<[^>]+>/g, "");
   expect((plainXmlText.match(new RegExp(repeatedActivity, "g")) ?? []).length).toBeGreaterThanOrEqual(2);
+});
+
+test("DOCX validation expands a collapsed mandatory appendix field before focusing it", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [{
+      ...completeDraft().appendixScenarios[0],
+      pic: "",
+    }],
+  });
+
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
+    .first();
+  await panel.getByRole("button", { name: "Collapse All" }).click();
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+
+  await expect(panel.locator("details[open]")).toHaveCount(3);
+  await expect(page.locator('[data-field-id="scenario-pic-scenario-test"]')).toHaveClass(/field-jump-highlight/);
+  await expect(page.locator('[data-field-id="scenario-pic-scenario-test"] textarea')).toBeFocused();
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {

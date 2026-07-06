@@ -1,7 +1,8 @@
 import { Fragment } from "react";
 import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
-import { isTableSectionContinuation, paginateMemoDraft } from "@/pagination/paginate";
+import { isTableSectionContinuation, paginateMemoDraft, sourceBlockId } from "@/pagination/paginate";
+import type { RichTextDoc } from "@/types/richText";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
 import { memoAttachmentItems } from "@/utils/attachments";
@@ -27,6 +28,36 @@ const DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES = DEVELOPMENT_SINGLE_COLUMN_WI
 const ACTIVITY_COLUMN_WIDTH_PERCENTAGES = ACTIVITY_COLUMN_WIDTHS.map((width) => `${width}%`);
 const ACTIVITY_NUMBERED_COLUMN_WIDTH_PERCENTAGES = ACTIVITY_NUMBERED_COLUMN_WIDTHS.map((width) => `${width}%`);
 const TABLE_HEADER_BACKGROUND = `#${TABLE_HEADER_FILL}`;
+
+function mergedRichTextDoc<T>(
+  rows: T[],
+  start: number,
+  span: number,
+  value: (row: T) => RichTextDoc,
+) {
+  const seen = new Set<string>();
+  return {
+    type: "doc" as const,
+    content: rows.slice(start, start + span).flatMap((row) => {
+      const doc = value(row);
+      const key = richTextToPlainText(doc);
+      if (key && seen.has(key)) return [];
+      seen.add(key);
+      return doc.content;
+    }),
+  };
+}
+
+function splitAwareMergeKey(
+  row: Extract<PreviewBlock, { type: "appendix-row" }>,
+  value: string,
+) {
+  return /-part-\d+$/.test(row.id) ? sourceBlockId(row.id) : value;
+}
+
+function splitAwareRowKey(row: Extract<PreviewBlock, { type: "appendix-row" }>) {
+  return /-part-\d+$/.test(row.id) ? sourceBlockId(row.id) : row.id;
+}
 
 type SectionRule = "full" | "content" | "none";
 
@@ -634,24 +665,33 @@ function renderGroupedBlocks(
         >
           {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item, rowIndex, appendixRows) => {
             const startsGroup = (row: typeof item) => row.meta.showDate || row.meta.headingRows.length > 0;
+            const sourceMerge = consecutiveMergeState(
+              appendixRows,
+              rowIndex,
+              splitAwareRowKey,
+              startsGroup,
+            );
             const scenarioMerge = consecutiveMergeState(
               appendixRows,
               rowIndex,
-              (row) => richTextToPlainText(row.row.scenario),
+              (row) => splitAwareMergeKey(row, richTextToPlainText(row.row.scenario)),
               startsGroup,
             );
             const resultMerge = consecutiveMergeState(
               appendixRows,
               rowIndex,
-              (row) => richTextToPlainText(row.row.expectedResult),
+              (row) => splitAwareMergeKey(row, richTextToPlainText(row.row.expectedResult)),
               startsGroup,
             );
+            const numberMerge = sourceMerge;
             const picMerge = consecutiveMergeState(
               appendixRows,
               rowIndex,
               (row) => row.row.pic,
               startsGroup,
             );
+            const scenarioDoc = mergedRichTextDoc(appendixRows, rowIndex, scenarioMerge.span, (row) => row.row.scenario);
+            const resultDoc = mergedRichTextDoc(appendixRows, rowIndex, resultMerge.span, (row) => row.row.expectedResult);
             return (
               <Fragment key={item.id}>
                 {item.meta.showDate ? (
@@ -682,14 +722,18 @@ function renderGroupedBlocks(
                   </tr>
                 ))}
                 <tr>
-                  <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-middle">{item.meta.number}.</td>
+                  {numberMerge.hidden ? null : (
+                    <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-middle" rowSpan={numberMerge.span}>
+                      {item.meta.number}.
+                    </td>
+                  )}
                   {scenarioMerge.hidden ? null : (
                     <td
                       className="border border-slate-900 px-1 py-0.5 align-middle"
                       rowSpan={scenarioMerge.span}
                       data-preview-field-id={`scenario-text-${item.row.id}`}
                     >
-                      <RichTextView html={richTextToHtml(item.row.scenario)} />
+                      <RichTextView html={richTextToHtml(scenarioDoc)} />
                     </td>
                   )}
                   {resultMerge.hidden ? null : (
@@ -698,7 +742,7 @@ function renderGroupedBlocks(
                       rowSpan={resultMerge.span}
                       data-preview-field-id={`scenario-expected-${item.row.id}`}
                     >
-                      <RichTextView html={richTextToHtml(item.row.expectedResult)} />
+                      <RichTextView html={richTextToHtml(resultDoc)} />
                     </td>
                   )}
                   {picMerge.hidden ? null : (

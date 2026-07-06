@@ -396,10 +396,10 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
 }
 
 function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
-  if (block.type !== "appendix-row" || block.estimatedHeight <= 360) return [block];
+  if (block.type !== "appendix-row" || block.estimatedHeight <= 180) return [block];
 
-  const scenarioParts = splitDoc(block.row.scenario, 420, 48);
-  const expectedParts = splitDoc(block.row.expectedResult, 420, 50);
+  const scenarioParts = splitDoc(block.row.scenario, 320, 48);
+  const expectedParts = splitDoc(block.row.expectedResult, 320, 50);
   const total = Math.max(scenarioParts.length, expectedParts.length);
 
   return Array.from({ length: total }, (_, part) => {
@@ -417,7 +417,7 @@ function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
   });
 }
 
-function sourceBlockId(id: string) {
+export function sourceBlockId(id: string) {
   return id.replace(/-part-\d+$/, "");
 }
 
