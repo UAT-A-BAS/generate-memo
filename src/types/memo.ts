@@ -29,10 +29,16 @@ export type ActivityRow = {
   owner: string;
 };
 
+export type ScenarioHeading = {
+  id: string;
+  title: string;
+};
+
 export type ScenarioRow = {
   id: string;
   dateGroupId?: string;
   sectionGroupId?: string;
+  headingPath?: ScenarioHeading[];
   startDate: string;
   endDate: string;
   dates?: string[];

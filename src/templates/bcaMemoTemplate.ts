@@ -15,6 +15,7 @@ import { emptyRichText } from "@/types/richText";
 import { generatePerihal } from "@/utils/generatePerihal";
 import { createId } from "@/utils/ids";
 import { normalizeDateSelection } from "@/utils/formatDateRangeID";
+import { scenarioHeadingPath, withScenarioHeadingPath } from "@/utils/scenarioHierarchy";
 
 export function createRecipient(seed: Partial<Recipient> = {}): Recipient {
   return {
@@ -66,10 +67,11 @@ export function createSignerRow(seed: Partial<SignerRow> = {}): SignerRow {
 }
 
 export function createScenarioRow(seed: Partial<ScenarioRow> = {}): ScenarioRow {
-  return {
+  const sectionGroupId = seed.sectionGroupId ?? createId("scenario-section");
+  const base: ScenarioRow = {
     id: createId("scenario"),
     dateGroupId: seed.dateGroupId ?? createId("scenario-date"),
-    sectionGroupId: seed.sectionGroupId ?? createId("scenario-section"),
+    sectionGroupId,
     startDate: "",
     endDate: "",
     section: "",
@@ -79,6 +81,10 @@ export function createScenarioRow(seed: Partial<ScenarioRow> = {}): ScenarioRow 
     notes: emptyRichText(),
     ...seed,
   };
+  const path = Array.isArray(seed.headingPath)
+    ? seed.headingPath
+    : [{ id: sectionGroupId, title: seed.section ?? "" }];
+  return withScenarioHeadingPath(base, path);
 }
 
 export function createInitialMemoDraft(): MemoDraft {
@@ -245,6 +251,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   let previousScenarioSection = "";
   let previousScenarioDateGroupId = "";
   let previousScenarioSectionGroupId = "";
+  let previousScenarioHeadingPath: ScenarioRow["headingPath"] = undefined;
   const appendixScenarios = Array.isArray(input.appendixScenarios)
     ? input.appendixScenarios.map((row) => {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
@@ -280,7 +287,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
         previousScenarioDateGroupId = dateGroupId;
         previousScenarioSectionGroupId = sectionGroupId;
 
-        return {
+        const normalizedRow = {
           ...row,
           dateGroupId,
           sectionGroupId,
@@ -289,6 +296,14 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
           dates: normalizedDates,
           section,
         };
+        const explicitPath = Array.isArray(row.headingPath);
+        const headingPath = explicitPath
+          ? scenarioHeadingPath(normalizedRow)
+          : continuesPreviousSection && previousScenarioHeadingPath
+            ? previousScenarioHeadingPath
+            : scenarioHeadingPath(normalizedRow);
+        previousScenarioHeadingPath = headingPath;
+        return withScenarioHeadingPath(normalizedRow, headingPath);
       })
     : base.appendixScenarios;
 

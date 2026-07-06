@@ -897,7 +897,7 @@ function activityTable(
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
   const bodyRows = rows.flatMap((block, index) => {
-    const startsGroup = (row: typeof block) => row.meta.showDate || row.meta.showSection;
+    const startsGroup = (row: typeof block) => row.meta.showDate || row.meta.headingRows.length > 0;
     const scenarioMerge = consecutiveMergeState(
       rows,
       index,
@@ -925,26 +925,23 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             }),
           ]
         : [];
-    const sectionRows =
-      block.meta.showSection
-        ? [
-            new TableRow({
-              cantSplit: true,
-              children: [
-                compactCell(
-                  [appendixParagraph(`${block.meta.sectionLetter}.`, { bold: true, size: 22, align: AlignmentType.CENTER })],
-                  APPENDIX_COLUMN_WIDTHS[0],
-                  true,
-                ),
-                compactSpanningCell(
-                  [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
-                  3,
-                  true,
-                ),
-              ],
-            }),
-          ]
-        : [];
+    const sectionRows = block.meta.headingRows.map((heading) =>
+      new TableRow({
+        cantSplit: true,
+        children: [
+          compactCell(
+            [appendixParagraph(`${heading.label}.`, { bold: true, size: 22, align: AlignmentType.CENTER })],
+            APPENDIX_COLUMN_WIDTHS[0],
+            true,
+          ),
+          compactSpanningCell(
+            [appendixParagraph(heading.title, { bold: true, size: 22 })],
+            3,
+            true,
+          ),
+        ],
+      }),
+    );
     return [
       ...dateRows,
       ...sectionRows,

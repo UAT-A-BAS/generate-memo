@@ -145,6 +145,68 @@ function momScenarioPayload() {
   };
 }
 
+async function xlsxScenarioWorkbook() {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+  zip.file("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <bookViews><workbookView activeTab="1"/></bookViews>
+  <sheets>
+    <sheet name="Arsip" sheetId="1" state="hidden" r:id="rId1"/>
+    <sheet name="Skenario Aktif" sheetId="2" r:id="rId2"/>
+    <sheet name="Skenario Lain" sheetId="3" r:id="rId3"/>
+  </sheets>
+</workbook>`);
+  zip.file("xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
+</Relationships>`);
+
+  const cell = (reference: string, value: string) =>
+    `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${value}</t></is></c>`;
+  const row = (number: number, values: string[]) =>
+    `<row r="${number}">${values.map((value, index) => value ? cell(`${String.fromCharCode(65 + index)}${number}`, value) : "").join("")}</row>`;
+  const sheet = (rows: string, merges = "") => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${rows}</sheetData>${merges}
+</worksheet>`;
+
+  zip.file("xl/worksheets/sheet1.xml", sheet(row(1, ["Arsip", "", "", "", ""])));
+  zip.file("xl/worksheets/sheet2.xml", sheet([
+    row(1, ["Lampiran - Skenario Pilot Implementasi", "", "", "", ""]),
+    row(2, ["No", "Aktivitas", "Hasil/Expected", "PIC", "Tanggal"]),
+    row(3, ["A. Verifikasi Utama", "", "", "", ""]),
+    row(4, ["1", "Skenario langsung", "Hasil langsung", "PIC Utama", "9 Juli 2026"]),
+    row(5, ["A.1. Verifikasi Input", "", "", "", ""]),
+    row(6, ["1", "Skenario subbagian", "Hasil subbagian", "PIC Input", ""]),
+    row(7, ["A.1.1. Kondisi Khusus", "", "", "", ""]),
+    row(8, ["1", "Skenario sub-subbagian", "Hasil khusus", "PIC Khusus", ""]),
+    row(9, ["No", "Aktivitas", "Hasil/Expected", "PIC", "Tanggal"]),
+    row(10, ["B. Verifikasi Kedua", "", "", "", ""]),
+    row(11, ["1", "Skenario kedua", "Hasil kedua", "PIC Kedua", "10 Juli 2026"]),
+  ].join("")));
+  zip.file("xl/worksheets/sheet3.xml", sheet([
+    row(1, ["No", "Aktivitas", "Hasil", "PIC", "Tanggal"]),
+    row(2, ["1", "Skenario sheet lain", "Hasil lain", "PIC Lain", "11 Juli 2026"]),
+  ].join("")));
+
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
 function pdfBorderStressDraft() {
   const base = completeDraft();
   const scenario = base.appendixScenarios[0];
@@ -301,6 +363,45 @@ test("invalid MOM scenario import preserves appendix data and reports the error"
   await expect(page.locator("[data-scenario-import-error]")).toContainText(
     "tidak memiliki skenario",
   );
+});
+
+test("XLSX scenario import uses the same button and recognizes optional hierarchy", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "skenario.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await xlsxScenarioWorkbook(),
+  });
+
+  const dialog = page.getByRole("dialog", { name: "Preview import skenario" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Sheet")).toHaveValue("Skenario Aktif");
+  await expect(dialog).toContainText("4 skenario");
+  await expect(dialog).toContainText("3 tingkat hierarki");
+  await dialog.getByRole("button", { name: "Import 4 skenario" }).click();
+
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(4);
+  await expect(page.getByText("Bagian A", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Subbagian A.1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sub-subbagian A.1.1", { exact: true })).toBeVisible();
+  await expect(page.locator("aside").getByText("Kondisi Khusus", { exact: true })).toBeVisible();
+  await expect(page.locator("aside").getByText("Skenario kedua", { exact: true })).toBeVisible();
+});
+
+test("optional scenario hierarchy exposes minimalist contextual add actions", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  const firstSection = page.locator("[data-scenario-heading-level='1']").first();
+  await firstSection.getByRole("button", { name: "Tambah subbagian" }).click();
+  const firstSubsection = page.locator("[data-scenario-heading-level='2']").first();
+  await expect(firstSubsection.getByText("Subbagian A.1", { exact: true })).toBeVisible();
+
+  await firstSubsection.getByRole("button", { name: "Tambah sub-subbagian" }).click();
+  const firstSubsubsection = page.locator("[data-scenario-heading-level='3']").first();
+  await expect(firstSubsubsection.getByText("Sub-subbagian A.1.1", { exact: true })).toBeVisible();
+  await expect(firstSubsubsection.getByRole("button", { name: "Tambah skenario" })).toBeVisible();
+  await expect(firstSubsubsection.getByRole("button", { name: /Tambah sub/ })).toHaveCount(0);
 });
 
 test("imported MOM PIC remains mandatory for DOCX export", async ({ page }) => {

@@ -15,6 +15,7 @@ import { formatDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { richTextToPlainText } from "@/utils/richText";
+import { buildScenarioHierarchy, scenarioHeadingPath, type ScenarioHierarchyNode } from "@/utils/scenarioHierarchy";
 
 export type PreviewOrientation = "portrait" | "landscape";
 export type PreviewKind = "main" | "appendix" | "validation";
@@ -25,6 +26,7 @@ export type AppendixRowMeta = {
   sectionTitle: string;
   showSection: boolean;
   sectionLetter: string;
+  headingRows: Array<{ id: string; label: string; title: string; depth: number }>;
   number: number;
   isSplitContinuation: boolean;
 };
@@ -406,19 +408,6 @@ function expandLargeAppendixBlock(block: PreviewBlock): PreviewBlock[] {
   });
 }
 
-function alphaIndex(index: number) {
-  let value = index + 1;
-  let result = "";
-
-  while (value > 0) {
-    const remainder = (value - 1) % 26;
-    result = String.fromCharCode(65 + remainder) + result;
-    value = Math.floor((value - 1) / 26);
-  }
-
-  return result;
-}
-
 function sourceBlockId(id: string) {
   return id.replace(/-part-\d+$/, "");
 }
@@ -510,11 +499,28 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
 
 function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   let previousDateGroupId = "";
-  let previousSectionGroupId = "";
+  let previousHeadingIds: string[] = [];
   let previousSource = "";
-  let sectionIndex = -1;
-  let numberInSection = 0;
   let currentNumber = 0;
+  const numberByParent = new Map<string, number>();
+  const labelsByDate = new Map<string, Map<string, { label: string; title: string; depth: number }>>();
+  const rowsByDate = new Map<string, ScenarioRow[]>();
+
+  draft.appendixScenarios.forEach((row) => {
+    const dateId = row.dateGroupId ?? row.id;
+    const group = rowsByDate.get(dateId) ?? [];
+    group.push(row);
+    rowsByDate.set(dateId, group);
+  });
+  rowsByDate.forEach((rows, dateId) => {
+    const labels = new Map<string, { label: string; title: string; depth: number }>();
+    const visit = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
+      labels.set(node.id, { label: node.label, title: node.title, depth: node.depth });
+      visit(node.children);
+    });
+    visit(buildScenarioHierarchy(rows).children);
+    labelsByDate.set(dateId, labels);
+  });
 
   const blocks = draft.appendixScenarios.map((row, index) => ({
     id: `appendix-${row.id}`,
@@ -527,6 +533,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       sectionTitle: "",
       showSection: false,
       sectionLetter: "",
+      headingRows: [],
       number: 0,
       isSplitContinuation: false,
     },
@@ -537,9 +544,8 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     const sourceId = sourceBlockId(block.id);
     const isSplitContinuation = sourceId === previousSource;
     const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate, block.row.dates);
-    const sectionTitle = block.row.section.trim();
     const dateGroupId = block.row.dateGroupId ?? block.row.id;
-    const sectionGroupId = block.row.sectionGroupId ?? block.row.id;
+    const headingPath = scenarioHeadingPath(block.row);
     const showDate =
       !isSplitContinuation &&
       dateLabel !== "-" &&
@@ -547,24 +553,33 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
 
     if (showDate) {
       previousDateGroupId = dateGroupId;
-      previousSectionGroupId = "";
-      sectionIndex = -1;
-      numberInSection = 0;
+      previousHeadingIds = [];
     }
 
-    const showSection =
-      !isSplitContinuation &&
-      Boolean(sectionTitle) &&
-      sectionGroupId !== previousSectionGroupId;
+    let commonDepth = 0;
+    while (
+      commonDepth < headingPath.length &&
+      headingPath[commonDepth]?.id === previousHeadingIds[commonDepth]
+    ) commonDepth += 1;
+    const headingRows = isSplitContinuation
+      ? []
+      : headingPath.slice(commonDepth).map((heading, offset) => {
+          const resolved = labelsByDate.get(dateGroupId)?.get(heading.id);
+          return {
+            id: heading.id,
+            label: resolved?.label ?? "",
+            title: resolved?.title ?? heading.title,
+            depth: resolved?.depth ?? commonDepth + offset + 1,
+          };
+        });
+    const showSection = headingRows.length > 0;
+    const lastHeading = headingRows.at(-1);
 
     if (!isSplitContinuation) {
-      if (showSection) {
-        sectionIndex += 1;
-        previousSectionGroupId = sectionGroupId;
-        numberInSection = 0;
-      }
-      numberInSection += 1;
-      currentNumber = numberInSection;
+      const parentKey = headingPath.at(-1)?.id ?? `${dateGroupId}:root`;
+      currentNumber = (numberByParent.get(parentKey) ?? 0) + 1;
+      numberByParent.set(parentKey, currentNumber);
+      previousHeadingIds = headingPath.map((heading) => heading.id);
       previousSource = sourceId;
     }
 
@@ -573,16 +588,17 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       meta: {
         dateLabel,
         showDate,
-        sectionTitle,
+        sectionTitle: lastHeading?.title ?? "",
         showSection,
-        sectionLetter: showSection ? alphaIndex(sectionIndex) : "",
+        sectionLetter: lastHeading?.label ?? "",
+        headingRows,
         number: currentNumber,
         isSplitContinuation,
       },
       estimatedHeight:
         block.estimatedHeight +
         (showDate ? 24 : 0) +
-        (showSection ? Math.max(24, compactTextHeight(sectionTitle, 72)) : 0),
+        headingRows.reduce((height, heading) => height + Math.max(24, compactTextHeight(heading.title, 72)), 0),
     };
   });
 }

@@ -30,6 +30,7 @@ import type {
   ReviewAuditAction,
   ReviewAuditLogEntry,
   ReviewComment,
+  ScenarioHeading,
   ScenarioRow,
 } from "@/types/memo";
 import { DateRangePicker, type DateRangeValue } from "@/components/DateRangePicker";
@@ -51,6 +52,16 @@ import { paginateMemoDraft } from "@/pagination/paginate";
 import { useMemoDraftStore } from "@/store/useMemoDraftStore";
 import { generateMomJsonToMemoDraft } from "@/utils/generateMomJsonToMemoDraft";
 import { importMomScenarioRows } from "@/utils/importMomScenarios";
+import { importScenarioWorkbook, type ScenarioWorkbookPreview, type ScenarioWorkbookSheet } from "@/utils/importScenarioWorkbook";
+import {
+  buildScenarioHierarchy,
+  flattenScenarioHierarchy,
+  scenarioHeadingName,
+  scenarioHeadingPath,
+  type ScenarioHierarchyNode,
+  withScenarioHeadingPath,
+} from "@/utils/scenarioHierarchy";
+import { ScenarioImportDialog } from "./ScenarioImportDialog";
 import { MemoPreview } from "@/preview/MemoPreview";
 import { useMemoCollaboration } from "@/collaboration/useMemoCollaboration";
 import {
@@ -239,22 +250,25 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
   if (!hasText(draft.initialsBureau)) add("initialsBureau", "UAT");
 
   const validatedDateGroups = new Set<string>();
-  const validatedSectionGroups = new Set<string>();
+  const validatedHeadingGroups = new Set<string>();
   draft.appendixScenarios.forEach((row, index) => {
     const dateGroupKey = row.dateGroupId ?? row.id;
-    const sectionGroupKey = row.sectionGroupId ?? row.id;
     if (!validatedDateGroups.has(dateGroupKey)) {
       validatedDateGroups.add(dateGroupKey);
       if (!hasText(row.startDate) || !hasText(row.endDate)) {
         add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal`);
       }
     }
-    if (!validatedSectionGroups.has(sectionGroupKey)) {
-      validatedSectionGroups.add(sectionGroupKey);
-      if (!hasText(row.section)) {
-        add(`scenario-section-${row.id}`, `Lampiran Skenario ${index + 1}: Bagian`);
+    scenarioHeadingPath(row).forEach((heading, headingIndex) => {
+      if (validatedHeadingGroups.has(heading.id)) return;
+      validatedHeadingGroups.add(heading.id);
+      if (!hasText(heading.title)) {
+        add(
+          headingIndex === 0 ? `scenario-section-${row.id}` : `scenario-heading-${heading.id}`,
+          `Lampiran Skenario ${index + 1}: ${scenarioHeadingName(headingIndex + 1)}`,
+        );
       }
-    }
+    });
     if (!hasText(row.pic)) add(`scenario-pic-${row.id}`, `Lampiran Skenario ${index + 1}: PIC`);
     if (!hasRichText(row.scenario)) add(`scenario-text-${row.id}`, `Lampiran Skenario ${index + 1}: Skenario`);
     if (!hasRichText(row.expectedResult)) add(`scenario-expected-${row.id}`, `Lampiran Skenario ${index + 1}: Expected Result`);
@@ -1411,14 +1425,14 @@ type ScenarioDateGroup = {
   rows: ScenarioRow[];
 };
 
+const SCENARIO_LIST_PREFIX = "scenario-section:";
+
 type ScenarioSectionGroup = {
   id: string;
   marker: string;
   title: string;
   rows: ScenarioRow[];
 };
-
-const SCENARIO_LIST_PREFIX = "scenario-section:";
 
 function scenarioListId(sectionId: string) {
   return `${SCENARIO_LIST_PREFIX}${sectionId}`;
@@ -1455,19 +1469,19 @@ function scenarioSectionGroups(rows: ScenarioRow[]) {
   const indexByKey = new Map<string, number>();
 
   rows.forEach((row) => {
-    const key = row.sectionGroupId ?? row.id;
+    const firstHeading = scenarioHeadingPath(row)[0];
+    if (!firstHeading) return;
+    const key = firstHeading?.id ?? row.sectionGroupId ?? row.id;
     const existingIndex = indexByKey.get(key);
-
     if (existingIndex !== undefined) {
       sections[existingIndex].rows.push(row);
       return;
     }
-
     indexByKey.set(key, sections.length);
     sections.push({
-      id: row.sectionGroupId ?? row.id,
+      id: key,
       marker: alphaIndex(sections.length),
-      title: row.section,
+      title: firstHeading?.title ?? row.section,
       rows: [row],
     });
   });
@@ -1499,6 +1513,8 @@ function AppendixPanel({
 }) {
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   const [scenarioImportError, setScenarioImportError] = useState("");
+  const [workbookPreview, setWorkbookPreview] = useState<ScenarioWorkbookPreview | null>(null);
+  const [selectedWorkbookSheet, setSelectedWorkbookSheet] = useState("");
   const scenarioImportInputRef = useRef<HTMLInputElement>(null);
 
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
@@ -1510,6 +1526,13 @@ function AppendixPanel({
     if (!file) return;
 
     try {
+      if (/\.xlsx$/i.test(file.name)) {
+        const preview = await importScenarioWorkbook(file);
+        setWorkbookPreview(preview);
+        setSelectedWorkbookSheet(preview.activeSheetName);
+        setScenarioImportError("");
+        return;
+      }
       const importedRows = importMomScenarioRows(JSON.parse(await file.text()));
       setRows(
         scenarioRowsAreCompletelyEmpty(rows) ? importedRows : [...rows, ...importedRows],
@@ -1523,6 +1546,16 @@ function AppendixPanel({
     } finally {
       event.target.value = "";
     }
+  }
+
+  function applyWorkbookImport(sheet: ScenarioWorkbookSheet) {
+    setRows(
+      scenarioRowsAreCompletelyEmpty(rows) ? sheet.rows : [...rows, ...sheet.rows],
+      true,
+    );
+    setWorkbookPreview(null);
+    setSelectedWorkbookSheet("");
+    setScenarioImportError("");
   }
 
   const groups = scenarioDateGroups(rows);
@@ -1748,8 +1781,14 @@ function AppendixPanel({
   }
 
   function updateSectionTitle(section: ScenarioSectionGroup, title: string) {
-    const ids = new Set(section.rows.map((row) => row.id));
-    setRows(rows.map((row) => (ids.has(row.id) ? { ...row, section: title } : row)));
+    setRows(rows.map((row) => {
+      const path = scenarioHeadingPath(row);
+      if (!path.some((heading) => heading.id === section.id)) return row;
+      return withScenarioHeadingPath(
+        row,
+        path.map((heading) => heading.id === section.id ? { ...heading, title } : heading),
+      );
+    }));
   }
 
   function addScenarioToSection(group: ScenarioDateGroup, section: ScenarioSectionGroup) {
@@ -1815,6 +1854,238 @@ function AppendixPanel({
     ], true);
   }
 
+  function updateHeadingTitle(headingId: string, title: string) {
+    setRows(rows.map((row) => {
+      const path = scenarioHeadingPath(row);
+      if (!path.some((heading) => heading.id === headingId)) return row;
+      return withScenarioHeadingPath(
+        row,
+        path.map((heading) => heading.id === headingId ? { ...heading, title } : heading),
+      );
+    }));
+  }
+
+  function addScenarioAtPath(
+    group: ScenarioDateGroup,
+    section: ScenarioSectionGroup,
+    headingPath: ScenarioHeading[],
+  ) {
+    const sectionIds = new Set(section.rows.map((row) => row.id));
+    let lastIndex = -1;
+    rows.forEach((row, index) => {
+      if (sectionIds.has(row.id)) lastIndex = index;
+    });
+    const nextRow = createScenarioRow({
+      dateGroupId: group.id,
+      headingPath,
+      startDate: group.startDate,
+      endDate: group.endDate,
+      dates: group.dates,
+    });
+    setExpandedDetails((current) => ({ ...current, [`scenario:${nextRow.id}`]: true }));
+    setRows([...rows.slice(0, lastIndex + 1), nextRow, ...rows.slice(lastIndex + 1)], true);
+  }
+
+  function addChildHeading(
+    group: ScenarioDateGroup,
+    section: ScenarioSectionGroup,
+    parentPath: ScenarioHeading[],
+  ) {
+    if (parentPath.length >= 3) return;
+    const heading = { id: createId(`scenario-heading-${parentPath.length + 1}`), title: "" };
+    setExpandedDetails((current) => ({
+      ...current,
+      [`heading:${heading.id}`]: true,
+    }));
+    addScenarioAtPath(group, section, [...parentPath, heading]);
+  }
+
+  function replaceNodeRows(node: ScenarioHierarchyNode, nextRows: ScenarioRow[]) {
+    const ids = new Set(node.rows.map((row) => row.id));
+    let inserted = false;
+    const next = rows.flatMap((row) => {
+      if (!ids.has(row.id)) return [row];
+      if (inserted) return [];
+      inserted = true;
+      return nextRows;
+    });
+    setRows(next.length ? next : [createScenarioRow()], true);
+  }
+
+  function addRootScenario(group: ScenarioDateGroup) {
+    const groupIds = new Set(group.rows.map((row) => row.id));
+    let lastIndex = -1;
+    rows.forEach((row, index) => {
+      if (groupIds.has(row.id)) lastIndex = index;
+    });
+    const nextRow = createScenarioRow({
+      dateGroupId: group.id,
+      headingPath: [],
+      startDate: group.startDate,
+      endDate: group.endDate,
+      dates: group.dates,
+    });
+    setExpandedDetails((current) => ({ ...current, [`scenario:${nextRow.id}`]: true }));
+    setRows([...rows.slice(0, lastIndex + 1), nextRow, ...rows.slice(lastIndex + 1)], true);
+  }
+
+  function replaceRootRows(group: ScenarioDateGroup, nextRootRows: ScenarioRow[]) {
+    const rootRows = buildScenarioHierarchy(group.rows).rows;
+    const ids = new Set(rootRows.map((row) => row.id));
+    let inserted = false;
+    const next = rows.flatMap((row) => {
+      if (!ids.has(row.id)) return [row];
+      if (inserted) return [];
+      inserted = true;
+      return nextRootRows;
+    });
+    setRows(next.length ? next : [createScenarioRow()], true);
+  }
+
+  function scenarioEditor(row: ScenarioRow, rowIndex: number) {
+    return (
+      <details
+        open={detailOpen(`scenario:${row.id}`, true)}
+        onToggle={(event) => rememberDetailState(`scenario:${row.id}`, event)}
+        data-scenario-row
+        className="rounded-lg border border-slate-200 bg-slate-50"
+      >
+        <summary data-scenario-header className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+          <span>Skenario {rowIndex + 1}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-xs font-medium text-slate-500">{row.pic || "PIC belum diisi"}</span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const nextRows = rows.filter((item) => item.id !== row.id);
+                setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
+              }}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+              aria-label="Hapus skenario"
+            >
+              <Trash2 size={15} />
+            </button>
+          </span>
+        </summary>
+        <div className="grid gap-3 border-t border-slate-200 p-3">
+          <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.62fr)]">
+            <FieldLabel label="Skenario" fieldId={`scenario-text-${row.id}`} required asGroup>
+              <RichTextEditor
+                value={row.scenario}
+                minHeight={48}
+                onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, scenario: value } : item))}
+              />
+            </FieldLabel>
+            <FieldLabel label="Expected Result" fieldId={`scenario-expected-${row.id}`} required asGroup>
+              <RichTextEditor
+                value={row.expectedResult}
+                minHeight={48}
+                onChange={(value) => setRows(rows.map((item) => item.id === row.id ? { ...item, expectedResult: value } : item))}
+              />
+            </FieldLabel>
+            <FieldLabel label="PIC" fieldId={`scenario-pic-${row.id}`} required>
+              <AutoResizeTextarea
+                value={row.pic}
+                rows={2}
+                onChange={(event) => setRows(rows.map((item) => item.id === row.id ? { ...item, pic: event.target.value } : item))}
+                className="min-h-11 rounded-lg border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              />
+            </FieldLabel>
+          </div>
+        </div>
+      </details>
+    );
+  }
+
+  function nestedHeadingEditor(
+    group: ScenarioDateGroup,
+    section: ScenarioSectionGroup,
+    node: ScenarioHierarchyNode,
+  ) {
+    return (
+      <section
+        data-scenario-heading-level={node.depth}
+        className="rounded-lg border border-slate-200 bg-slate-50/70 p-2"
+      >
+        <details
+          open={detailOpen(`heading:${node.id}`, true)}
+          onToggle={(event) => rememberDetailState(`heading:${node.id}`, event)}
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+            <span>{scenarioHeadingName(node.depth)} {node.label}</span>
+            <span className="text-xs font-semibold text-slate-500">{node.rows.length} skenario</span>
+          </summary>
+          <div className="mt-2 grid gap-3">
+            <FieldLabel
+              label={scenarioHeadingName(node.depth)}
+              fieldId={`scenario-heading-${node.id}`}
+              required
+            >
+              <div className="grid grid-cols-[64px_1fr] overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-[#1b4d78] focus-within:ring-2 focus-within:ring-[#1b4d78]/15">
+                <span className="flex items-center justify-center border-r border-slate-200 bg-slate-50 text-xs font-bold text-[#0f2d4a]">{node.label}</span>
+                <AutoResizeTextarea
+                  value={node.title}
+                  rows={1}
+                  onChange={(event) => updateHeadingTitle(node.id, event.target.value)}
+                  className="min-h-10 border-0 px-3 py-[11px] text-sm font-medium leading-[18px] outline-none"
+                />
+              </div>
+            </FieldLabel>
+
+            {node.rows.length ? (
+              <DragDropList
+                items={node.rows}
+                onReorder={(nextRows) => replaceNodeRows(node, nextRows)}
+                itemLabel={(_, index) => `skenario ${index + 1}`}
+                renderItem={scenarioEditor}
+              />
+            ) : null}
+
+            {node.children.length ? (
+              <DragDropList
+                items={node.children}
+                onReorder={(nextChildren) => {
+                  const hierarchy = buildScenarioHierarchy(section.rows);
+                  const target = hierarchy.children
+                    .flatMap(function walk(item): ScenarioHierarchyNode[] { return [item, ...item.children.flatMap(walk)]; })
+                    .find((item) => item.id === node.id);
+                  if (!target) return;
+                  target.children = nextChildren;
+                  replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
+                }}
+                itemLabel={(child) => `${scenarioHeadingName(child.depth).toLowerCase()} ${child.label}`}
+                renderItem={(child) => nestedHeadingEditor(group, section, child)}
+              />
+            ) : null}
+
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <button
+                type="button"
+                aria-label="Tambah skenario"
+                onClick={() => addScenarioAtPath(group, section, node.path)}
+                className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-[#1b4d78] transition hover:bg-[#e8f1f8] focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/20"
+              >
+                <Plus size={14} /> Skenario
+              </button>
+              {node.depth < 3 ? (
+                <button
+                  type="button"
+                  aria-label={`Tambah ${scenarioHeadingName(node.depth + 1).toLowerCase()}`}
+                  onClick={() => addChildHeading(group, section, node.path)}
+                  className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
+                >
+                  <Plus size={14} /> {scenarioHeadingName(node.depth + 1)}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </details>
+      </section>
+    );
+  }
+
   return (
     <Panel>
       <SectionTitle
@@ -1824,7 +2095,7 @@ function AppendixPanel({
             <input
               ref={scenarioImportInputRef}
               type="file"
-              accept="application/json,.json"
+              accept="application/json,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
               className="hidden"
               onChange={handleScenarioImport}
               data-scenario-import-input
@@ -1897,6 +2168,15 @@ function AppendixPanel({
                     />
                   </FieldLabel>
 
+                  {buildScenarioHierarchy(group.rows).rows.length ? (
+                    <DragDropList
+                      items={buildScenarioHierarchy(group.rows).rows}
+                      onReorder={(nextRows) => replaceRootRows(group, nextRows)}
+                      itemLabel={(_, index) => `skenario ${index + 1}`}
+                      renderItem={scenarioEditor}
+                    />
+                  ) : null}
+
                   <DragDropList
                     items={scenarioSectionGroups(group.rows)}
                     onReorder={(nextSections) => reorderSections(group, nextSections)}
@@ -1904,7 +2184,7 @@ function AppendixPanel({
                     withContext={false}
                     itemLabel={(section) => `bagian ${section.marker}`}
                     renderItem={(section) => (
-                      <section className="rounded-xl border border-[#d8e1eb] bg-white p-2">
+                      <section data-scenario-heading-level="1" className="rounded-xl border border-[#d8e1eb] bg-white p-2">
                         <details
                           open={detailOpen(`section:${section.id}`, true)}
                           onToggle={(event) => rememberDetailState(`section:${section.id}`, event)}
@@ -1942,10 +2222,11 @@ function AppendixPanel({
 
                             <div className="mt-3">
                               <DragDropList
-                                items={section.rows}
-                                onReorder={(nextSectionRows) =>
-                                  replaceSectionRows(section, nextSectionRows)
-                                }
+                                items={buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id)?.rows ?? []}
+                                onReorder={(nextSectionRows) => {
+                                  const node = buildScenarioHierarchy(section.rows).children.find((item) => item.id === section.id);
+                                  if (node) replaceNodeRows(node, nextSectionRows);
+                                }}
                                 listId={scenarioListId(section.id)}
                                 withContext={false}
                                 itemLabel={(_, index) => `skenario ${index + 1}`}
@@ -2018,11 +2299,43 @@ function AppendixPanel({
                               />
                             </div>
 
-                            <div className="mt-3 flex justify-end">
+                            {(() => {
+                              const sectionNode = buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id);
+                              if (!sectionNode?.children.length) return null;
+                              return (
+                                <div className="mt-3">
+                                  <DragDropList
+                                    items={sectionNode.children}
+                                    onReorder={(nextChildren) => {
+                                      const hierarchy = buildScenarioHierarchy(section.rows);
+                                      const target = hierarchy.children.find((node) => node.id === section.id);
+                                      if (!target) return;
+                                      target.children = nextChildren;
+                                      replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
+                                    }}
+                                    itemLabel={(node) => `${scenarioHeadingName(node.depth).toLowerCase()} ${node.label}`}
+                                    renderItem={(node) => nestedHeadingEditor(group, section, node)}
+                                  />
+                                </div>
+                              );
+                            })()}
+
+                            <div className="mt-3 flex flex-wrap justify-end gap-1.5">
                               <IconButton onClick={() => addScenarioToSection(group, section)}>
                                 <Plus size={16} />
                                 Skenario
                               </IconButton>
+                              <button
+                                type="button"
+                                aria-label="Tambah subbagian"
+                                onClick={() => {
+                                  const path = scenarioHeadingPath(section.rows[0] ?? createScenarioRow()).slice(0, 1);
+                                  addChildHeading(group, section, path);
+                                }}
+                                className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
+                              >
+                                <Plus size={14} /> Subbagian
+                              </button>
                             </div>
                           </div>
                         </details>
@@ -2039,6 +2352,14 @@ function AppendixPanel({
                       <Plus size={16} />
                       Bagian
                     </IconButton>
+                    <button
+                      type="button"
+                      aria-label="Tambah skenario tanpa bagian"
+                      onClick={() => addRootScenario(group)}
+                      className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-[#1b4d78] transition hover:bg-[#e8f1f8] focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/20"
+                    >
+                      <Plus size={14} /> Skenario
+                    </button>
                   </div>
                 </div>
               </details>
@@ -2061,6 +2382,16 @@ function AppendixPanel({
           </ul>
         </div>
       ) : null}
+      <ScenarioImportDialog
+        preview={workbookPreview}
+        selectedSheetName={selectedWorkbookSheet}
+        onSelectSheet={setSelectedWorkbookSheet}
+        onCancel={() => {
+          setWorkbookPreview(null);
+          setSelectedWorkbookSheet("");
+        }}
+        onImport={applyWorkbookImport}
+      />
     </Panel>
   );
 }

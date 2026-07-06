@@ -633,7 +633,7 @@ function renderGroupedBlocks(
           compact
         >
           {(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]).map((item, rowIndex, appendixRows) => {
-            const startsGroup = (row: typeof item) => row.meta.showDate || row.meta.showSection;
+            const startsGroup = (row: typeof item) => row.meta.showDate || row.meta.headingRows.length > 0;
             const scenarioMerge = consecutiveMergeState(
               appendixRows,
               rowIndex,
@@ -666,21 +666,21 @@ function renderGroupedBlocks(
                     </td>
                   </tr>
                 ) : null}
-                {item.meta.showSection ? (
-                  <tr className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                {item.meta.headingRows.map((heading) => (
+                  <tr key={heading.id} className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                     <td className="border border-slate-900 px-1 py-0.5 text-center align-middle" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
-                      {item.meta.sectionLetter}.
+                      {heading.label}.
                     </td>
                     <td
                       className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle"
                       colSpan={3}
                       style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}
-                      data-preview-field-id={`scenario-section-${item.row.id}`}
+                      data-preview-field-id={heading.depth === 1 ? `scenario-section-${item.row.id}` : `scenario-heading-${heading.id}`}
                     >
-                      {item.meta.sectionTitle}
+                      {heading.title}
                     </td>
                   </tr>
-                ) : null}
+                ))}
                 <tr>
                   <td className="w-8 border border-slate-900 px-1 py-0.5 text-center align-middle">{item.meta.number}.</td>
                   {scenarioMerge.hidden ? null : (
