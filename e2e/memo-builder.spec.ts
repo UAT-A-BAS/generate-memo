@@ -1399,7 +1399,7 @@ test("memo and appendix preview use the exact generated A4 paper size without ch
   );
 });
 
-test("DOCX data tables stay inside the A4 content grid without spacer columns", async ({ page }) => {
+test("DOCX data tables stay inside the A4 content grid using direct indented grids", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
@@ -1414,7 +1414,7 @@ test("DOCX data tables stay inside the A4 content grid without spacer columns", 
 
   expect(developmentTable).toBeTruthy();
   expect(developmentTable).toMatch(/<w:tblW w:type="dxa" w:w="7086"\/>/);
-  expect(developmentTable).not.toContain("<w:tblInd");
+  expect(developmentTable).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
   expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(2);
   expect(developmentTable).toContain('<w:gridCol w:w="1984"/>');
   expect(developmentTable).toContain('<w:gridCol w:w="5102"/>');
@@ -1450,7 +1450,7 @@ test("DOCX data tables use complete native one-point table borders", async ({ pa
   }
 });
 
-test("DOCX keeps development and activity tables inside their preview section grid", async ({ page }) => {
+test("DOCX keeps development and activity tables directly after their borderless preview wrapper", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
@@ -1464,10 +1464,20 @@ test("DOCX keeps development and activity tables inside their preview section gr
   ]) {
     const titleIndex = xml.indexOf(`>${title}</w:t>`);
     const headerIndex = xml.indexOf(`>${header}</w:t>`, titleIndex + title.length);
-    const sectionTableEnd = xml.indexOf("</w:tbl>", titleIndex);
+    const sectionTableStart = xml.lastIndexOf("<w:tbl>", titleIndex);
+    const sectionTableEnd = xml.indexOf("</w:tbl>", titleIndex) + "</w:tbl>".length;
+    const targetTableStart = xml.lastIndexOf("<w:tbl>", headerIndex);
+    const previewWrapper = xml.slice(sectionTableStart, sectionTableEnd);
+    const previewWrapperProperties = previewWrapper.slice(
+      0,
+      previewWrapper.indexOf("</w:tblPr>") + "</w:tblPr>".length,
+    );
     expect(titleIndex).toBeGreaterThan(-1);
-    expect(headerIndex).toBeGreaterThan(titleIndex);
-    expect(headerIndex).toBeLessThan(sectionTableEnd);
+    expect(headerIndex).toBeGreaterThan(sectionTableEnd);
+    expect(targetTableStart).toBeGreaterThanOrEqual(sectionTableEnd);
+    expect(previewWrapper).not.toContain(`>${header}</w:t>`);
+    expect(previewWrapperProperties).not.toMatch(/w:val="single"/);
+    expect((previewWrapperProperties.match(/w:val="nil"/g) ?? []).length).toBe(6);
   }
 });
 
@@ -2395,6 +2405,55 @@ test("DOCX keeps one native one-point table border source for Word PDF/XPS", asy
     expect(layoutTableProperties).not.toMatch(/<w:tblBorders>[\s\S]*?w:val="single"/);
     expect(layoutTable).not.toMatch(/<w:tcBorders>[\s\S]*?w:val="single"/);
   }
+});
+
+test("DOCX target tables are flat leaf tables with one DXA grid", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, pdfBorderStressDraft());
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+
+  const targetMarkers = [
+    ">Keterangan</w:t>",
+    ">Waktu</w:t>",
+    ">Hasil/Keterangan</w:t>",
+  ];
+
+  for (const marker of targetMarkers) {
+    const markerIndex = xml.indexOf(marker);
+    expect(markerIndex).toBeGreaterThan(-1);
+    const prefix = xml.slice(0, markerIndex);
+    const tableDepth =
+      (prefix.match(/<w:tbl(?=[\s>])/g) ?? []).length -
+      (prefix.match(/<\/w:tbl>/g) ?? []).length;
+    expect(tableDepth).toBe(1);
+
+    const targetTable = documentTableAround(xml, marker);
+    expect(targetTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
+    expect(targetTable).not.toContain("<w:tblCellSpacing");
+    expect(targetTable).not.toContain("<w:tcBorders");
+    expect(targetTable).not.toMatch(/<w:tcW\b[^>]*w:type="pct"/);
+  }
+
+  for (const [sectionMarker, targetMarker] of [
+    [">Lingkup Pengembangan</w:t>", ">Keterangan</w:t>"],
+    [">Aktivitas Cabang dan Unit Kerja</w:t>", ">Waktu</w:t>"],
+  ]) {
+    const wrapperTable = documentTableAround(xml, sectionMarker);
+    expect(wrapperTable).not.toContain(targetMarker);
+    const wrapperProperties = wrapperTable.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+    expect(wrapperProperties).not.toContain("<w:tblCellSpacing");
+    expect(wrapperProperties).not.toMatch(/<w:shd\b[^>]*w:fill="000000"/);
+    for (const edge of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
+      expect(wrapperProperties).toMatch(new RegExp(`<w:${edge}\\b[^>]*w:val="nil"`));
+    }
+  }
+
+  const visibleTableBorders = (xml.match(/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/g) ?? [])
+    .filter((borders) => /w:val="single"/.test(borders));
+  expect(visibleTableBorders).toHaveLength(3);
 });
 
 test("DOCX defines Times New Roman as the default main-document font", async ({ page }) => {

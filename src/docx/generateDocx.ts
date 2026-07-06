@@ -508,7 +508,12 @@ function compactCell(
     verticalAlign,
     margins: { top: 30, bottom: 30, left: 55, right: 55 },
     shading: shaded ? { fill: APPENDIX_HEADER_FILL } : undefined,
-    width: width ? { size: pct(width), type: WidthType.PERCENTAGE } : undefined,
+    width: width
+      ? {
+          size: Math.round((APPENDIX_TABLE_WIDTH * width) / 100),
+          type: WidthType.DXA,
+        }
+      : undefined,
     children,
   });
 }
@@ -532,7 +537,10 @@ function mergedCompactCell(
     rowSpan: merge.span > 1 ? merge.span : undefined,
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 30, bottom: 30, left: 55, right: 55 },
-    width: { size: pct(width), type: WidthType.PERCENTAGE },
+    width: {
+      size: Math.round((APPENDIX_TABLE_WIDTH * width) / 100),
+      type: WidthType.DXA,
+    },
     children,
   });
 }
@@ -928,14 +936,11 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
                   APPENDIX_COLUMN_WIDTHS[0],
                   true,
                 ),
-                new TableCell({
-                  columnSpan: 3,
-                  verticalAlign: VerticalAlign.CENTER,
-                  margins: { top: 30, bottom: 30, left: 55, right: 55 },
-                  shading: { fill: APPENDIX_HEADER_FILL },
-                  width: { size: pct(95), type: WidthType.PERCENTAGE },
-                  children: [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
-                }),
+                compactSpanningCell(
+                  [appendixParagraph(block.meta.sectionTitle, { bold: true, size: 22 })],
+                  3,
+                  true,
+                ),
               ],
             }),
           ]
@@ -1303,8 +1308,8 @@ function pageChildren(
             size: 22,
             spacingAfter: 120,
           }),
-          developmentTable(developmentRows, draft.developmentRows.length > 1, 0),
         ], sectionRule),
+        developmentTable(developmentRows, draft.developmentRows.length > 1),
         tableBottomSpacer(),
       );
       index = nextIndex;
@@ -1325,8 +1330,8 @@ function pageChildren(
             size: 22,
             spacingAfter: 120,
           }),
-          activityTable(activityRows, draft.activities.length > 1, 0),
         ], sectionRule),
+        activityTable(activityRows, draft.activities.length > 1),
         tableBottomSpacer(),
       );
       index = nextIndex;
