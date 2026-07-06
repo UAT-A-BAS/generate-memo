@@ -360,7 +360,7 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
     const total = Math.max(itemParts.length, descriptionParts.length);
 
     return Array.from({ length: total }, (_, part) => {
-      const item = itemParts[part] ?? paragraphRichText("");
+      const item = itemParts[part] ?? block.row.item;
       const description = descriptionParts[part] ?? paragraphRichText("");
       return {
         ...block,

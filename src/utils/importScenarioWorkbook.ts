@@ -1,11 +1,15 @@
 import JSZip from "jszip";
 import type { ScenarioHeading, ScenarioRow } from "@/types/memo";
+import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
 import { createScenarioRow } from "@/templates/bcaMemoTemplate";
 import { createId } from "@/utils/ids";
 import { scenarioHierarchyDepth } from "@/utils/scenarioHierarchy";
 
-type CellValue = string;
+type CellValue = {
+  text: string;
+  richText: RichTextDoc;
+};
 type SheetRow = Map<number, CellValue>;
 
 export type ScenarioWorkbookSheet = {
@@ -60,6 +64,101 @@ function cleanHeader(value: string) {
     .toLocaleLowerCase("id-ID")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function paragraphNodeFromLines(lines: string[]): RichTextNode {
+  const content = lines.flatMap((line, index) => {
+    const nodes: RichTextNode[] = [];
+    if (index > 0) nodes.push({ type: "hardBreak" });
+    if (line) nodes.push({ type: "text", text: line });
+    return nodes;
+  });
+
+  return { type: "paragraph", content };
+}
+
+function listItemNode(text: string): RichTextNode {
+  return {
+    type: "listItem",
+    content: [
+      {
+        type: "paragraph",
+        content: text ? [{ type: "text", text }] : [],
+      },
+    ],
+  };
+}
+
+function richTextFromCellText(value: string): RichTextDoc {
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return paragraphRichText("");
+
+  const content: RichTextNode[] = [];
+  let textLines: string[] = [];
+  let list: RichTextNode | null = null;
+
+  const flushText = () => {
+    if (!textLines.length) return;
+    content.push(paragraphNodeFromLines(textLines));
+    textLines = [];
+  };
+
+  const flushList = () => {
+    if (!list) return;
+    content.push(list);
+    list = null;
+  };
+
+  normalized.split("\n").forEach((rawLine) => {
+    const line = rawLine.trim();
+    const bullet = /^[•●○▪▫‣]\s*(.+)$/.exec(line);
+    if (bullet) {
+      flushText();
+      if (list?.type !== "bulletList") flushList();
+      list ??= { type: "bulletList", content: [] };
+      list.content ??= [];
+      list.content.push(listItemNode(bullet[1].trim()));
+      return;
+    }
+
+    const ordered = /^(\d+)[.)]\s+(.+)$/.exec(line);
+    if (ordered) {
+      flushText();
+      if (list?.type !== "orderedList") flushList();
+      list ??= {
+        type: "orderedList",
+        attrs: { start: Number(ordered[1]) || 1 },
+        content: [],
+      };
+      list.content ??= [];
+      list.content.push(listItemNode(ordered[2].trim()));
+      return;
+    }
+
+    flushList();
+    textLines.push(line);
+  });
+
+  flushText();
+  flushList();
+
+  return { type: "doc", content: content.length ? content : paragraphRichText("").content };
+}
+
+function cellValue(text: string): CellValue {
+  const normalized = text.replace(/\r\n?/g, "\n").trim();
+  return {
+    text: normalized,
+    richText: richTextFromCellText(normalized),
+  };
+}
+
+function cellText(value?: CellValue) {
+  return value?.text ?? "";
+}
+
+function cellRichText(value?: CellValue) {
+  return value?.richText ?? paragraphRichText("");
 }
 
 function columnIndex(reference: string) {
@@ -122,7 +221,9 @@ function normalizeTarget(target: string) {
 async function sharedStrings(zip: JSZip) {
   const file = zip.file("xl/sharedStrings.xml");
   if (!file) return [];
-  return elements(xml(await file.async("string")), "si").map((item) => item.textContent ?? "");
+  return elements(xml(await file.async("string")), "si").map((item) =>
+    cellValue(elements(item, "t").map((textNode) => textNode.textContent ?? "").join("")),
+  );
 }
 
 async function dateStyleIndexes(zip: JSZip) {
@@ -147,7 +248,7 @@ async function dateStyleIndexes(zip: JSZip) {
 
 function worksheetRows(
   document: Document,
-  strings: string[],
+  strings: CellValue[],
   dateStyles: Set<number>,
 ) {
   const rows = new Map<number, SheetRow>();
@@ -159,15 +260,15 @@ function worksheetRows(
     const { row, column } = parseReference(reference);
     const type = cell.getAttribute("t") ?? "";
     const raw = elements(cell, "v")[0]?.textContent ?? "";
-    let value = "";
-    if (type === "s") value = strings[Number(raw)] ?? "";
-    else if (type === "inlineStr") value = elements(cell, "is")[0]?.textContent ?? "";
-    else if (type === "str") value = raw;
-    else if (dateStyles.has(Number(cell.getAttribute("s") ?? -1)) && raw) value = excelSerialDate(Number(raw));
-    else value = raw;
-    if (!value.trim()) continue;
+    let value: CellValue;
+    if (type === "s") value = strings[Number(raw)] ?? cellValue("");
+    else if (type === "inlineStr") value = cellValue(elements(cell, "is")[0]?.textContent ?? "");
+    else if (type === "str") value = cellValue(raw);
+    else if (dateStyles.has(Number(cell.getAttribute("s") ?? -1)) && raw) value = cellValue(excelSerialDate(Number(raw)));
+    else value = cellValue(raw);
+    if (!value.text.trim()) continue;
     if (!rows.has(row)) rows.set(row, new Map());
-    rows.get(row)?.set(column, value.trim());
+    rows.get(row)?.set(column, value);
   }
 
   elements(document, "mergeCell").forEach((merge) => {
@@ -175,8 +276,8 @@ function worksheetRows(
     if (!from || !to) return;
     const start = parseReference(from);
     const end = parseReference(to);
-    const value = rows.get(start.row)?.get(start.column) ?? "";
-    if (!value || end.row - start.row > 1000 || end.column - start.column > 30) return;
+    const value = rows.get(start.row)?.get(start.column);
+    if (!value?.text || end.row - start.row > 1000 || end.column - start.column > 30) return;
     for (let row = start.row; row <= end.row; row += 1) {
       if (!rows.has(row)) rows.set(row, new Map());
       for (let column = start.column; column <= end.column; column += 1) {
@@ -195,7 +296,7 @@ function findColumns(rows: Map<number, SheetRow>) {
   for (const [rowNumber, row] of [...rows.entries()].slice(0, 80)) {
     const columns: ColumnMap = {};
     row.forEach((value, column) => {
-      const header = cleanHeader(value);
+      const header = cleanHeader(cellText(value));
       (Object.keys(HEADER_ALIASES) as (keyof typeof HEADER_ALIASES)[]).forEach((key) => {
         if (HEADER_ALIASES[key].some((alias) => header === alias || header.includes(alias))) {
           columns[key] ??= column;
@@ -235,11 +336,13 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
     .filter(([rowNumber]) => rowNumber > header.row)
     .sort(([a], [b]) => a - b)
     .forEach(([, row]) => {
-      const values = [...row.values()].filter(Boolean);
+      const values = [...row.values()].map(cellText).filter(Boolean);
       if (!values.length) return;
-      const numberText = row.get(columns.number ?? 0) ?? row.get(0) ?? "";
-      const scenarioText = row.get(columns.scenario as number) ?? "";
-      const resultText = row.get(columns.result as number) ?? "";
+      const numberText = cellText(row.get(columns.number ?? 0) ?? row.get(0));
+      const scenarioCell = row.get(columns.scenario as number);
+      const resultCell = row.get(columns.result as number);
+      const scenarioText = cellText(scenarioCell);
+      const resultText = cellText(resultCell);
       if (inspectedRows.length < 4) inspectedRows.push(`${numberText} | ${scenarioText} | ${resultText}`);
       const normalizedScenarioHeader = cleanHeader(scenarioText);
       if (HEADER_ALIASES.scenario.some((alias) => normalizedScenarioHeader === alias) &&
@@ -264,7 +367,7 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
         return;
       }
 
-      const parsedRange = parseDateRange(row.get(columns.date ?? -1) ?? "");
+      const parsedRange = parseDateRange(cellText(row.get(columns.date ?? -1)));
       if (parsedRange) currentRange = parsedRange;
       const dateKey = currentRange ? `${currentRange.startDate}:${currentRange.endDate}` : "undated";
       if (!dateGroupId || dateKey !== currentDateKey) {
@@ -288,9 +391,9 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
         startDate: currentRange?.startDate ?? "",
         endDate: currentRange?.endDate ?? "",
         dates: currentRange?.dates ?? [],
-        scenario: paragraphRichText(scenarioText),
-        expectedResult: paragraphRichText(resultText),
-        pic: row.get(columns.pic ?? -1) ?? "",
+        scenario: cellRichText(scenarioCell),
+        expectedResult: cellRichText(resultCell),
+        pic: cellText(row.get(columns.pic ?? -1)),
       }));
     });
 

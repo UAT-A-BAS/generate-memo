@@ -2061,23 +2061,19 @@ function AppendixPanel({
             ) : null}
 
             <div className="flex flex-wrap justify-end gap-1.5">
-              <button
-                type="button"
+              <IconButton
                 aria-label="Tambah skenario"
                 onClick={() => addScenarioAtPath(group, section, node.path)}
-                className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-[#1b4d78] transition hover:bg-[#e8f1f8] focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/20"
               >
-                <Plus size={14} /> Skenario
-              </button>
+                <Plus size={16} /> Skenario
+              </IconButton>
               {node.depth < 3 ? (
-                <button
-                  type="button"
+                <IconButton
                   aria-label={`Tambah ${scenarioHeadingName(node.depth + 1).toLowerCase()}`}
                   onClick={() => addChildHeading(group, section, node.path)}
-                  className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
                 >
-                  <Plus size={14} /> {scenarioHeadingName(node.depth + 1)}
-                </button>
+                  <Plus size={16} /> {scenarioHeadingName(node.depth + 1)}
+                </IconButton>
               ) : null}
             </div>
           </div>
@@ -2325,17 +2321,15 @@ function AppendixPanel({
                                 <Plus size={16} />
                                 Skenario
                               </IconButton>
-                              <button
-                                type="button"
+                              <IconButton
                                 aria-label="Tambah subbagian"
                                 onClick={() => {
                                   const path = scenarioHeadingPath(section.rows[0] ?? createScenarioRow()).slice(0, 1);
                                   addChildHeading(group, section, path);
                                 }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
                               >
-                                <Plus size={14} /> Subbagian
-                              </button>
+                                <Plus size={16} /> Subbagian
+                              </IconButton>
                             </div>
                           </div>
                         </details>
@@ -2352,14 +2346,12 @@ function AppendixPanel({
                       <Plus size={16} />
                       Bagian
                     </IconButton>
-                    <button
-                      type="button"
+                    <IconButton
                       aria-label="Tambah skenario tanpa bagian"
                       onClick={() => addRootScenario(group)}
-                      className="inline-flex min-h-11 items-center gap-1 rounded-md px-2.5 text-xs font-bold text-[#1b4d78] transition hover:bg-[#e8f1f8] focus:outline-none focus:ring-2 focus:ring-[#1b4d78]/20"
                     >
-                      <Plus size={14} /> Skenario
-                    </button>
+                      <Plus size={16} /> Skenario
+                    </IconButton>
                   </div>
                 </div>
               </details>

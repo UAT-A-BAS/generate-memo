@@ -221,6 +221,14 @@ function consumeRows(
   return { rows, nextIndex: index };
 }
 
+function sourceBlockId(id: string) {
+  return id.replace(/-part-\d+$/, "");
+}
+
+function startsSplitContinuation<T extends { id: string }>(rows: T[], index: number) {
+  return index > 0 && sourceBlockId(rows[index].id) === sourceBlockId(rows[index - 1].id);
+}
+
 function continuationSectionTitle(title: string, continuation: boolean) {
   if (!continuation) return title;
   return (
@@ -505,15 +513,19 @@ function renderGroupedBlocks(
             columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
           >
             {developmentRows.map((item, rowIndex) => {
+              const startsSplitGroup = (_row: typeof item, index: number) =>
+                startsSplitContinuation(developmentRows, index);
               const itemMerge = consecutiveMergeState(
                 developmentRows,
                 rowIndex,
                 (row) => richTextToPlainText(row.row.item),
+                startsSplitGroup,
               );
               const descriptionMerge = consecutiveMergeState(
                 developmentRows,
                 rowIndex,
                 (row) => richTextToPlainText(row.row.description),
+                startsSplitGroup,
               );
               return (
               <tr key={item.id}>

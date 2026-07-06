@@ -176,8 +176,14 @@ async function xlsxScenarioWorkbook() {
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
 </Relationships>`);
 
+  const escapeXml = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
   const cell = (reference: string, value: string) =>
-    `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${value}</t></is></c>`;
+    `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
   const row = (number: number, values: string[]) =>
     `<row r="${number}">${values.map((value, index) => value ? cell(`${String.fromCharCode(65 + index)}${number}`, value) : "").join("")}</row>`;
   const sheet = (rows: string, merges = "") => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -190,9 +196,9 @@ async function xlsxScenarioWorkbook() {
     row(1, ["Lampiran - Skenario Pilot Implementasi", "", "", "", ""]),
     row(2, ["No", "Aktivitas", "Hasil/Expected", "PIC", "Tanggal"]),
     row(3, ["A. Verifikasi Utama", "", "", "", ""]),
-    row(4, ["1", "Skenario langsung", "Hasil langsung", "PIC Utama", "9 Juli 2026"]),
+    row(4, ["1", "Skenario langsung\nBaris lanjutan shift enter", "Hasil langsung\nBaris kedua hasil", "PIC Utama", "9 Juli 2026"]),
     row(5, ["A.1. Verifikasi Input", "", "", "", ""]),
-    row(6, ["1", "Skenario subbagian", "Hasil subbagian", "PIC Input", ""]),
+    row(6, ["1", "Melakukan Txn 9623\n• Input nomor CIN Organisasi\n• Tekan F12", "Hasil subbagian\n1. Validasi pertama\n2. Validasi kedua", "PIC Input", ""]),
     row(7, ["A.1.1. Kondisi Khusus", "", "", "", ""]),
     row(8, ["1", "Skenario sub-subbagian", "Hasil khusus", "PIC Khusus", ""]),
     row(9, ["No", "Aktivitas", "Hasil/Expected", "PIC", "Tanggal"]),
@@ -367,6 +373,7 @@ test("invalid MOM scenario import preserves appendix data and reports the error"
 
 test("XLSX scenario import uses the same button and recognizes optional hierarchy", async ({ page }) => {
   await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
 
   await page.locator("[data-scenario-import-input]").setInputFiles({
     name: "skenario.xlsx",
@@ -381,19 +388,36 @@ test("XLSX scenario import uses the same button and recognizes optional hierarch
   await expect(dialog).toContainText("3 tingkat hierarki");
   await dialog.getByRole("button", { name: "Import 4 skenario" }).click();
 
-  await expect(page.locator("[data-scenario-row]")).toHaveCount(4);
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(5);
   await expect(page.getByText("Bagian A", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Subbagian A.1", { exact: true })).toBeVisible();
   await expect(page.getByText("Sub-subbagian A.1.1", { exact: true })).toBeVisible();
   await expect(page.locator("aside").getByText("Kondisi Khusus", { exact: true })).toBeVisible();
   await expect(page.locator("aside").getByText("Skenario kedua", { exact: true })).toBeVisible();
+
+  const shiftedResult = page.locator("aside .preview-rich-text").filter({ hasText: "Hasil langsung" }).first();
+  await expect(shiftedResult.locator("br")).toHaveCount(1);
+  await expect(page.locator("aside .preview-rich-text ul li").filter({ hasText: "Input nomor CIN Organisasi" })).toBeVisible();
+  await expect(page.locator("aside .preview-rich-text ul li").filter({ hasText: "Tekan F12" })).toBeVisible();
+  await expect(page.locator("aside .preview-rich-text ol li").filter({ hasText: "Validasi pertama" })).toBeVisible();
+  await expect(page.locator("aside .preview-rich-text ol li").filter({ hasText: "Validasi kedua" })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const plainXmlText = xml.replace(/<[^>]+>/g, "");
+  expect(xml).toContain("<w:br");
+  expect(plainXmlText).toContain("• Input nomor CIN Organisasi");
+  expect(plainXmlText).toContain("1. Validasi pertama");
 });
 
 test("optional scenario hierarchy exposes minimalist contextual add actions", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   const firstSection = page.locator("[data-scenario-heading-level='1']").first();
-  await firstSection.getByRole("button", { name: "Tambah subbagian" }).click();
+  const subbagianButton = firstSection.getByRole("button", { name: "Tambah subbagian" });
+  await expect(subbagianButton).toHaveClass(/bg-\[#eef4fa\]/);
+  await subbagianButton.click();
   const firstSubsection = page.locator("[data-scenario-heading-level='2']").first();
   await expect(firstSubsection.getByText("Subbagian A.1", { exact: true })).toBeVisible();
 
@@ -1069,6 +1093,34 @@ test("labels split development and activity tables as continuations in preview a
   expect(xml).toMatch(
     /<w:b\/>[\s\S]{0,300}<w:t[^>]*>Lingkup Pengembangan<\/w:t><\/w:r><w:r>[\s\S]{0,300}<w:t[^>]*>, Sambungan<\/w:t>/,
   );
+});
+
+test("repeats development scope when a long description splits to continuation pages", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [{
+      id: "development-split-repeat",
+      item: richText("Pengembangan Split Repeat"),
+      description: richText(
+        "Keterangan sangat panjang yang memaksa satu baris lingkup pengembangan terpecah ke halaman berikutnya. ".repeat(90),
+      ),
+    }],
+  });
+
+  const continuationSection = page
+    .locator("aside h3")
+    .filter({ hasText: "Lingkup Pengembangan, Sambungan" })
+    .first()
+    .locator("xpath=ancestor::section[1]");
+
+  await expect(continuationSection.getByText("Pengembangan Split Repeat", { exact: true }).first()).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const plainXmlText = xml.replace(/<[^>]+>/g, "");
+  expect((plainXmlText.match(/Pengembangan Split Repeat/g) ?? []).length).toBeGreaterThanOrEqual(2);
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {
