@@ -173,7 +173,14 @@ function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
   const text = richTextToPlainText(doc);
   const paragraphCount = Math.max(1, doc.content.length);
   const textLines = Math.max(1, visualLineCount(text, charsPerLine));
-  return Math.max(textLines, paragraphCount) * 16 + Math.max(0, paragraphCount - 1) * 3;
+  const structuralLines = Math.max(
+    1,
+    doc.content.reduce(
+      (total, node) => total + nodeVisualLineCount(node, charsPerLine),
+      0,
+    ),
+  );
+  return Math.max(textLines, structuralLines, paragraphCount) * 18 + Math.max(0, paragraphCount - 1) * 4;
 }
 
 function compactTextHeight(value: string, charsPerLine = 76) {
@@ -627,6 +634,10 @@ function packPages(
   let limit = pageLimit(options.orientation, 0);
 
   const repeatedTableHeadingHeight = (block: PreviewBlock, previous?: PreviewBlock) => {
+    if (block.type === "appendix-row") {
+      return previous?.type === "appendix-row" ? 0 : 32;
+    }
+
     if (
       previous?.type === block.type ||
       (block.type !== "development-row" && block.type !== "activity-row") ||

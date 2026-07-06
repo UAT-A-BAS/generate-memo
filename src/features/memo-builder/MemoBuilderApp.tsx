@@ -1767,6 +1767,19 @@ function AppendixPanel({
     );
   }
 
+  function replaceGroupRows(group: ScenarioDateGroup, nextGroupRows: ScenarioRow[]) {
+    const ids = new Set(group.rows.map((row) => row.id));
+    let inserted = false;
+    const nextRows = rows.flatMap((row) => {
+      if (!ids.has(row.id)) return [row];
+      if (inserted) return [];
+      inserted = true;
+      return nextGroupRows;
+    });
+
+    setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
+  }
+
   function replaceSectionRows(section: ScenarioSectionGroup, nextSectionRows: ScenarioRow[]) {
     const ids = new Set(section.rows.map((row) => row.id));
     let inserted = false;
@@ -1778,6 +1791,37 @@ function AppendixPanel({
     });
 
     setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
+  }
+
+  function findHierarchyNode(
+    hierarchy: ReturnType<typeof buildScenarioHierarchy>,
+    path: ScenarioHeading[],
+  ) {
+    let nodes = hierarchy.children;
+    let target: ScenarioHierarchyNode | undefined;
+    for (const heading of path) {
+      target = nodes.find((node) => node.id === heading.id);
+      if (!target) return undefined;
+      nodes = target.children;
+    }
+    return target;
+  }
+
+  function scenarioRowForPath(group: ScenarioDateGroup, headingPath: ScenarioHeading[]) {
+    return createScenarioRow({
+      dateGroupId: group.id,
+      headingPath,
+      startDate: group.startDate,
+      endDate: group.endDate,
+      dates: group.dates,
+    });
+  }
+
+  function expandNewScenario(row: ScenarioRow) {
+    setExpandedDetails((current) => ({
+      ...current,
+      [`scenario:${row.id}`]: true,
+    }));
   }
 
   function updateSectionTitle(section: ScenarioSectionGroup, title: string) {
@@ -1792,52 +1836,44 @@ function AppendixPanel({
   }
 
   function addScenarioToSection(group: ScenarioDateGroup, section: ScenarioSectionGroup) {
-    const ids = new Set(section.rows.map((row) => row.id));
-    let lastIndex = -1;
-    rows.forEach((row, index) => {
-      if (ids.has(row.id)) lastIndex = index;
-    });
-
-    const nextRow = createScenarioRow({
-      dateGroupId: group.id,
+    const hierarchy = buildScenarioHierarchy(section.rows);
+    const sectionPath = scenarioHeadingPath(section.rows[0] ?? createScenarioRow({
       sectionGroupId: section.id,
-      startDate: group.startDate,
-      endDate: group.endDate,
-      dates: group.dates,
       section: section.title,
+    })).slice(0, 1);
+    const target = findHierarchyNode(hierarchy, sectionPath);
+    const nextRow = scenarioRowForPath(group, sectionPath);
+
+    if (!target) {
+      replaceSectionRows(section, [...section.rows, nextRow]);
+    } else {
+      target.rows.push(nextRow);
+      replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
+    }
+    expandNewScenario(nextRow);
+  }
+
+  function addSectionToGroup(group: ScenarioDateGroup) {
+    const hierarchy = buildScenarioHierarchy(group.rows);
+    const heading = { id: createId("scenario-heading-1"), title: "" };
+    const nextRow = scenarioRowForPath(group, [heading]);
+
+    hierarchy.children.push({
+      id: heading.id,
+      title: heading.title,
+      depth: 1,
+      label: "",
+      path: [heading],
+      rows: [nextRow],
+      children: [],
     });
 
     setExpandedDetails((current) => ({
       ...current,
+      [`heading:${heading.id}`]: true,
       [`scenario:${nextRow.id}`]: true,
     }));
-
-    setRows([
-      ...rows.slice(0, lastIndex + 1),
-      nextRow,
-      ...rows.slice(lastIndex + 1),
-    ], true);
-  }
-
-  function addSectionToGroup(group: ScenarioDateGroup) {
-    const ids = new Set(group.rows.map((row) => row.id));
-    let lastIndex = -1;
-    rows.forEach((row, index) => {
-      if (ids.has(row.id)) lastIndex = index;
-    });
-
-    const nextRow = createScenarioRow({
-      dateGroupId: group.id,
-      startDate: group.startDate,
-      endDate: group.endDate,
-      dates: group.dates,
-    });
-
-    setRows([
-      ...rows.slice(0, lastIndex + 1),
-      nextRow,
-      ...rows.slice(lastIndex + 1),
-    ], true);
+    replaceGroupRows(group, flattenScenarioHierarchy(hierarchy));
   }
 
   function addDateAfterGroup(group: ScenarioDateGroup) {
@@ -1870,20 +1906,22 @@ function AppendixPanel({
     section: ScenarioSectionGroup,
     headingPath: ScenarioHeading[],
   ) {
-    const sectionIds = new Set(section.rows.map((row) => row.id));
-    let lastIndex = -1;
-    rows.forEach((row, index) => {
-      if (sectionIds.has(row.id)) lastIndex = index;
-    });
-    const nextRow = createScenarioRow({
-      dateGroupId: group.id,
-      headingPath,
-      startDate: group.startDate,
-      endDate: group.endDate,
-      dates: group.dates,
-    });
-    setExpandedDetails((current) => ({ ...current, [`scenario:${nextRow.id}`]: true }));
-    setRows([...rows.slice(0, lastIndex + 1), nextRow, ...rows.slice(lastIndex + 1)], true);
+    if (!headingPath.length) {
+      addRootScenario(group);
+      return;
+    }
+
+    const hierarchy = buildScenarioHierarchy(section.rows);
+    const target = findHierarchyNode(hierarchy, headingPath);
+    const nextRow = scenarioRowForPath(group, headingPath);
+
+    if (!target) {
+      replaceSectionRows(section, [...section.rows, nextRow]);
+    } else {
+      target.rows.push(nextRow);
+      replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
+    }
+    expandNewScenario(nextRow);
   }
 
   function addChildHeading(
@@ -1893,11 +1931,31 @@ function AppendixPanel({
   ) {
     if (parentPath.length >= 3) return;
     const heading = { id: createId(`scenario-heading-${parentPath.length + 1}`), title: "" };
+    const nextPath = [...parentPath, heading];
+    const nextRow = scenarioRowForPath(group, nextPath);
+    const hierarchy = buildScenarioHierarchy(section.rows);
+    const parent = findHierarchyNode(hierarchy, parentPath);
+
+    if (!parent) {
+      addScenarioAtPath(group, section, nextPath);
+      return;
+    }
+
+    parent.children.push({
+      id: heading.id,
+      title: heading.title,
+      depth: nextPath.length,
+      label: "",
+      path: nextPath,
+      rows: [nextRow],
+      children: [],
+    });
     setExpandedDetails((current) => ({
       ...current,
       [`heading:${heading.id}`]: true,
+      [`scenario:${nextRow.id}`]: true,
     }));
-    addScenarioAtPath(group, section, [...parentPath, heading]);
+    replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
   }
 
   function replaceNodeRows(node: ScenarioHierarchyNode, nextRows: ScenarioRow[]) {
@@ -1913,20 +1971,11 @@ function AppendixPanel({
   }
 
   function addRootScenario(group: ScenarioDateGroup) {
-    const groupIds = new Set(group.rows.map((row) => row.id));
-    let lastIndex = -1;
-    rows.forEach((row, index) => {
-      if (groupIds.has(row.id)) lastIndex = index;
-    });
-    const nextRow = createScenarioRow({
-      dateGroupId: group.id,
-      headingPath: [],
-      startDate: group.startDate,
-      endDate: group.endDate,
-      dates: group.dates,
-    });
-    setExpandedDetails((current) => ({ ...current, [`scenario:${nextRow.id}`]: true }));
-    setRows([...rows.slice(0, lastIndex + 1), nextRow, ...rows.slice(lastIndex + 1)], true);
+    const hierarchy = buildScenarioHierarchy(group.rows);
+    const nextRow = scenarioRowForPath(group, []);
+    hierarchy.rows.push(nextRow);
+    expandNewScenario(nextRow);
+    replaceGroupRows(group, flattenScenarioHierarchy(hierarchy));
   }
 
   function replaceRootRows(group: ScenarioDateGroup, nextRootRows: ScenarioRow[]) {
@@ -2064,6 +2113,7 @@ function AppendixPanel({
               <IconButton
                 aria-label="Tambah skenario"
                 onClick={() => addScenarioAtPath(group, section, node.path)}
+                data-scenario-add={`heading-${node.depth}-scenario`}
               >
                 <Plus size={16} /> Skenario
               </IconButton>
@@ -2071,6 +2121,7 @@ function AppendixPanel({
                 <IconButton
                   aria-label={`Tambah ${scenarioHeadingName(node.depth + 1).toLowerCase()}`}
                   onClick={() => addChildHeading(group, section, node.path)}
+                  data-scenario-add={`heading-${node.depth + 1}`}
                 >
                   <Plus size={16} /> {scenarioHeadingName(node.depth + 1)}
                 </IconButton>
@@ -2317,7 +2368,10 @@ function AppendixPanel({
                             })()}
 
                             <div className="mt-3 flex flex-wrap justify-end gap-1.5">
-                              <IconButton onClick={() => addScenarioToSection(group, section)}>
+                              <IconButton
+                                onClick={() => addScenarioToSection(group, section)}
+                                data-scenario-add="section-scenario"
+                              >
                                 <Plus size={16} />
                                 Skenario
                               </IconButton>
@@ -2327,6 +2381,7 @@ function AppendixPanel({
                                   const path = scenarioHeadingPath(section.rows[0] ?? createScenarioRow()).slice(0, 1);
                                   addChildHeading(group, section, path);
                                 }}
+                                data-scenario-add="section-subbagian"
                               >
                                 <Plus size={16} /> Subbagian
                               </IconButton>
@@ -2338,17 +2393,18 @@ function AppendixPanel({
                   />
 
                   <div className="flex flex-wrap gap-2">
-                    <IconButton onClick={() => addDateAfterGroup(group)}>
+                    <IconButton onClick={() => addDateAfterGroup(group)} data-scenario-add="date-date">
                       <Plus size={16} />
                       Tanggal
                     </IconButton>
-                    <IconButton onClick={() => addSectionToGroup(group)}>
+                    <IconButton onClick={() => addSectionToGroup(group)} data-scenario-add="date-section">
                       <Plus size={16} />
                       Bagian
                     </IconButton>
                     <IconButton
                       aria-label="Tambah skenario tanpa bagian"
                       onClick={() => addRootScenario(group)}
+                      data-scenario-add="date-scenario"
                     >
                       <Plus size={16} /> Skenario
                     </IconButton>

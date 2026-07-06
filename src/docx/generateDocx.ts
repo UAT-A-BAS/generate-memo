@@ -743,19 +743,15 @@ function developmentTable(
     }),
     ...rows.map(
       (block, index) => {
-        const startsSplitGroup = (_row: typeof block, rowIndex: number) =>
-          startsSplitContinuation(rows, rowIndex);
         const itemMerge = consecutiveMergeState(
           rows,
           index,
           (row) => richTextToPlainText(row.row.item),
-          startsSplitGroup,
         );
         const descriptionMerge = consecutiveMergeState(
           rows,
           index,
           (row) => richTextToPlainText(row.row.description),
-          startsSplitGroup,
         );
         return (
         bodyRow({
@@ -1036,14 +1032,6 @@ function consumeTableRows(
   }
 
   return { rows, nextIndex: index };
-}
-
-function sourceBlockId(id: string) {
-  return id.replace(/-part-\d+$/, "");
-}
-
-function startsSplitContinuation<T extends { id: string }>(rows: T[], index: number) {
-  return index > 0 && sourceBlockId(rows[index].id) === sourceBlockId(rows[index - 1].id);
 }
 
 function isSectionBlock(block: PreviewBlock) {

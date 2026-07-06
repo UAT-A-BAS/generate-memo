@@ -14,6 +14,19 @@ function richText(text: string) {
   };
 }
 
+function richTextWithHardBreaks(lines: string[]) {
+  return {
+    type: "doc",
+    content: [{
+      type: "paragraph",
+      content: lines.flatMap((text, index) => [
+        ...(index ? [{ type: "hardBreak" }] : []),
+        { type: "text", text },
+      ]),
+    }],
+  };
+}
+
 function richList(type: "bulletList" | "orderedList", items: string[]) {
   return {
     type: "doc",
@@ -426,6 +439,48 @@ test("optional scenario hierarchy exposes minimalist contextual add actions", as
   await expect(firstSubsubsection.getByText("Sub-subbagian A.1.1", { exact: true })).toBeVisible();
   await expect(firstSubsubsection.getByRole("button", { name: "Tambah skenario" })).toBeVisible();
   await expect(firstSubsubsection.getByRole("button", { name: /Tambah sub/ })).toHaveCount(0);
+});
+
+test("contextual scenario add buttons insert inside their own hierarchy level", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "skenario.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await xlsxScenarioWorkbook(),
+  });
+  await page.getByRole("dialog", { name: "Preview import skenario" })
+    .getByRole("button", { name: "Import 4 skenario" })
+    .click();
+
+  const dateGroup = page.locator("[data-scenario-date-group]").first();
+  await dateGroup.locator('[data-scenario-add="date-scenario"]').click();
+  const rootScenario = dateGroup.locator("[data-scenario-row]").first();
+  await rootScenario.locator('[data-field-id^="scenario-text-"] .ProseMirror').click();
+  await page.keyboard.type("Skenario level tanggal baru");
+
+  const firstSection = dateGroup.locator("[data-scenario-heading-level='1']").first();
+  await firstSection.locator('[data-scenario-add="section-scenario"]').click();
+  const directSectionScenario = firstSection.locator("[data-scenario-row]").nth(1);
+  await directSectionScenario.locator('[data-field-id^="scenario-text-"] .ProseMirror').click();
+  await page.keyboard.type("Skenario level bagian baru");
+
+  const firstSubsection = firstSection.locator("[data-scenario-heading-level='2']").first();
+  await firstSubsection.locator('[data-scenario-add="heading-2-scenario"]').click();
+  const directSubsectionScenario = firstSubsection.locator("[data-scenario-row]").nth(1);
+  await directSubsectionScenario.locator('[data-field-id^="scenario-text-"] .ProseMirror').click();
+  await page.keyboard.type("Skenario level subbagian baru");
+
+  const appendixText = await page.locator('aside article[data-page-kind="appendix"]').first().textContent() ?? "";
+  expect(appendixText.indexOf("Skenario level tanggal baru")).toBeLessThan(
+    appendixText.indexOf("Verifikasi Utama"),
+  );
+  expect(appendixText.indexOf("Skenario level bagian baru")).toBeLessThan(
+    appendixText.indexOf("Verifikasi Input"),
+  );
+  expect(appendixText.indexOf("Skenario level subbagian baru")).toBeLessThan(
+    appendixText.indexOf("Kondisi Khusus"),
+  );
 });
 
 test("imported MOM PIC remains mandatory for DOCX export", async ({ page }) => {
@@ -1121,6 +1176,56 @@ test("repeats development scope when a long description splits to continuation p
   const xml = await documentXmlFrom(await downloadPromise);
   const plainXmlText = xml.replace(/<[^>]+>/g, "");
   expect((plainXmlText.match(/Pengembangan Split Repeat/g) ?? []).length).toBeGreaterThanOrEqual(2);
+});
+
+test("does not duplicate development scope inside the same continued table", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [{
+      id: "development-no-same-page-duplicate",
+      item: richText("Pengembangan Tidak Dobel"),
+      description: richTextWithHardBreaks(
+        Array.from({ length: 34 }, (_, index) => `Keterangan baris ${index + 1}`),
+      ),
+    }],
+  });
+
+  const firstDevelopmentSection = page
+    .locator("aside h3")
+    .filter({ hasText: "Lingkup Pengembangan" })
+    .first()
+    .locator("xpath=ancestor::section[1]");
+
+  await expect(
+    firstDevelopmentSection.getByText("Pengembangan Tidak Dobel", { exact: true }),
+  ).toHaveCount(1);
+});
+
+test("appendix rows with import-style bullet lists stay inside preview pages", async ({ page }) => {
+  const base = completeDraft();
+  const scenarioBase = base.appendixScenarios[0];
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...base,
+    appendixScenarios: [{
+      ...scenarioBase,
+      id: "appendix-import-list-overflow",
+      scenario: richText("Verifikasi tampilan field setelah import XLSX"),
+      expectedResult: richList(
+        "bulletList",
+        Array.from({ length: 42 }, (_, index) => `Field hasil import ${index + 1}`),
+      ),
+      pic: "PIC Import",
+    }],
+  });
+
+  const pageOverflow = await page
+    .locator('aside article[data-page-kind="appendix"] [data-preview-page-content]')
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
 });
 
 test("omits empty appendix pages from generated DOCX", async ({ page }) => {
