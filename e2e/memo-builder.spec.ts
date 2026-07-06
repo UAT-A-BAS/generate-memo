@@ -219,9 +219,11 @@ async function xlsxScenarioWorkbook() {
     row(11, ["1", "Skenario kedua", "Hasil kedua", "PIC Kedua", "10 Juli 2026"]),
   ].join("")));
   zip.file("xl/worksheets/sheet3.xml", sheet([
-    row(1, ["No", "Aktivitas", "Hasil", "PIC", "Tanggal"]),
-    row(2, ["1", "Skenario sheet lain", "Hasil lain", "PIC Lain", "11 Juli 2026"]),
-  ].join("")));
+    row(1, ["No", "Aktivitas", "Hasil", "PIC"]),
+    row(2, ["9 -12 Juni 2026", "", "", ""]),
+    row(3, ["A. Verifikasi Sheet Lain", "", "", ""]),
+    row(4, ["1", "Skenario sheet lain", "Hasil lain", "PIC Lain"]),
+  ].join(""), '<mergeCells count="1"><mergeCell ref="A2:D2"/></mergeCells>'));
 
   return zip.generateAsync({ type: "nodebuffer" });
 }
@@ -423,6 +425,24 @@ test("XLSX scenario import uses the same button and recognizes optional hierarch
   expect(xml).toContain("<w:br");
   expect(plainXmlText).toContain("• Input nomor CIN Organisasi");
   expect(plainXmlText).toContain("1. Validasi pertama");
+});
+
+test("XLSX scenario import recognizes a standalone merged date row", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "skenario.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await xlsxScenarioWorkbook(),
+  });
+
+  const dialog = page.getByRole("dialog", { name: "Preview import skenario" });
+  await dialog.getByLabel("Sheet").selectOption("Skenario Lain");
+  await expect(dialog).toContainText("1 skenario");
+  await dialog.getByRole("button", { name: "Import 1 skenario" }).click();
+
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("9 – 12 Juni 2026");
+  await expect(page.locator("aside")).toContainText("Skenario sheet lain");
 });
 
 test("optional scenario hierarchy exposes minimalist contextual add actions", async ({ page }) => {

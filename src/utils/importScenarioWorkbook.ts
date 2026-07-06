@@ -3,6 +3,7 @@ import type { ScenarioHeading, ScenarioRow } from "@/types/memo";
 import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
 import { createScenarioRow } from "@/templates/bcaMemoTemplate";
+import { datesFromRange } from "@/utils/formatDateRangeID";
 import { createId } from "@/utils/ids";
 import { scenarioHierarchyDepth } from "@/utils/scenarioHierarchy";
 
@@ -202,7 +203,7 @@ function parseDateRange(value: string) {
     const endDate = numeric[4]
       ? isoDate(Number(numeric[6]), Number(numeric[5]), Number(numeric[4]))
       : startDate;
-    return startDate && endDate ? { startDate, endDate, dates: [startDate, endDate] } : null;
+    return startDate && endDate ? { startDate, endDate, dates: datesFromRange(startDate, endDate) } : null;
   }
 
   const words = /^(\d{1,2})(?:\s*(?:-|–|—|s\/d)\s*(\d{1,2}))?\s+([A-Za-z]+)\s+(\d{4})$/i.exec(source);
@@ -210,7 +211,15 @@ function parseDateRange(value: string) {
   const month = MONTHS[words[3].toLocaleLowerCase("id-ID")];
   const startDate = month ? isoDate(Number(words[4]), month, Number(words[1])) : "";
   const endDate = month ? isoDate(Number(words[4]), month, Number(words[2] ?? words[1])) : "";
-  return startDate && endDate ? { startDate, endDate, dates: [startDate, endDate] } : null;
+  return startDate && endDate ? { startDate, endDate, dates: datesFromRange(startDate, endDate) } : null;
+}
+
+function dateRangeFromRow(row: SheetRow, columns: ColumnMap) {
+  const columnRange = parseDateRange(cellText(row.get(columns.date ?? -1)));
+  if (columnRange) return columnRange;
+
+  const uniqueValues = [...new Set([...row.values()].map(cellText).filter(Boolean))];
+  return uniqueValues.length === 1 ? parseDateRange(uniqueValues[0]) : null;
 }
 
 function normalizeTarget(target: string) {
@@ -348,6 +357,9 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
       if (HEADER_ALIASES.scenario.some((alias) => normalizedScenarioHeader === alias) &&
           HEADER_ALIASES.result.some((alias) => cleanHeader(resultText) === alias || cleanHeader(resultText) === "hasil expected")) return;
 
+      const parsedRange = dateRangeFromRow(row, columns);
+      if (parsedRange) currentRange = parsedRange;
+
       const heading = headingDefinition(numberText);
       if (
         heading &&
@@ -367,8 +379,6 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
         return;
       }
 
-      const parsedRange = parseDateRange(cellText(row.get(columns.date ?? -1)));
-      if (parsedRange) currentRange = parsedRange;
       const dateKey = currentRange ? `${currentRange.startDate}:${currentRange.endDate}` : "undated";
       if (!dateGroupId || dateKey !== currentDateKey) {
         currentDateKey = dateKey;
