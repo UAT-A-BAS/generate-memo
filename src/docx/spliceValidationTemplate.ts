@@ -299,13 +299,10 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-const DATA_TABLE_BORDER_XML = TABLE_BORDER_EDGES
-  .map(
-    (edge) =>
-      `<w:${edge} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`,
-  )
-  .join("");
-const ZERO_TABLE_CELL_SPACING_XML = '<w:tblCellSpacing w:w="0" w:type="dxa"/>';
+// Word PDF/XPS renders this 0.875pt stroke plus the two 1-twip underlay halves as one opaque 1pt rule.
+const GRID_UNDERLAY_SPACING_XML = '<w:tblCellSpacing w:w="1" w:type="dxa"/>';
+const BLACK_TABLE_SHADING_XML = '<w:shd w:val="clear" w:color="auto" w:fill="000000"/>';
+const GRID_BORDER_SIZE = "7";
 
 const DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
@@ -353,38 +350,116 @@ function removeCellBorders(tableXml: string) {
 }
 
 function stableDataTableProperties(tablePrXml: string) {
-  const borders = `<w:tblBorders>${DATA_TABLE_BORDER_XML}</w:tblBorders>`;
+  const borders = `<w:tblBorders>${NIL_TABLE_BORDER_XML}</w:tblBorders>`;
   let result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
-    .replace(/<w:shd\b[^>]*\/>/g, (tag) =>
-      getAttr(tag, "w:fill").toUpperCase() === "000000" ? "" : tag,
-    );
+    .replace(/<w:shd\b[^>]*\/>/g, "");
 
   result = insertBeforeFirstProperty(
     result,
-    ZERO_TABLE_CELL_SPACING_XML,
+    GRID_UNDERLAY_SPACING_XML,
     ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
   );
 
-  return insertBeforeFirstProperty(
+  result = insertBeforeFirstProperty(
     result,
     borders,
     ["shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
   );
+
+  return insertBeforeFirstProperty(
+    result,
+    BLACK_TABLE_SHADING_XML,
+    ["tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
+  );
 }
 
-function stableNativeTableGrid(tableXml: string) {
+function gridCellBorders(edges: string[]) {
+  return `<w:tcBorders>${edges
+    .map(
+      (edge) =>
+        `<w:${edge} w:val="single" w:sz="${GRID_BORDER_SIZE}" w:space="0" w:color="000000"/>`,
+    )
+    .join("")}</w:tcBorders>`;
+}
+
+function stableGridCellProperties(cellPrXml: string, edges: string[]) {
+  const existingShading = cellPrXml.match(/<w:shd\b[^>]*\/>/)?.[0] ?? "";
+  const existingFill = getAttr(existingShading, "w:fill").toUpperCase();
+  const fill = existingFill && existingFill !== "000000" && existingFill !== "AUTO"
+    ? existingFill
+    : "FFFFFF";
+  const borders = gridCellBorders(edges);
+  const shading = `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`;
+  let result = cellPrXml
+    .replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "")
+    .replace(/<w:shd\b[^>]*\/>/g, "");
+
+  result = insertBeforeFirstProperty(
+    result,
+    borders,
+    ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
+  );
+
+  return insertBeforeFirstProperty(
+    result,
+    shading,
+    ["noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
+  );
+}
+
+function stableGridCell(cellXml: string, edges: string[]) {
+  if (/<w:tcPr\b/.test(cellXml)) {
+    return cellXml.replace(
+      /<w:tcPr\b[\s\S]*?<\/w:tcPr>/,
+      (cellPrXml) => stableGridCellProperties(cellPrXml, edges),
+    );
+  }
+
+  const borders = gridCellBorders(edges);
+  return cellXml.replace(
+    /<w:tc(?=[\s>])[^>]*>/,
+    `$&<w:tcPr>${borders}<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/></w:tcPr>`,
+  );
+}
+
+function stableGridRow(rowXml: string, isLastRow: boolean) {
+  const cells = rowXml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [];
+  let cellIndex = 0;
+
+  return rowXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    const vMerge = cellXml.match(/<w:vMerge\b[^>]*\/>/)?.[0] ?? "";
+    const isContinuation = Boolean(vMerge) && getAttr(vMerge, "w:val").toLowerCase() !== "restart";
+    const edges = [
+      ...(!isContinuation ? ["top"] : []),
+      "left",
+      ...(cellIndex === cells.length - 1 ? ["right"] : []),
+      ...(isLastRow ? ["bottom"] : []),
+    ];
+    cellIndex += 1;
+    return stableGridCell(cellXml, edges);
+  });
+}
+
+function stableSingleSidedTableGrid(tableXml: string) {
   const withTableProperties = tableXml.replace(
     /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
     stableDataTableProperties,
   );
-  return removeCellBorders(withTableProperties);
+  const rows = withTableProperties.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [];
+  let rowIndex = 0;
+
+  return withTableProperties.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (rowXml) => {
+    const result = stableGridRow(rowXml, rowIndex === rows.length - 1);
+    rowIndex += 1;
+    return result;
+  });
 }
 
 function normalizeTableGrid(tableXml: string) {
   if (DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
-    return stableNativeTableGrid(tableXml);
+    return stableSingleSidedTableGrid(tableXml);
   }
 
   if (BORDERLESS_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {

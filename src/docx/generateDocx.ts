@@ -93,12 +93,12 @@ const noTableBorder = {
 };
 function createStableDocxTableBorders() {
   return {
-    top: createDocxBorder(4),
-    bottom: createDocxBorder(4),
-    left: createDocxBorder(4),
-    right: createDocxBorder(4),
-    insideHorizontal: createDocxBorder(4),
-    insideVertical: createDocxBorder(4),
+    top: createDocxBorder(8),
+    bottom: createDocxBorder(8),
+    left: createDocxBorder(8),
+    right: createDocxBorder(8),
+    insideHorizontal: createDocxBorder(8),
+    insideVertical: createDocxBorder(8),
   };
 }
 
