@@ -299,10 +299,7 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-// Word PDF/XPS renders this 0.875pt stroke plus the two 1-twip underlay halves as one opaque 1pt rule.
-const GRID_UNDERLAY_SPACING_XML = '<w:tblCellSpacing w:w="1" w:type="dxa"/>';
-const BLACK_TABLE_SHADING_XML = '<w:shd w:val="clear" w:color="auto" w:fill="000000"/>';
-const GRID_BORDER_SIZE = "7";
+const GRID_BORDER_SIZE = "8";
 
 const DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
@@ -351,27 +348,15 @@ function removeCellBorders(tableXml: string) {
 
 function stableDataTableProperties(tablePrXml: string) {
   const borders = `<w:tblBorders>${NIL_TABLE_BORDER_XML}</w:tblBorders>`;
-  let result = tablePrXml
+  const result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
     .replace(/<w:shd\b[^>]*\/>/g, "");
 
-  result = insertBeforeFirstProperty(
-    result,
-    GRID_UNDERLAY_SPACING_XML,
-    ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
-  );
-
-  result = insertBeforeFirstProperty(
+  return insertBeforeFirstProperty(
     result,
     borders,
     ["shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
-  );
-
-  return insertBeforeFirstProperty(
-    result,
-    BLACK_TABLE_SHADING_XML,
-    ["tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
   );
 }
 
