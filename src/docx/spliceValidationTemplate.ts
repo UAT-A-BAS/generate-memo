@@ -299,7 +299,7 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-const GRID_BORDER_SIZE = "8";
+const GRID_BORDER_SIZE = "6";
 const VISIBLE_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map(
     (edge) =>
@@ -307,11 +307,35 @@ const VISIBLE_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   )
   .join("");
 
-const SIMPLE_DATA_TABLE_MARKERS = [
-  ">Keterangan</w:t>",
-  ">Waktu</w:t>",
+type DataTableSpec = {
+  marker: string;
+  width: number;
+  grid: number[];
+  indent?: number;
+  spanLeadingColumnsWhenUnnumbered?: boolean;
+};
+
+const SIMPLE_DATA_TABLE_SPECS: DataTableSpec[] = [
+  {
+    marker: ">Keterangan</w:t>",
+    width: 7080,
+    indent: 2100,
+    grid: [570, 1695, 4815],
+    spanLeadingColumnsWhenUnnumbered: true,
+  },
+  {
+    marker: ">Waktu</w:t>",
+    width: 7080,
+    indent: 2100,
+    grid: [570, 3405, 1485, 1620],
+    spanLeadingColumnsWhenUnnumbered: true,
+  },
 ];
-const APPENDIX_DATA_TABLE_MARKER = ">Hasil/Keterangan</w:t>";
+const APPENDIX_DATA_TABLE_SPEC: DataTableSpec = {
+  marker: ">Hasil/Keterangan</w:t>",
+  width: 15315,
+  grid: [765, 6435, 6435, 1680],
+};
 
 const BORDERLESS_TABLE_MARKERS = [
   ">Kepada</w:t>",
@@ -352,12 +376,46 @@ function removeCellBorders(tableXml: string) {
   return tableXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
 }
 
-function stableSimpleDataTableProperties(tablePrXml: string) {
+function upsertTableProperty(
+  tablePrXml: string,
+  matcher: RegExp,
+  propertyXml: string,
+  successorNames: string[],
+) {
+  return matcher.test(tablePrXml)
+    ? tablePrXml.replace(matcher, propertyXml)
+    : insertBeforeFirstProperty(tablePrXml, propertyXml, successorNames);
+}
+
+function stableDataTableProperties(tablePrXml: string, spec: DataTableSpec) {
   const borders = `<w:tblBorders>${VISIBLE_TABLE_BORDER_XML}</w:tblBorders>`;
-  const result = tablePrXml
+  let result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
-    .replace(/<w:shd\b[^>]*\/>/g, "");
+    .replace(/<w:shd\b[^>]*\/>/g, "")
+    .replace(/<w:tblInd\b[^>]*\/>/g, "");
+
+  result = upsertTableProperty(
+    result,
+    /<w:tblW\b[^>]*\/>/,
+    `<w:tblW w:type="dxa" w:w="${spec.width}"/>`,
+    ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook"],
+  );
+
+  if (spec.indent !== undefined) {
+    result = insertBeforeFirstProperty(
+      result,
+      `<w:tblInd w:type="dxa" w:w="${spec.indent}"/>`,
+      ["tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook"],
+    );
+  }
+
+  result = upsertTableProperty(
+    result,
+    /<w:tblLayout\b[^>]*\/>/,
+    '<w:tblLayout w:type="fixed"/>',
+    ["tblCellMar", "tblLook", "tblCaption", "tblDescription"],
+  );
 
   return insertBeforeFirstProperty(
     result,
@@ -366,111 +424,104 @@ function stableSimpleDataTableProperties(tablePrXml: string) {
   );
 }
 
-function stableSimpleDataTable(tableXml: string) {
-  return removeCellBorders(
-    tableXml.replace(
-      /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
-      stableSimpleDataTableProperties,
+function removeWhiteCellShading(tableXml: string) {
+  return tableXml.replace(/<w:shd\b[^>]*\/>/gi, (tag) =>
+    getAttr(tag, "w:fill").toUpperCase() === "FFFFFF" ? "" : tag,
+  );
+}
+
+function normalizeCellWidths(tableXml: string, spec: DataTableSpec) {
+  return tableXml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (rowXml) => {
+    const rowCells = rowXml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [];
+    const spanLeadingColumns = Boolean(
+      spec.spanLeadingColumnsWhenUnnumbered && rowCells.length === spec.grid.length - 1,
+    );
+    let gridIndex = 0;
+    let cellIndex = 0;
+    return rowXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+      let normalizedCell = cellXml;
+      if (spanLeadingColumns && cellIndex === 0 && !/<w:gridSpan\b/.test(normalizedCell)) {
+        normalizedCell = normalizedCell.replace(
+          /<w:tcPr\b[\s\S]*?<\/w:tcPr>/,
+          (cellPrXml) => insertBeforeFirstProperty(
+            cellPrXml,
+            '<w:gridSpan w:val="2"/>',
+            ["hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "vAlign"],
+          ),
+        );
+      }
+      const gridSpan = normalizedCell.match(/<w:gridSpan\b[^>]*\/>/)?.[0] ?? "";
+      const span = Math.max(1, Number.parseInt(getAttr(gridSpan, "w:val"), 10) || 1);
+      const width = spec.grid
+        .slice(gridIndex, gridIndex + span)
+        .reduce((sum, value) => sum + value, 0);
+      gridIndex += span;
+      cellIndex += 1;
+
+      return normalizedCell.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) =>
+        upsertTableProperty(
+          cellPrXml,
+          /<w:tcW\b[^>]*\/>/,
+          `<w:tcW w:type="dxa" w:w="${width}"/>`,
+          ["gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "vAlign"],
+        ),
+      );
+    });
+  });
+}
+
+function normalizeDataTableGeometry(tableXml: string, spec: DataTableSpec) {
+  const gridXml = `<w:tblGrid>${spec.grid
+    .map((width) => `<w:gridCol w:w="${width}"/>`)
+    .join("")}</w:tblGrid>`;
+  let result = tableXml.replace(
+    /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
+    (tablePrXml) => stableDataTableProperties(tablePrXml, spec),
+  );
+  result = /<w:tblGrid\b/.test(result)
+    ? result.replace(/<w:tblGrid\b[\s\S]*?<\/w:tblGrid>/, gridXml)
+    : result.replace(/<\/w:tblPr>/, `$&${gridXml}`);
+  return normalizeCellWidths(result, spec);
+}
+
+function stableSimpleDataTable(tableXml: string, spec: DataTableSpec) {
+  return removeWhiteCellShading(
+    removeCellBorders(normalizeDataTableGeometry(tableXml, spec)),
+  );
+}
+
+function addVerticalMergeTopOverrides(tableXml: string) {
+  return tableXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    const vMerge = cellXml.match(/<w:vMerge\b[^>]*\/>/)?.[0] ?? "";
+    const isContinuation = Boolean(vMerge) && getAttr(vMerge, "w:val").toLowerCase() !== "restart";
+    if (!isContinuation) return cellXml;
+
+    return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) =>
+      insertBeforeFirstProperty(
+        cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, ""),
+        '<w:tcBorders><w:top w:val="nil"/></w:tcBorders>',
+        ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
+      ),
+    );
+  });
+}
+
+function stableAppendixDataTable(tableXml: string) {
+  return addVerticalMergeTopOverrides(
+    removeWhiteCellShading(
+      removeCellBorders(normalizeDataTableGeometry(tableXml, APPENDIX_DATA_TABLE_SPEC)),
     ),
   );
 }
 
-function stableAppendixTableProperties(tablePrXml: string) {
-  return tablePrXml
-    .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
-    .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
-    .replace(/<w:shd\b[^>]*\/>/g, "");
-}
-
-function gridCellBorders(edges: string[]) {
-  return `<w:tcBorders>${edges
-    .map(
-      (edge) =>
-        `<w:${edge} w:val="single" w:sz="${GRID_BORDER_SIZE}" w:space="0" w:color="000000"/>`,
-    )
-    .join("")}</w:tcBorders>`;
-}
-
-function stableGridCellProperties(cellPrXml: string, edges: string[]) {
-  const existingShading = cellPrXml.match(/<w:shd\b[^>]*\/>/)?.[0] ?? "";
-  const existingFill = getAttr(existingShading, "w:fill").toUpperCase();
-  const fill = existingFill && existingFill !== "000000" && existingFill !== "AUTO"
-    ? existingFill
-    : "FFFFFF";
-  const borders = gridCellBorders(edges);
-  const shading = `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`;
-  let result = cellPrXml
-    .replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "")
-    .replace(/<w:shd\b[^>]*\/>/g, "");
-
-  result = insertBeforeFirstProperty(
-    result,
-    borders,
-    ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
-  );
-
-  return insertBeforeFirstProperty(
-    result,
-    shading,
-    ["noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
-  );
-}
-
-function stableGridCell(cellXml: string, edges: string[]) {
-  if (/<w:tcPr\b/.test(cellXml)) {
-    return cellXml.replace(
-      /<w:tcPr\b[\s\S]*?<\/w:tcPr>/,
-      (cellPrXml) => stableGridCellProperties(cellPrXml, edges),
-    );
-  }
-
-  const borders = gridCellBorders(edges);
-  return cellXml.replace(
-    /<w:tc(?=[\s>])[^>]*>/,
-    `$&<w:tcPr>${borders}<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/></w:tcPr>`,
-  );
-}
-
-function stableGridRow(rowXml: string, isLastRow: boolean) {
-  const cells = rowXml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [];
-  let cellIndex = 0;
-
-  return rowXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
-    const vMerge = cellXml.match(/<w:vMerge\b[^>]*\/>/)?.[0] ?? "";
-    const isContinuation = Boolean(vMerge) && getAttr(vMerge, "w:val").toLowerCase() !== "restart";
-    const edges = [
-      ...(!isContinuation ? ["top"] : []),
-      "left",
-      ...(cellIndex === cells.length - 1 ? ["right"] : []),
-      ...(isLastRow ? ["bottom"] : []),
-    ];
-    cellIndex += 1;
-    return stableGridCell(cellXml, edges);
-  });
-}
-
-function stableSingleSidedTableGrid(tableXml: string) {
-  const withTableProperties = tableXml.replace(
-    /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
-    stableAppendixTableProperties,
-  );
-  const rows = withTableProperties.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [];
-  let rowIndex = 0;
-
-  return withTableProperties.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (rowXml) => {
-    const result = stableGridRow(rowXml, rowIndex === rows.length - 1);
-    rowIndex += 1;
-    return result;
-  });
-}
-
 function normalizeTableGrid(tableXml: string) {
-  if (tableXml.includes(APPENDIX_DATA_TABLE_MARKER)) {
-    return stableSingleSidedTableGrid(tableXml);
+  if (tableXml.includes(APPENDIX_DATA_TABLE_SPEC.marker)) {
+    return stableAppendixDataTable(tableXml);
   }
 
-  if (SIMPLE_DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
-    return stableSimpleDataTable(tableXml);
+  const simpleSpec = SIMPLE_DATA_TABLE_SPECS.find((spec) => tableXml.includes(spec.marker));
+  if (simpleSpec) {
+    return stableSimpleDataTable(tableXml, simpleSpec);
   }
 
   if (BORDERLESS_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
