@@ -300,12 +300,18 @@ const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
 const GRID_BORDER_SIZE = "8";
+const VISIBLE_TABLE_BORDER_XML = TABLE_BORDER_EDGES
+  .map(
+    (edge) =>
+      `<w:${edge} w:val="single" w:sz="${GRID_BORDER_SIZE}" w:space="0" w:color="000000"/>`,
+  )
+  .join("");
 
-const DATA_TABLE_MARKERS = [
+const SIMPLE_DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
   ">Waktu</w:t>",
-  ">Hasil/Keterangan</w:t>",
 ];
+const APPENDIX_DATA_TABLE_MARKER = ">Hasil/Keterangan</w:t>";
 
 const BORDERLESS_TABLE_MARKERS = [
   ">Kepada</w:t>",
@@ -346,8 +352,8 @@ function removeCellBorders(tableXml: string) {
   return tableXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
 }
 
-function stableDataTableProperties(tablePrXml: string) {
-  const borders = `<w:tblBorders>${NIL_TABLE_BORDER_XML}</w:tblBorders>`;
+function stableSimpleDataTableProperties(tablePrXml: string) {
+  const borders = `<w:tblBorders>${VISIBLE_TABLE_BORDER_XML}</w:tblBorders>`;
   const result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
@@ -358,6 +364,22 @@ function stableDataTableProperties(tablePrXml: string) {
     borders,
     ["shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
   );
+}
+
+function stableSimpleDataTable(tableXml: string) {
+  return removeCellBorders(
+    tableXml.replace(
+      /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
+      stableSimpleDataTableProperties,
+    ),
+  );
+}
+
+function stableAppendixTableProperties(tablePrXml: string) {
+  return tablePrXml
+    .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
+    .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
+    .replace(/<w:shd\b[^>]*\/>/g, "");
 }
 
 function gridCellBorders(edges: string[]) {
@@ -430,7 +452,7 @@ function stableGridRow(rowXml: string, isLastRow: boolean) {
 function stableSingleSidedTableGrid(tableXml: string) {
   const withTableProperties = tableXml.replace(
     /<w:tblPr\b[\s\S]*?<\/w:tblPr>/,
-    stableDataTableProperties,
+    stableAppendixTableProperties,
   );
   const rows = withTableProperties.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [];
   let rowIndex = 0;
@@ -443,8 +465,12 @@ function stableSingleSidedTableGrid(tableXml: string) {
 }
 
 function normalizeTableGrid(tableXml: string) {
-  if (DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
+  if (tableXml.includes(APPENDIX_DATA_TABLE_MARKER)) {
     return stableSingleSidedTableGrid(tableXml);
+  }
+
+  if (SIMPLE_DATA_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
+    return stableSimpleDataTable(tableXml);
   }
 
   if (BORDERLESS_TABLE_MARKERS.some((marker) => tableXml.includes(marker))) {
