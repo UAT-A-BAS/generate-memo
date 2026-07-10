@@ -299,12 +299,13 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-const ONE_POINT_TABLE_BORDER_XML = TABLE_BORDER_EDGES
+const DATA_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map(
     (edge) =>
-      `<w:${edge} w:val="single" w:sz="8" w:space="0" w:color="000000"/>`,
+      `<w:${edge} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`,
   )
   .join("");
+const ZERO_TABLE_CELL_SPACING_XML = '<w:tblCellSpacing w:w="0" w:type="dxa"/>';
 
 const DATA_TABLE_MARKERS = [
   ">Keterangan</w:t>",
@@ -352,13 +353,19 @@ function removeCellBorders(tableXml: string) {
 }
 
 function stableDataTableProperties(tablePrXml: string) {
-  const borders = `<w:tblBorders>${ONE_POINT_TABLE_BORDER_XML}</w:tblBorders>`;
-  const result = tablePrXml
+  const borders = `<w:tblBorders>${DATA_TABLE_BORDER_XML}</w:tblBorders>`;
+  let result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
     .replace(/<w:shd\b[^>]*\/>/g, (tag) =>
       getAttr(tag, "w:fill").toUpperCase() === "000000" ? "" : tag,
     );
+
+  result = insertBeforeFirstProperty(
+    result,
+    ZERO_TABLE_CELL_SPACING_XML,
+    ["tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"],
+  );
 
   return insertBeforeFirstProperty(
     result,

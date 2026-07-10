@@ -62,6 +62,20 @@ export function richTextToPlainText(doc?: RichTextDoc) {
   return doc.content.map(nodeText).join("\n").trim();
 }
 
+export function richTextToListItems(doc?: RichTextDoc) {
+  if (!doc) return [];
+
+  return doc.content
+    .flatMap((node) =>
+      node.type === "bulletList" || node.type === "orderedList"
+        ? node.content ?? []
+        : [node],
+    )
+    .flatMap((node) => nodeText(node).split(/\n+/))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function trimTrailingEmptyRichTextNodes(doc: RichTextDoc): RichTextDoc {
   const content = [...doc.content];
 

@@ -62,15 +62,15 @@ import {
   consecutiveMergeState,
   type ConsecutiveMergeState,
 } from "@/utils/tableMerge";
-import { richTextToPlainText } from "@/utils/richText";
+import { richTextToListItems, richTextToPlainText } from "@/utils/richText";
 import { richTextToDocxParagraphs } from "./richTextToDocx";
 import { spliceValidationTemplate } from "./spliceValidationTemplate";
 import type { RichTextDoc } from "@/types/richText";
 
-function createOnePointDocxBorder() {
+function createDocxBorder(size: number) {
   return {
     style: BorderStyle.SINGLE,
-    size: 8,
+    size,
     color: "000000",
     space: 0,
   } as const;
@@ -93,18 +93,18 @@ const noTableBorder = {
 };
 function createStableDocxTableBorders() {
   return {
-    top: createOnePointDocxBorder(),
-    bottom: createOnePointDocxBorder(),
-    left: createOnePointDocxBorder(),
-    right: createOnePointDocxBorder(),
-    insideHorizontal: createOnePointDocxBorder(),
-    insideVertical: createOnePointDocxBorder(),
+    top: createDocxBorder(4),
+    bottom: createDocxBorder(4),
+    left: createDocxBorder(4),
+    right: createDocxBorder(4),
+    insideHorizontal: createDocxBorder(4),
+    insideVertical: createDocxBorder(4),
   };
 }
 
 const dataTableBorders = createStableDocxTableBorders();
 
-const sectionTopBorder = createOnePointDocxBorder();
+const sectionTopBorder = createDocxBorder(8);
 const LIST_TEXT_OFFSET = 300;
 
 type SectionRule = "full" | "content" | "none";
@@ -148,10 +148,7 @@ function initialsText(draft: MemoDraft) {
 }
 
 function referenceItems(draft: MemoDraft) {
-  return richTextToPlainText(draft.reference)
-    .split(/\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  return richTextToListItems(draft.reference);
 }
 
 function run(
@@ -322,6 +319,15 @@ function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph
     spacingBefore: options.spacingBefore ?? 40,
     spacingAfter: options.spacingAfter ?? 0,
     line: options.line ?? WORD_LINE_MULTIPLE_115,
+  });
+}
+
+function memoHeadingCell(children: Paragraph[], width: number) {
+  return new TableCell({
+    borders: noBorder,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    width: { size: pct(width), type: WidthType.PERCENTAGE },
+    children,
   });
 }
 
@@ -1127,7 +1133,7 @@ function blockChildren(
       return [
         new Paragraph({
           spacing: {
-            before: 120,
+            before: 396,
             after: 0,
             line: 1,
             lineRule: LineRuleType.EXACT,
@@ -1137,30 +1143,30 @@ function blockChildren(
         table([
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Kepada", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: memoHeadingRecipientParagraphs(draft.recipients) }),
+              memoHeadingCell([memoHeadingParagraph("Kepada", { size: 22 })], 18),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], 3),
+              memoHeadingCell(memoHeadingRecipientParagraphs(draft.recipients), 79),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Dari", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau} (UAT ${draft.metadata.bureau})`, { size: 22 })] }),
+              memoHeadingCell([memoHeadingParagraph("Dari", { size: 22 })], 18),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], 3),
+              memoHeadingCell([memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau} (UAT ${draft.metadata.bureau})`, { size: 22 })], 79),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Jenis Informasi", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22 })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("INTERNAL BCA", { size: 22 })] }),
+              memoHeadingCell([memoHeadingParagraph("Jenis Informasi", { size: 22 })], 18),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], 3),
+              memoHeadingCell([memoHeadingParagraph("INTERNAL BCA", { size: 22 })], 79),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders: noBorder, width: { size: pct(18), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph("Perihal", { size: 22, font: "Arial" })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(3), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(":", { size: 22, font: "Arial" })] }),
-              new TableCell({ borders: noBorder, width: { size: pct(79), type: WidthType.PERCENTAGE }, children: [memoHeadingParagraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })] }),
+              memoHeadingCell([memoHeadingParagraph("Perihal", { size: 22, font: "Arial" })], 18),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22, font: "Arial" })], 3),
+              memoHeadingCell([memoHeadingParagraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })], 79),
             ],
           }),
         ], MAIN_PAGE_CONTENT_WIDTH, [18, 3, 79].map((columnWidth) =>

@@ -38,7 +38,6 @@ import { DragDropList } from "@/components/DragDropList";
 import { RecipientList } from "@/components/RecipientList";
 import { SectionTitle } from "@/components/SectionTitle";
 import { RichTextEditor } from "@/editor/RichTextEditor";
-import { paragraphRichText } from "@/types/richText";
 import { richTextToPlainText } from "@/utils/richText";
 import {
   createActivityRow,
@@ -1273,17 +1272,16 @@ function ReferencePanel({
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
               Memorandum ini mengacu pada.
             </div>
-            <FieldLabel label="Daftar Referensi" fieldId="reference" required>
-              <AutoResizeTextarea
-                value={richTextToPlainText(draft.reference)}
-                onChange={(event) =>
+            <FieldLabel label="Daftar Referensi" fieldId="reference" required asGroup>
+              <RichTextEditor
+                value={draft.reference}
+                minHeight={48}
+                onChange={(reference) =>
                   updateDraft((current) => ({
                     ...current,
-                    reference: paragraphRichText(event.target.value),
+                    reference,
                   }))
                 }
-                rows={2}
-                className="min-h-11 rounded-md border border-slate-400 bg-white px-3 py-2 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
             </FieldLabel>
           </div>

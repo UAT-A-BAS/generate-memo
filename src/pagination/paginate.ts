@@ -427,7 +427,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
     {
       id: "memo-heading",
       type: "memo-heading",
-      estimatedHeight: 150 + Math.max(0, draft.recipients.length - 1) * 40,
+      estimatedHeight: 168 + Math.max(0, draft.recipients.length - 1) * 40,
     },
     {
       id: "introduction",

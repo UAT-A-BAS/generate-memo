@@ -1775,7 +1775,35 @@ test("DOCX data tables stay inside the A4 content grid using direct indented gri
   expect((appendixTable.match(/<w:gridCol /g) ?? []).length).toBe(4);
 });
 
-test("DOCX data tables use complete native one-point table borders", async ({ page }) => {
+test("memo heading adds one full line after the header and keeps its labels left-aligned", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const mainPage = page.locator('aside article[data-page-kind="main"]').first();
+  const releaseDate = await mainPage.locator("header span").last().boundingBox();
+  const recipientLabel = await mainPage.getByText("Kepada", { exact: true }).boundingBox();
+  expect(recipientLabel?.x).toBeCloseTo(releaseDate?.x ?? 0, 0);
+  expect((recipientLabel?.y ?? 0) - ((releaseDate?.y ?? 0) + (releaseDate?.height ?? 0))).toBeGreaterThanOrEqual(30);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const headingTable = documentTableAround(xml, ">Kepada</w:t>");
+  const headingTableStart = xml.indexOf(headingTable);
+  const spacerStart = xml.lastIndexOf("<w:p>", headingTableStart);
+  const spacer = xml.slice(spacerStart, headingTableStart);
+  expect(spacer).toContain('w:before="396"');
+
+  const cells = headingTable.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [];
+  expect(cells).toHaveLength(12);
+  for (const cell of cells) {
+    const margins = cell.match(/<w:tcMar\b[\s\S]*?<\/w:tcMar>/)?.[0] ?? "";
+    expect(margins).toBeTruthy();
+    expect(margins.match(/w:w="0"/g) ?? []).toHaveLength(4);
+  }
+});
+
+test("DOCX data tables use a single compact native border grid", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
@@ -1789,11 +1817,11 @@ test("DOCX data tables use complete native one-point table borders", async ({ pa
   ]) {
     const table = documentTableAround(xml, marker);
     const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
-    expect(tableProperties).not.toContain("<w:tblCellSpacing");
+    expect(tableProperties).toContain('<w:tblCellSpacing w:w="0" w:type="dxa"/>');
     expect(tableProperties).not.toMatch(/<w:shd\b[^>]*w:fill="000000"/);
     for (const edge of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
       expect(tableProperties).toMatch(
-        new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="8")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`),
+        new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="4")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`),
       );
     }
     expect(table).not.toContain("<w:tcBorders");
@@ -2118,7 +2146,7 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   expect(xml).not.toContain('w:val="single" w:color="0F172A" w:sz="6"');
   expect(xml).not.toContain('w:val="single" w:color="1F2937" w:sz="4"');
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
-  expect(appendixTable).not.toContain("<w:tblCellSpacing");
+  expect(appendixTable).toContain('<w:tblCellSpacing w:w="0" w:type="dxa"/>');
   expect(appendixTable).not.toMatch(/<w:tblPr>[\s\S]*?<w:shd\b[^>]*w:fill="000000"[^>]*\/>/);
   expect(appendixTable).not.toMatch(
     /<w:(?:top|left|bottom|right|insideH|insideV)\b[^>]*w:val="single"[^>]*w:sz="12"/,
@@ -2674,7 +2702,7 @@ test("review comments use 18px text throughout", async ({ page }) => {
   }
 });
 
-test("DOCX keeps one native one-point table border source for Word PDF/XPS", async ({ page }) => {
+test("DOCX keeps one compact table border source for Word PDF/XPS", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, pdfBorderStressDraft());
 
@@ -2682,7 +2710,7 @@ test("DOCX keeps one native one-point table border source for Word PDF/XPS", asy
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   const tableBorder = (edge: string) =>
-    new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="8")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`);
+    new RegExp(`<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="4")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`);
 
   for (const marker of [
     ">Keterangan</w:t>",
@@ -2691,7 +2719,7 @@ test("DOCX keeps one native one-point table border source for Word PDF/XPS", asy
   ]) {
     const table = documentTableAround(xml, marker);
     const tableProperties = table.slice(0, table.indexOf("</w:tblPr>") + "</w:tblPr>".length);
-    expect(tableProperties).not.toContain("<w:tblCellSpacing");
+    expect(tableProperties).toContain('<w:tblCellSpacing w:w="0" w:type="dxa"/>');
     expect(tableProperties).not.toMatch(/<w:shd\b[^>]*w:fill="000000"/);
     for (const edge of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
       expect(tableProperties).toMatch(tableBorder(edge));
@@ -2783,7 +2811,7 @@ test("DOCX target tables are flat leaf tables with one DXA grid", async ({ page 
 
     const targetTable = documentTableAround(xml, marker);
     expect(targetTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
-    expect(targetTable).not.toContain("<w:tblCellSpacing");
+    expect(targetTable).toContain('<w:tblCellSpacing w:w="0" w:type="dxa"/>');
     expect(targetTable).not.toContain("<w:tcBorders");
     expect(targetTable).not.toMatch(/<w:tcW\b[^>]*w:type="pct"/);
   }
@@ -2987,9 +3015,9 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
     0,
     appendixTable.indexOf("</w:tblPr>") + "</w:tblPr>".length,
   );
-  expect(appendixTableProperties).toMatch(/<w:tblBorders>[\s\S]*?<w:right\b[^>]*w:sz="8"/);
+  expect(appendixTableProperties).toMatch(/<w:tblBorders>[\s\S]*?<w:right\b[^>]*w:sz="4"/);
   expect(appendixTable).not.toContain("<w:tcBorders");
-  expect(appendixTable).not.toContain("<w:tblCellSpacing");
+  expect(appendixTable).toContain('<w:tblCellSpacing w:w="0" w:type="dxa"/>');
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");
   const appendixTitleParagraph = xml.slice(
@@ -3215,6 +3243,38 @@ test("top-level and conditional mandatory fields block DOCX generation", async (
   for (const id of ["bureau", "reference", "initialsBureau"]) {
     await expect(page.locator(`[data-validation-issue-id="${id}"]`)).toHaveCount(1);
   }
+});
+
+test("Nasional reference editor creates a new bullet when Enter is pressed", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      memoType: "Nasional",
+    },
+    referenceEnabled: true,
+    reference: richText(""),
+  });
+
+  const field = page.locator('[data-field-id="reference"]');
+  const editor = field.locator(".ProseMirror");
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await field.getByRole("button", { name: "Bullet list" }).click();
+  await page.keyboard.type("Referensi pertama");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Referensi kedua");
+
+  await expect(field.locator("ul li")).toHaveCount(2);
+  const previewItems = page.locator('aside [data-preview-field-id="reference"] ul li');
+  await expect(previewItems).toHaveText(["Referensi pertama", "Referensi kedua"]);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("• Referensi pertama");
+  expect(xml).toContain("• Referensi kedua");
 });
 
 test("editable multi-line fields auto-resize without oversized empty space", async ({ page }) => {

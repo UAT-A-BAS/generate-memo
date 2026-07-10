@@ -4,7 +4,7 @@ import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
 import { isTableSectionContinuation, paginateMemoDraft, sourceBlockId } from "@/pagination/paginate";
 import type { RichTextDoc } from "@/types/richText";
 import { formatDateRangeID } from "@/utils/formatDateRangeID";
-import { richTextToHtml, richTextToPlainText } from "@/utils/richText";
+import { richTextToHtml, richTextToListItems, richTextToPlainText } from "@/utils/richText";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { consecutiveMergeState } from "@/utils/tableMerge";
@@ -81,10 +81,7 @@ function initialsText(draft: MemoDraft) {
 }
 
 function referenceItems(draft: MemoDraft) {
-  return richTextToPlainText(draft.reference)
-    .split(/\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  return richTextToListItems(draft.reference);
 }
 
 function PreviewSection({
@@ -271,7 +268,7 @@ function renderBlock(
   switch (block.type) {
     case "memo-heading":
       return (
-        <div className="mt-10 text-[14.67px] leading-[1.15]">
+        <div className="mt-[57px] text-[14.67px] leading-[1.15]">
           <div className="grid grid-cols-[92px_14px_1fr] gap-x-2 gap-y-[5px]">
             <span>Kepada</span>
             <span>:</span>
