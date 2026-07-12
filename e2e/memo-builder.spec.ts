@@ -285,7 +285,7 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 function expectThreeQuarterPointBlackBorder(borderXml: string, edge: string) {
   expect(borderXml).toMatch(
     new RegExp(
-      `<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="6")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`,
+      `<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="8")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`,
     ),
   );
 }

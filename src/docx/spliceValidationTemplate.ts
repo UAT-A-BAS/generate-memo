@@ -299,7 +299,7 @@ const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "inside
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-const GRID_BORDER_SIZE = "6";
+const GRID_BORDER_SIZE = "8";
 const VISIBLE_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map(
     (edge) =>
