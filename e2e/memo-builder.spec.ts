@@ -281,13 +281,109 @@ function documentTableAround(xml: string, marker: string) {
 }
 
 const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "insideV"];
+type TestCellBorderEdge = "top" | "left" | "bottom" | "right";
 
-function expectThreeQuarterPointBlackBorder(borderXml: string, edge: string) {
-  expect(borderXml).toMatch(
-    new RegExp(
-      `<w:${edge}\\b(?=[^>]*w:val="single")(?=[^>]*w:sz="8")(?=[^>]*w:space="0")(?=[^>]*w:color="000000")[^>]*/>`,
-    ),
-  );
+type TestBorderCell = {
+  start: number;
+  end: number;
+  merge: "none" | "restart" | "continue";
+  edges: Set<TestCellBorderEdge>;
+};
+
+function xmlAttribute(xml: string, name: string) {
+  return xml.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1] ?? "";
+}
+
+function parsePhysicalBorderTable(table: string) {
+  const grid = [...table.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) => Number(match[1]));
+  const rows = (table.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? []).map((rowXml) => {
+    let column = 0;
+    const cells = (rowXml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? []).map((cellXml) => {
+      const properties = cellXml.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/)?.[0] ?? "";
+      const spanXml = properties.match(/<w:gridSpan\b[^>]*\/>/)?.[0] ?? "";
+      const span = Math.max(1, Number.parseInt(xmlAttribute(spanXml, "w:val"), 10) || 1);
+      const mergeXml = properties.match(/<w:vMerge\b[^>]*\/>/)?.[0] ?? "";
+      const merge = !mergeXml
+        ? "none"
+        : xmlAttribute(mergeXml, "w:val") === "restart" ? "restart" : "continue";
+      const bordersXml = properties.match(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/)?.[0] ?? "";
+      const edges = new Set<TestCellBorderEdge>();
+      for (const match of bordersXml.matchAll(/<w:(top|left|bottom|right)\b[^>]*\/>/g)) {
+        const edge = match[1] as TestCellBorderEdge;
+        expect(match[0]).toMatch(/w:val="single"/);
+        expect(match[0]).toMatch(/w:sz="8"/);
+        expect(match[0]).toMatch(/w:space="0"/);
+        expect(match[0]).toMatch(/w:color="000000"/);
+        edges.add(edge);
+      }
+      expect(bordersXml).not.toMatch(/<w:(?:insideH|insideV)\b/);
+      const cell = { start: column, end: column + span, merge, edges } as TestBorderCell;
+      column += span;
+      return cell;
+    });
+    return cells;
+  });
+
+  return { grid, rows };
+}
+
+function expectPhysicalBorderOwnership(table: string) {
+  const { grid, rows } = parsePhysicalBorderTable(table);
+  expect(grid.length).toBeGreaterThan(0);
+  const horizontal = new Map<string, string[]>();
+  const vertical = new Map<string, string[]>();
+  const add = (map: Map<string, string[]>, key: string, owner: string) => {
+    map.set(key, [...(map.get(key) ?? []), owner]);
+  };
+
+  rows.forEach((row, rowIndex) => {
+    row.forEach((cell, cellIndex) => {
+      const owner = `r${rowIndex}c${cellIndex}`;
+      for (const edge of cell.edges) {
+        if (edge === "top") {
+          for (let column = cell.start; column < cell.end; column += 1) add(horizontal, `${rowIndex}:${column}`, `${owner}:top`);
+        } else if (edge === "bottom") {
+          for (let column = cell.start; column < cell.end; column += 1) add(horizontal, `${rowIndex + 1}:${column}`, `${owner}:bottom`);
+        } else if (edge === "left") {
+          add(vertical, `${rowIndex}:${cell.start}`, `${owner}:left`);
+        } else if (edge === "right") {
+          add(vertical, `${rowIndex}:${cell.end}`, `${owner}:right`);
+        }
+      }
+      if (cell.merge === "continue") expect(cell.edges).not.toContain("top");
+      if (cell.end - cell.start > 1) {
+        for (let column = cell.start + 1; column < cell.end; column += 1) {
+          expect(vertical.has(`${rowIndex}:${column}`)).toBe(false);
+        }
+      }
+    });
+  });
+
+  const cellAt = (row: TestBorderCell[] | undefined, column: number) =>
+    row?.find((cell) => cell.start <= column && column < cell.end);
+
+  for (let rowIndex = 0; rowIndex <= rows.length; rowIndex += 1) {
+    for (let column = 0; column < grid.length; column += 1) {
+      const owners = horizontal.get(`${rowIndex}:${column}`) ?? [];
+      expect(owners.length, `horizontal ${rowIndex}:${column}`).toBeLessThanOrEqual(1);
+      if (rowIndex === 0 || rowIndex === rows.length) {
+        expect(owners.length, `outer horizontal ${rowIndex}:${column}`).toBe(1);
+        continue;
+      }
+      const upper = cellAt(rows[rowIndex - 1], column);
+      const lower = cellAt(rows[rowIndex], column);
+      const internalMerge = lower?.merge === "continue" && (upper?.merge === "restart" || upper?.merge === "continue");
+      expect(owners.length, `shared horizontal ${rowIndex}:${column}`).toBe(internalMerge ? 0 : 1);
+    }
+  }
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const expectedColumns = new Set([0, grid.length, ...rows[rowIndex].filter((cell) => cell.start > 0).map((cell) => cell.start)]);
+    for (const column of expectedColumns) {
+      const owners = vertical.get(`${rowIndex}:${column}`) ?? [];
+      expect(owners.length, `vertical ${rowIndex}:${column}`).toBe(1);
+    }
+  }
 }
 
 function expectStableTableLevelGrid(table: string) {
@@ -297,12 +393,12 @@ function expectStableTableLevelGrid(table: string) {
   expect(tableProperties).not.toContain("<w:tblCellSpacing");
   expect(tableProperties).toContain('<w:tblLayout w:type="fixed"/>');
   expect(tableBorders).toBeTruthy();
-  expect(tableBorders).not.toMatch(/w:val="nil"/);
   for (const edge of TABLE_BORDER_EDGES) {
-    expectThreeQuarterPointBlackBorder(tableBorders, edge);
+    expect(tableBorders).toMatch(new RegExp(`<w:${edge}\\b[^>]*w:val="nil"`));
   }
-  expect(table).not.toContain("<w:tcBorders");
+  expect(tableBorders).not.toMatch(/w:val="single"/);
   expect(table).not.toMatch(/<w:shd\b[^>]*w:fill="FFFFFF"[^>]*\/>/);
+  expectPhysicalBorderOwnership(table);
 }
 
 function expectAppendixTableLevelGrid(table: string) {
@@ -311,10 +407,10 @@ function expectAppendixTableLevelGrid(table: string) {
   expect(tableProperties).not.toContain("<w:tblCellSpacing");
   expect(tableProperties).toContain('<w:tblLayout w:type="fixed"/>');
   expect(tableBorders).toBeTruthy();
-  expect(tableBorders).not.toMatch(/w:val="nil"/);
   for (const edge of TABLE_BORDER_EDGES) {
-    expectThreeQuarterPointBlackBorder(tableBorders, edge);
+    expect(tableBorders).toMatch(new RegExp(`<w:${edge}\\b[^>]*w:val="nil"`));
   }
+  expect(tableBorders).not.toMatch(/w:val="single"/);
 
   const rows = table.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [];
   expect(rows.length).toBeGreaterThan(0);
@@ -325,19 +421,12 @@ function expectAppendixTableLevelGrid(table: string) {
 
     cells.forEach((cell) => {
       const properties = cell.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/)?.[0] ?? "";
-      const borders = properties.match(/<w:tcBorders>[\s\S]*?<\/w:tcBorders>/)?.[0] ?? "";
-      const vMerge = properties.match(/<w:vMerge\b[^>]*\/>/)?.[0] ?? "";
-      const isContinuation = Boolean(vMerge) && !/w:val="restart"/.test(vMerge);
-      if (isContinuation) {
-        expect(borders).toMatch(/<w:tcBorders><w:top w:val="nil"\/><\/w:tcBorders>/);
-      } else {
-        expect(borders).toBe("");
-      }
       expect(properties).not.toMatch(/<w:shd\b[^>]*w:fill="FFFFFF"[^>]*\/>/);
       const shading = properties.match(/<w:shd\b[^>]*\/>/)?.[0] ?? "";
       if (shading) expect(shading).toContain('w:fill="D9D9D9"');
     });
   });
+  expectPhysicalBorderOwnership(table);
 }
 
 async function docxPartsFrom(download: Download) {
@@ -1778,7 +1867,6 @@ test("consecutive duplicate table values keep each column default alignment", as
     const cellStart = xml.lastIndexOf("<w:tc>", textIndex);
     const cellEnd = xml.indexOf("</w:tc>", textIndex);
     const cellXml = xml.slice(cellStart, cellEnd);
-    expect(cellXml).not.toContain("<w:tcBorders");
     expect(cellXml).not.toMatch(/<w:shd\b[^>]*w:fill="FFFFFF"/);
     const paragraphStart = xml.lastIndexOf("<w:p>", textIndex);
     const paragraphEnd = xml.indexOf("</w:p>", textIndex);
@@ -2871,7 +2959,7 @@ test("DOCX target tables are flat leaf tables with one DXA grid", async ({ page 
 
   const visibleTableBorders = (xml.match(/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/g) ?? [])
     .filter((borders) => /w:val="single"/.test(borders));
-  expect(visibleTableBorders).toHaveLength(3);
+  expect(visibleTableBorders).toHaveLength(0);
   expect(xml.match(/<w:tblCellSpacing\b/g) ?? []).toHaveLength(0);
   expect(xml.match(/<w:tblPr>[\s\S]*?<w:shd\b[^>]*w:fill="000000"[^>]*\/>/g) ?? []).toHaveLength(0);
 });
@@ -3053,7 +3141,6 @@ test("memo list bullets, appendix title, signer wrapping, and DOCX borders follo
   expect(xml.match(/(?:•|&#x2022;)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
   expectAppendixTableLevelGrid(appendixTable);
-  expect(appendixTable).not.toContain("<w:tcBorders");
   expect(appendixTable).not.toContain("<w:tblCellSpacing");
 
   const appendixTitleIndex = xml.indexOf("Lampiran - Skenario");

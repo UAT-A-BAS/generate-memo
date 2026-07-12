@@ -296,16 +296,25 @@ function normalizeValidationColors(xml: string) {
 }
 
 const TABLE_BORDER_EDGES = ["top", "left", "bottom", "right", "insideH", "insideV"];
+const CELL_BORDER_EDGES = ["top", "left", "bottom", "right"] as const;
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
 const GRID_BORDER_SIZE = "8";
-const VISIBLE_TABLE_BORDER_XML = TABLE_BORDER_EDGES
-  .map(
-    (edge) =>
-      `<w:${edge} w:val="single" w:sz="${GRID_BORDER_SIZE}" w:space="0" w:color="000000"/>`,
-  )
-  .join("");
+
+type CellBorderEdge = (typeof CELL_BORDER_EDGES)[number];
+
+function ownedCellBorders(edges: Set<CellBorderEdge>) {
+  if (!edges.size) return "";
+
+  return `<w:tcBorders>${CELL_BORDER_EDGES
+    .filter((edge) => edges.has(edge))
+    .map(
+      (edge) =>
+        `<w:${edge} w:val="single" w:sz="${GRID_BORDER_SIZE}" w:space="0" w:color="000000"/>`,
+    )
+    .join("")}</w:tcBorders>`;
+}
 
 type DataTableSpec = {
   marker: string;
@@ -388,7 +397,7 @@ function upsertTableProperty(
 }
 
 function stableDataTableProperties(tablePrXml: string, spec: DataTableSpec) {
-  const borders = `<w:tblBorders>${VISIBLE_TABLE_BORDER_XML}</w:tblBorders>`;
+  const borders = `<w:tblBorders>${NIL_TABLE_BORDER_XML}</w:tblBorders>`;
   let result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
@@ -484,32 +493,146 @@ function normalizeDataTableGeometry(tableXml: string, spec: DataTableSpec) {
   return normalizeCellWidths(result, spec);
 }
 
-function stableSimpleDataTable(tableXml: string, spec: DataTableSpec) {
-  return removeWhiteCellShading(
-    removeCellBorders(normalizeDataTableGeometry(tableXml, spec)),
-  );
+type BorderCell = {
+  xml: string;
+  start: number;
+  end: number;
+  merge: "none" | "restart" | "continue";
+  edges: Set<CellBorderEdge>;
+};
+
+type BorderRow = {
+  xml: string;
+  cells: BorderCell[];
+};
+
+function cellMergeKind(cellXml: string): BorderCell["merge"] {
+  const vMerge = cellXml.match(/<w:vMerge\b[^>]*\/>/)?.[0];
+  if (!vMerge) return "none";
+  return getAttr(vMerge, "w:val").toLowerCase() === "restart" ? "restart" : "continue";
 }
 
-function addVerticalMergeTopOverrides(tableXml: string) {
-  return tableXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
-    const vMerge = cellXml.match(/<w:vMerge\b[^>]*\/>/)?.[0] ?? "";
-    const isContinuation = Boolean(vMerge) && getAttr(vMerge, "w:val").toLowerCase() !== "restart";
-    if (!isContinuation) return cellXml;
+function parseBorderRows(tableXml: string): BorderRow[] {
+  return (tableXml.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? []).map((rowXml) => {
+    let gridIndex = 0;
+    const cells = (rowXml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? []).map((xml) => {
+      const gridSpan = xml.match(/<w:gridSpan\b[^>]*\/>/)?.[0] ?? "";
+      const span = Math.max(1, Number.parseInt(getAttr(gridSpan, "w:val"), 10) || 1);
+      const cell: BorderCell = {
+        xml,
+        start: gridIndex,
+        end: gridIndex + span,
+        merge: cellMergeKind(xml),
+        edges: new Set<CellBorderEdge>(),
+      };
+      gridIndex += span;
+      return cell;
+    });
 
-    return cellXml.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) =>
-      insertBeforeFirstProperty(
-        cellPrXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, ""),
-        '<w:tcBorders><w:top w:val="nil"/></w:tcBorders>',
-        ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
-      ),
-    );
+    return { xml: rowXml, cells };
   });
 }
 
+function cellAt(row: BorderRow | undefined, column: number) {
+  return row?.cells.find((cell) => cell.start <= column && column < cell.end);
+}
+
+function cellsCovering(row: BorderRow | undefined, start: number, end: number) {
+  return (row?.cells ?? []).filter((cell) => cell.start < end && cell.end > start);
+}
+
+function withOwnedCellBorders(cellXml: string, edges: Set<CellBorderEdge>) {
+  const withoutBorders = cellXml.replace(/<w:tcBorders\b[\s\S]*?<\/w:tcBorders>/g, "");
+  const borders = ownedCellBorders(edges);
+  if (!borders) return withoutBorders;
+
+  if (/<w:tcPr\b[\s\S]*?<\/w:tcPr>/.test(withoutBorders)) {
+    return withoutBorders.replace(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/, (cellPrXml) =>
+      insertBeforeFirstProperty(
+        cellPrXml,
+        borders,
+        ["shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"],
+      ),
+    );
+  }
+
+  if (/<w:tcPr\b[^>]*\/>/.test(withoutBorders)) {
+    return withoutBorders.replace(/<w:tcPr\b[^>]*\/>/, `<w:tcPr>${borders}</w:tcPr>`);
+  }
+
+  return withoutBorders.replace(/<w:tc>/, `<w:tc><w:tcPr>${borders}</w:tcPr>`);
+}
+
+function normalizeOwnedCellBorders(tableXml: string, spec: DataTableSpec) {
+  const rows = parseBorderRows(tableXml);
+  if (!rows.length) return tableXml;
+
+  for (const row of rows) {
+    for (const cell of row.cells) {
+      // Every left edge is owned by the cell on its right; the right edge is
+      // emitted only for the table's outside boundary.
+      cell.edges.add("left");
+      if (cell.end === spec.grid.length) cell.edges.add("right");
+    }
+  }
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    if (rowIndex === 0) {
+      for (const cell of row.cells) cell.edges.add("top");
+    } else {
+      const previousRow = rows[rowIndex - 1];
+      for (const cell of row.cells) {
+        const previousCells = Array.from({ length: cell.end - cell.start }, (_, offset) =>
+          cellAt(previousRow, cell.start + offset),
+        );
+        const endedMerge = previousCells.some(
+          (previous) => previous?.merge === "continue" && cell.merge !== "continue",
+        );
+        const internalMerge = previousCells.some(
+          (previous) => previous?.merge === "continue" && cell.merge === "continue",
+        );
+
+        if (endedMerge) {
+          // A merged group owns its terminating horizontal edge. If the row
+          // below is a gridSpan, all cells under that span own the edge so a
+          // lower-cell top border cannot overlap it.
+          for (const previous of cellsCovering(previousRow, cell.start, cell.end)) {
+            previous.edges.add("bottom");
+          }
+        } else if (!internalMerge && cell.merge !== "continue") {
+          cell.edges.add("top");
+        }
+      }
+    }
+
+    if (rowIndex === rows.length - 1) {
+      for (const cell of row.cells) cell.edges.add("bottom");
+    }
+  }
+
+  let rowIndex = 0;
+  return tableXml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, () => {
+    const row = rows[rowIndex++];
+    let cellIndex = 0;
+    return row.xml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, () => {
+      const cell = row.cells[cellIndex++];
+      return withOwnedCellBorders(cell.xml, cell.edges);
+    });
+  });
+}
+
+function stableSimpleDataTable(tableXml: string, spec: DataTableSpec) {
+  return removeWhiteCellShading(
+    normalizeOwnedCellBorders(normalizeDataTableGeometry(tableXml, spec), spec),
+  );
+}
+
 function stableAppendixDataTable(tableXml: string) {
-  return addVerticalMergeTopOverrides(
-    removeWhiteCellShading(
-      removeCellBorders(normalizeDataTableGeometry(tableXml, APPENDIX_DATA_TABLE_SPEC)),
+  return removeWhiteCellShading(
+    normalizeOwnedCellBorders(
+      normalizeDataTableGeometry(tableXml, APPENDIX_DATA_TABLE_SPEC),
+      APPENDIX_DATA_TABLE_SPEC,
     ),
   );
 }
