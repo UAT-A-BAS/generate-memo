@@ -2169,6 +2169,43 @@ test("collaboration syncs metadata fields between pages", async ({ browser }) =>
   await secondContext.close();
 });
 
+test("collaboration hydrates a joiner from the room owner before allowing writes", async ({ browser }) => {
+  const ownerContext = await browser.newContext();
+  const joinerContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const joiner = await joinerContext.newPage();
+
+  await owner.goto("http://localhost:3002");
+  await owner.getByLabel("Nama Project").fill("Data Pemilik Room");
+  await owner.getByRole("button", { name: "Start Collab" }).click();
+  const ownerIdentityDialog = owner.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await ownerIdentityDialog.getByLabel("Nama *").fill("Pemilik Room");
+  await expect(owner.getByLabel("Nama Project")).toHaveValue("Data Pemilik Room");
+  await ownerIdentityDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect(owner).toHaveURL(/room=/);
+  await expect(owner.getByText("Saved")).toBeVisible({ timeout: 20000 });
+  await expect(owner.getByLabel("Nama Project")).toHaveValue("Data Pemilik Room");
+
+  await joiner.goto("http://localhost:3002");
+  await joiner.getByLabel("Nama Project").fill("Draft Lokal Peserta");
+  await joiner.waitForTimeout(3500);
+  await joiner.goto(owner.url());
+  const joinerIdentityDialog = joiner.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await joinerIdentityDialog.getByLabel("Nama *").fill("Peserta Baru");
+  await joinerIdentityDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect(owner.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
+  await expect(joiner.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
+
+  await expect(joiner.getByLabel("Nama Project")).toHaveValue("Data Pemilik Room", {
+    timeout: 20000,
+  });
+  await joiner.waitForTimeout(2000);
+  await expect(owner.getByLabel("Nama Project")).toHaveValue("Data Pemilik Room");
+
+  await ownerContext.close();
+  await joinerContext.close();
+});
+
 test("review comments can be added to a field and focused", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const longComment = `Perbaiki nama project ${"komentarpanjang".repeat(28)}`;

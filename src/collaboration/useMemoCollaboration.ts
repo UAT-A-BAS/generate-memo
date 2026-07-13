@@ -32,6 +32,8 @@ type PresenceUser = {
 type PresenceMessage = {
   type?: string;
   users?: PresenceUser[];
+  draft?: MemoDraft;
+  updatedAt?: number;
 };
 
 const ROOM_PARAM = "room";
@@ -232,6 +234,8 @@ export function useMemoCollaboration(
   const localBaselineRef = useRef("");
   const localUpdatedAtRef = useRef(0);
   const pendingStateUpdateRef = useRef(false);
+  const initialSyncCompleteRef = useRef(false);
+  const expectedInitialDraftKeyRef = useRef("");
   const activeRoomRef = useRef("");
   const userRef = useRef<PresenceUser | null>(null);
   const draftRef = useRef(draft);
@@ -243,7 +247,21 @@ export function useMemoCollaboration(
 
   useEffect(() => {
     draftRef.current = draft;
-    if (!applyingRemoteRef.current && activeRoomRef.current) {
+    if (
+      activeRoomRef.current &&
+      !initialSyncCompleteRef.current &&
+      expectedInitialDraftKeyRef.current &&
+      draftSyncKey(draft) === expectedInitialDraftKeyRef.current
+    ) {
+      initialSyncCompleteRef.current = true;
+      expectedInitialDraftKeyRef.current = "";
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "sync-ready" }));
+      }
+      return;
+    }
+    if (!applyingRemoteRef.current && activeRoomRef.current && initialSyncCompleteRef.current) {
       const nextSnapshot = draftSyncKey(draft);
       if (nextSnapshot !== localBaselineRef.current) {
         localUpdatedAtRef.current = Date.now();
@@ -294,6 +312,8 @@ export function useMemoCollaboration(
     localBaselineRef.current = "";
     localUpdatedAtRef.current = 0;
     pendingStateUpdateRef.current = false;
+    initialSyncCompleteRef.current = false;
+    expectedInitialDraftKeyRef.current = "";
     reconnectAttemptRef.current = 0;
     flushSharedDraftRef.current = null;
     if (clearUrl) setRoomUrl("");
@@ -308,8 +328,8 @@ export function useMemoCollaboration(
   const connect = useCallback((
     roomId: string,
     seedDraft: MemoDraft | null,
-    updateUrl = true,
-    identityName = collaboratorName,
+    updateUrl: boolean,
+    identityName: string,
   ) => {
     const cleanRoom = roomId.trim();
     const cleanName = identityName.trim();
@@ -326,16 +346,18 @@ export function useMemoCollaboration(
     const map = doc.getMap(MAP_NAME);
     const user = saveCollaboratorIdentity(cleanName);
     let firstServerSync = false;
-    let pendingSeed = seedDraft ? normalizeMemoDraft(seedDraft) : null;
+    let pendingSeed = seedDraft ? normalizeMemoDraft(draftRef.current) : null;
     let pendingSeedMustWin = Boolean(seedDraft);
 
     docRef.current = doc;
     mapRef.current = map;
     userRef.current = user;
     activeRoomRef.current = cleanRoom;
-    localBaselineRef.current = draftSyncKey(seedDraft ?? draftRef.current);
+    localBaselineRef.current = draftSyncKey(draftRef.current);
     localUpdatedAtRef.current = seedDraft ? Date.now() : 0;
     pendingStateUpdateRef.current = false;
+    initialSyncCompleteRef.current = false;
+    expectedInitialDraftKeyRef.current = "";
 
     const sendPresence = () => {
       const socket = socketRef.current;
@@ -390,7 +412,11 @@ export function useMemoCollaboration(
     };
 
     flushSharedDraftRef.current = (options: FlushOptions = {}) => {
-      if (applyingRemoteRef.current || !activeRoomRef.current) return;
+      if (
+        applyingRemoteRef.current ||
+        !activeRoomRef.current ||
+        !initialSyncCompleteRef.current
+      ) return;
       const normalized = normalizeMemoDraft(draftRef.current);
       const updatedAt = Date.now();
       localBaselineRef.current = draftSyncKey(normalized);
@@ -412,6 +438,7 @@ export function useMemoCollaboration(
             draft: normalized,
             updatedAt,
             user,
+            initialSyncComplete: true,
           }));
           pendingStateUpdateRef.current = false;
           updateStatus("syncing");
@@ -491,6 +518,11 @@ export function useMemoCollaboration(
               })),
             }));
           }
+          if (message.type === "room-snapshot" && message.draft) {
+            const normalized = normalizeMemoDraft(message.draft);
+            expectedInitialDraftKeyRef.current = draftSyncKey(normalized);
+            applySharedDraft(normalized, Number(message.updatedAt || Date.now()));
+          }
           return;
         }
 
@@ -499,17 +531,33 @@ export function useMemoCollaboration(
 
         if (!firstServerSync) {
           firstServerSync = true;
-          const hasRemoteDraft = Boolean(sharedDraftStateFromMap(map));
+          const remoteState = sharedDraftStateFromMap(map);
+          const hasRemoteDraft = Boolean(remoteState);
           if (pendingSeed && (!hasRemoteDraft || pendingSeedMustWin)) {
+            initialSyncCompleteRef.current = true;
+            socket.send(JSON.stringify({ type: "sync-ready" }));
             commitSharedDraft(pendingSeed);
           } else if (!applySharedDraftIfPresent() && pendingSeed) {
+            initialSyncCompleteRef.current = true;
+            socket.send(JSON.stringify({ type: "sync-ready" }));
             commitSharedDraft(pendingSeed);
-          } else if (hasRemoteDraft) {
+          } else if (remoteState) {
+            expectedInitialDraftKeyRef.current = draftSyncKey(remoteState.draft);
             applySharedDraftIfPresent();
+            if (draftSyncKey(draftRef.current) === expectedInitialDraftKeyRef.current) {
+              initialSyncCompleteRef.current = true;
+              expectedInitialDraftKeyRef.current = "";
+              socket.send(JSON.stringify({ type: "sync-ready" }));
+            }
+          } else {
+            initialSyncCompleteRef.current = true;
+            socket.send(JSON.stringify({ type: "sync-ready" }));
           }
           pendingSeed = null;
           pendingSeedMustWin = false;
-          sendYUpdate(Y.encodeStateAsUpdate(doc));
+          if (initialSyncCompleteRef.current) {
+            sendYUpdate(Y.encodeStateAsUpdate(doc));
+          }
         }
       });
 
@@ -547,23 +595,28 @@ export function useMemoCollaboration(
       collaborators: [{ ...user, isLocal: true }],
     });
     connectSocket();
-  }, [collaboratorName, disconnect, replaceDraft, clearTimers, updateStatus]);
+  }, [disconnect, replaceDraft, clearTimers, updateStatus]);
 
   useEffect(() => {
     const roomId = roomFromUrl();
     const timer = window.setTimeout(() => {
-      if (roomId && collaboratorName.trim()) {
+      if (roomId && collaboratorName.trim() && !activeRoomRef.current) {
         connect(roomId, null, false, collaboratorName);
       }
     }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      disconnect(false);
-    };
-  }, [collaboratorName, connect, disconnect]);
+    return () => window.clearTimeout(timer);
+  }, [collaboratorName, connect]);
+
+  useEffect(() => () => disconnect(false), [disconnect]);
 
   useEffect(() => {
-    if (!state.active || applyingRemoteRef.current || !mapRef.current || !docRef.current) return;
+    if (
+      !state.active ||
+      applyingRemoteRef.current ||
+      !initialSyncCompleteRef.current ||
+      !mapRef.current ||
+      !docRef.current
+    ) return;
     const nextSnapshot = draftSyncKey(draft);
     if (nextSnapshot === localBaselineRef.current) return;
 
@@ -751,9 +804,9 @@ export function useMemoCollaboration(
   const start = useCallback((identityName = collaboratorName) => {
     if (!identityName.trim()) return "";
     const roomId = randomRoomId();
-    connect(roomId, draft, true, identityName);
+    connect(roomId, draftRef.current, true, identityName);
     return roomId;
-  }, [collaboratorName, connect, draft]);
+  }, [collaboratorName, connect]);
 
   const join = useCallback((roomId: string, identityName = collaboratorName) => {
     connect(roomId, null, true, identityName);

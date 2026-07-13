@@ -105,7 +105,9 @@ export class MemoRoom {
 
     if (request.method === "POST") {
       const message = safeJsonParse(await request.text());
-      const saved = await this.saveDraftSnapshot(message, "");
+      const saved = message?.initialSyncComplete === true
+        ? await this.saveDraftSnapshot(message, "")
+        : false;
       return Response.json(
         { ok: saved },
         { status: saved ? 200 : 400, headers: CORS_HEADERS },
@@ -129,7 +131,13 @@ export class MemoRoom {
   handleSession(socket) {
     socket.accept();
     const sessionId = crypto.randomUUID();
-    this.sessions.set(sessionId, { socket, user: null });
+    this.sessions.set(sessionId, { socket, user: null, initialSyncComplete: false });
+    const roomSnapshot = latestDraftFromDoc(this.doc);
+    socket.send(JSON.stringify({
+      type: "room-snapshot",
+      draft: roomSnapshot?.draft ?? null,
+      updatedAt: roomSnapshot?.updatedAt ?? 0,
+    }));
     socket.send(Y.encodeStateAsUpdate(this.doc));
 
     socket.addEventListener("message", async (event) => {
@@ -139,7 +147,8 @@ export class MemoRoom {
       }
 
       const update = await toUint8Array(event.data);
-      if (!update) return;
+      const session = this.sessions.get(sessionId);
+      if (!update || !session?.initialSyncComplete) return;
       Y.applyUpdate(this.doc, update);
       await this.persistDoc();
       this.broadcast(update, sessionId);
@@ -167,7 +176,12 @@ export class MemoRoom {
       return;
     }
 
-    if (message?.type === "draft-save") {
+    if (message?.type === "sync-ready") {
+      session.initialSyncComplete = true;
+      return;
+    }
+
+    if (message?.type === "draft-save" && session.initialSyncComplete) {
       const saved = await this.saveDraftSnapshot(message, sessionId);
       if (saved) {
         session.socket.send(JSON.stringify({ type: "saved" }));

@@ -45,6 +45,9 @@ async function installFakeCollaborationSocket(page: Page) {
           if (this.readyState !== FakeWebSocket.CONNECTING) return;
           this.readyState = FakeWebSocket.OPEN;
           this.dispatchEvent(new Event("open"));
+          this.dispatchEvent(new MessageEvent("message", {
+            data: new Uint8Array([0, 0]).buffer,
+          }));
         }, 0);
       }
 
