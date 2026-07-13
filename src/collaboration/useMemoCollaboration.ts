@@ -34,6 +34,8 @@ type PresenceMessage = {
   users?: PresenceUser[];
   draft?: MemoDraft;
   updatedAt?: number;
+  updatedBy?: string;
+  saveId?: string;
 };
 
 const ROOM_PARAM = "room";
@@ -46,6 +48,7 @@ const DATA_KEY = "data";
 const UPDATED_AT_KEY = "updatedAt";
 const UPDATED_BY_KEY = "updatedBy";
 const SNAPSHOT_PREFIX = "snapshot:";
+const SYNC_ACK_TIMEOUT_MS = 8_000;
 const DEFAULT_IDLE_TIMERS = {
   idleMs: 5 * 60 * 1000,
   hiddenGraceMs: 60 * 1000,
@@ -167,6 +170,7 @@ function persistDraftSnapshot(
           color: user.color,
         }
       : null,
+    initialSyncComplete: true,
   });
   const url = workerHttpUrl(roomId);
 
@@ -234,6 +238,10 @@ export function useMemoCollaboration(
   const localBaselineRef = useRef("");
   const localUpdatedAtRef = useRef(0);
   const pendingStateUpdateRef = useRef(false);
+  const syncAckTimerRef = useRef<number | null>(null);
+  const pendingSaveIdRef = useRef("");
+  const saveSequenceRef = useRef(0);
+  const pendingPresenceRef = useRef<PresenceUser[] | null>(null);
   const initialSyncCompleteRef = useRef(false);
   const expectedInitialDraftKeyRef = useRef("");
   const activeRoomRef = useRef("");
@@ -284,8 +292,12 @@ export function useMemoCollaboration(
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
     if (sharedUpdateTimerRef.current) window.clearTimeout(sharedUpdateTimerRef.current);
+    if (syncAckTimerRef.current) window.clearTimeout(syncAckTimerRef.current);
     reconnectTimerRef.current = null;
     sharedUpdateTimerRef.current = null;
+    syncAckTimerRef.current = null;
+    pendingSaveIdRef.current = "";
+    pendingPresenceRef.current = null;
   }, []);
 
   const clearIdleTimers = useCallback(() => {
@@ -345,9 +357,9 @@ export function useMemoCollaboration(
     const doc = new Y.Doc();
     const map = doc.getMap(MAP_NAME);
     const user = saveCollaboratorIdentity(cleanName);
-    let firstServerSync = false;
     let pendingSeed = seedDraft ? normalizeMemoDraft(draftRef.current) : null;
     let pendingSeedMustWin = Boolean(seedDraft);
+    let firstConnection = true;
 
     docRef.current = doc;
     mapRef.current = map;
@@ -356,6 +368,7 @@ export function useMemoCollaboration(
     localBaselineRef.current = draftSyncKey(draftRef.current);
     localUpdatedAtRef.current = seedDraft ? Date.now() : 0;
     pendingStateUpdateRef.current = false;
+    pendingSaveIdRef.current = "";
     initialSyncCompleteRef.current = false;
     expectedInitialDraftKeyRef.current = "";
 
@@ -365,6 +378,76 @@ export function useMemoCollaboration(
       socket.send(JSON.stringify({ type: "presence", user }));
     };
 
+    const applyPresence = (users: PresenceUser[]) => {
+      setState((current) => ({
+        ...current,
+        collaborators: users.map((presence) => ({
+          ...presence,
+          isLocal: presence.id === user.id,
+        })),
+      }));
+    };
+
+    const flushPendingPresence = () => {
+      if (!initialSyncCompleteRef.current || !pendingPresenceRef.current) return;
+      const users = pendingPresenceRef.current;
+      pendingPresenceRef.current = null;
+      applyPresence(users);
+    };
+
+    const clearSyncAck = (saveId?: string) => {
+      if (saveId && pendingSaveIdRef.current && saveId !== pendingSaveIdRef.current) return false;
+      if (syncAckTimerRef.current) window.clearTimeout(syncAckTimerRef.current);
+      syncAckTimerRef.current = null;
+      pendingSaveIdRef.current = "";
+      pendingStateUpdateRef.current = false;
+      return true;
+    };
+
+    const armSyncAckTimeout = (saveId: string) => {
+      if (syncAckTimerRef.current) window.clearTimeout(syncAckTimerRef.current);
+      pendingSaveIdRef.current = saveId;
+      syncAckTimerRef.current = window.setTimeout(() => {
+        if (pendingSaveIdRef.current !== saveId) return;
+        syncAckTimerRef.current = null;
+        pendingSaveIdRef.current = "";
+        pendingStateUpdateRef.current = true;
+        updateStatus("offline");
+        const socket = socketRef.current;
+        if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+      }, SYNC_ACK_TIMEOUT_MS);
+    };
+
+    const sendDraftSave = (normalized: MemoDraft, updatedAt: number) => {
+      const socket = socketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !initialSyncCompleteRef.current) {
+        pendingStateUpdateRef.current = true;
+        updateStatus("offline");
+        return false;
+      }
+
+      const saveId = `${user.id}:${updatedAt}:${++saveSequenceRef.current}`;
+      try {
+        socket.send(JSON.stringify({
+          type: "draft-save",
+          draft: normalized,
+          updatedAt,
+          user,
+          saveId,
+          initialSyncComplete: true,
+        }));
+      } catch {
+        pendingStateUpdateRef.current = true;
+        updateStatus("offline");
+        socket.close();
+        return false;
+      }
+      pendingStateUpdateRef.current = true;
+      armSyncAckTimeout(saveId);
+      updateStatus("syncing");
+      return true;
+    };
+
     const sendYUpdate = (update: Uint8Array) => {
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -372,25 +455,61 @@ export function useMemoCollaboration(
         updateStatus("offline");
         return;
       }
-      socket.send(update);
-      pendingStateUpdateRef.current = false;
+      try {
+        socket.send(update);
+      } catch {
+        pendingStateUpdateRef.current = true;
+        updateStatus("offline");
+        socket.close();
+        return;
+      }
+      pendingStateUpdateRef.current = true;
+      armSyncAckTimeout("");
       updateStatus("syncing");
     };
 
-    const applySharedDraft = (nextDraft: MemoDraft, updatedAt = Date.now()) => {
+    const syncRemoteMap = (nextDraft: MemoDraft, updatedAt: number, updatedBy = "remote") => {
+      if (!mapRef.current || !docRef.current) return;
+      docRef.current.transact(() => {
+        mapRef.current?.set(DATA_KEY, nextDraft);
+        mapRef.current?.set(UPDATED_AT_KEY, updatedAt);
+        mapRef.current?.set(UPDATED_BY_KEY, updatedBy);
+        mapRef.current?.set(snapshotKey(updatedAt, updatedBy), nextDraft);
+      }, REMOTE_ORIGIN);
+    };
+
+    const applySharedDraft = (nextDraft: MemoDraft, updatedAt = Date.now(), updatedBy = "remote") => {
       if (jsonEqual(nextDraft, draftRef.current)) {
         localBaselineRef.current = draftSyncKey(nextDraft);
+        localUpdatedAtRef.current = updatedAt;
+        applyingRemoteRef.current = true;
+        syncRemoteMap(nextDraft, updatedAt, updatedBy);
+        applyingRemoteRef.current = false;
         return;
       }
       applyingRemoteRef.current = true;
       localBaselineRef.current = draftSyncKey(nextDraft);
       localUpdatedAtRef.current = updatedAt;
       replaceDraft(nextDraft, "loaded");
+      syncRemoteMap(nextDraft, updatedAt, updatedBy);
       applyingRemoteRef.current = false;
       setState((current) => ({
         ...current,
         lastSyncedAt: formatSyncTime(new Date(updatedAt)),
       }));
+    };
+
+    const applyRemoteDraftSnapshot = (nextDraft: MemoDraft, updatedAt: number, updatedBy = "remote") => {
+      if (!initialSyncCompleteRef.current) return;
+      const localIsDirty = draftSyncKey(draftRef.current) !== localBaselineRef.current;
+      if ((localIsDirty || pendingStateUpdateRef.current) && localUpdatedAtRef.current > updatedAt) {
+        return;
+      }
+      applySharedDraft(nextDraft, updatedAt, updatedBy);
+      if (updatedAt >= localUpdatedAtRef.current) {
+        pendingStateUpdateRef.current = false;
+        clearSyncAck();
+      }
     };
 
     const commitSharedDraft = (nextDraft = draftRef.current, updatedAt = Date.now()) => {
@@ -406,9 +525,7 @@ export function useMemoCollaboration(
         mapRef.current?.set(snapshotKey(updatedAt, user.id), normalized);
       }, LOCAL_ORIGIN);
 
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        sendYUpdate(Y.encodeStateAsUpdate(docRef.current));
-      }
+      sendDraftSave(normalized, updatedAt);
     };
 
     flushSharedDraftRef.current = (options: FlushOptions = {}) => {
@@ -431,18 +548,7 @@ export function useMemoCollaboration(
           mapRef.current?.set(snapshotKey(updatedAt, user.id), normalized);
         }, LOCAL_ORIGIN);
 
-        if (options.sendSocket !== false && socketRef.current?.readyState === WebSocket.OPEN) {
-          socketRef.current.send(Y.encodeStateAsUpdate(docRef.current));
-          socketRef.current.send(JSON.stringify({
-            type: "draft-save",
-            draft: normalized,
-            updatedAt,
-            user,
-            initialSyncComplete: true,
-          }));
-          pendingStateUpdateRef.current = false;
-          updateStatus("syncing");
-        }
+        if (options.sendSocket !== false) sendDraftSave(normalized, updatedAt);
       }
 
       if (options.persistHttp) {
@@ -467,17 +573,20 @@ export function useMemoCollaboration(
     };
 
     doc.on("update", (update, origin) => {
-      if (origin === REMOTE_ORIGIN) return;
+      if (origin === REMOTE_ORIGIN || origin === LOCAL_ORIGIN) return;
       sendYUpdate(update);
     });
 
     map.observe((_, transaction) => {
-      if (transaction.origin === LOCAL_ORIGIN) return;
+      if (transaction.origin === LOCAL_ORIGIN || applyingRemoteRef.current || !initialSyncCompleteRef.current) return;
       applySharedDraftIfPresent();
     });
 
     const connectSocket = () => {
       clearTimers();
+      initialSyncCompleteRef.current = false;
+      expectedInitialDraftKeyRef.current = "";
+      let firstServerSync = false;
       updateStatus("syncing");
 
       let socket: WebSocket;
@@ -496,9 +605,6 @@ export function useMemoCollaboration(
         reconnectAttemptRef.current = 0;
         updateStatus("connected");
         sendPresence();
-        if (firstServerSync && pendingStateUpdateRef.current) {
-          sendYUpdate(Y.encodeStateAsUpdate(doc));
-        }
       });
 
       socket.addEventListener("message", async (event) => {
@@ -506,22 +612,48 @@ export function useMemoCollaboration(
         if (typeof event.data === "string") {
           const message = safeJsonParse(event.data);
           if (message.type === "saved") {
-            updateStatus("saved", formatSyncTime());
+            const saveId = typeof message.saveId === "string"
+              ? message.saveId
+              : "";
+            const ackMatchesPending = saveId
+              ? saveId === pendingSaveIdRef.current
+              : true;
+            if (ackMatchesPending) {
+              if (clearSyncAck(saveId || undefined)) {
+                updateStatus("saved", formatSyncTime());
+              }
+            }
           }
           if (message.type === "presence") {
             const users = message.users ?? [];
-            setState((current) => ({
-              ...current,
-              collaborators: users.map((presence) => ({
-                ...presence,
-                isLocal: presence.id === user.id,
-              })),
-            }));
+            if (!initialSyncCompleteRef.current) pendingPresenceRef.current = users;
+            else applyPresence(users);
+          }
+          if (message.type === "draft-update" && message.draft) {
+            applyRemoteDraftSnapshot(
+              normalizeMemoDraft(message.draft),
+              Number(message.updatedAt || Date.now()),
+              message.updatedBy || "remote",
+            );
           }
           if (message.type === "room-snapshot" && message.draft) {
             const normalized = normalizeMemoDraft(message.draft);
-            expectedInitialDraftKeyRef.current = draftSyncKey(normalized);
-            applySharedDraft(normalized, Number(message.updatedAt || Date.now()));
+            const canHydrateFromSnapshot = !pendingSeed &&
+              !pendingStateUpdateRef.current &&
+              draftSyncKey(draftRef.current) === localBaselineRef.current;
+            if (canHydrateFromSnapshot) {
+              applySharedDraft(
+                normalized,
+                Number(message.updatedAt || Date.now()),
+                message.updatedBy || "remote",
+              );
+              initialSyncCompleteRef.current = true;
+              expectedInitialDraftKeyRef.current = "";
+              socket.send(JSON.stringify({ type: "sync-ready" }));
+              flushPendingPresence();
+            } else {
+              expectedInitialDraftKeyRef.current = draftSyncKey(normalized);
+            }
           }
           return;
         }
@@ -533,37 +665,52 @@ export function useMemoCollaboration(
           firstServerSync = true;
           const remoteState = sharedDraftStateFromMap(map);
           const hasRemoteDraft = Boolean(remoteState);
-          if (pendingSeed && (!hasRemoteDraft || pendingSeedMustWin)) {
+          const remoteUpdatedAt = remoteState?.updatedAt ?? 0;
+          const localIsDirty = draftSyncKey(draftRef.current) !== localBaselineRef.current;
+          const localShouldWin = Boolean(
+            (pendingSeed && (!hasRemoteDraft || pendingSeedMustWin)) ||
+            (!pendingSeed && !firstConnection && (localIsDirty || pendingStateUpdateRef.current) && localUpdatedAtRef.current >= remoteUpdatedAt),
+          );
+
+          if (localShouldWin) {
             initialSyncCompleteRef.current = true;
             socket.send(JSON.stringify({ type: "sync-ready" }));
-            commitSharedDraft(pendingSeed);
-          } else if (!applySharedDraftIfPresent() && pendingSeed) {
-            initialSyncCompleteRef.current = true;
-            socket.send(JSON.stringify({ type: "sync-ready" }));
-            commitSharedDraft(pendingSeed);
+            commitSharedDraft(
+              pendingSeed ?? draftRef.current,
+              pendingSeed ? localUpdatedAtRef.current || Date.now() : localUpdatedAtRef.current || Date.now(),
+            );
           } else if (remoteState) {
             expectedInitialDraftKeyRef.current = draftSyncKey(remoteState.draft);
-            applySharedDraftIfPresent();
-            if (draftSyncKey(draftRef.current) === expectedInitialDraftKeyRef.current) {
-              initialSyncCompleteRef.current = true;
-              expectedInitialDraftKeyRef.current = "";
-              socket.send(JSON.stringify({ type: "sync-ready" }));
-            }
+            applySharedDraft(
+              remoteState.draft,
+              remoteUpdatedAt || Date.now(),
+              String(map.get(UPDATED_BY_KEY) || "remote"),
+            );
+            initialSyncCompleteRef.current = true;
+            expectedInitialDraftKeyRef.current = "";
+            socket.send(JSON.stringify({ type: "sync-ready" }));
           } else {
             initialSyncCompleteRef.current = true;
             socket.send(JSON.stringify({ type: "sync-ready" }));
           }
           pendingSeed = null;
           pendingSeedMustWin = false;
-          if (initialSyncCompleteRef.current) {
-            sendYUpdate(Y.encodeStateAsUpdate(doc));
-          }
+          firstConnection = false;
+          flushPendingPresence();
         }
       });
 
       socket.addEventListener("close", () => {
         if (socket !== socketRef.current) return;
         socketRef.current = null;
+        const hadPendingSave = Boolean(pendingSaveIdRef.current);
+        if (syncAckTimerRef.current) window.clearTimeout(syncAckTimerRef.current);
+        syncAckTimerRef.current = null;
+        pendingSaveIdRef.current = "";
+        initialSyncCompleteRef.current = false;
+        if (hadPendingSave || draftSyncKey(draftRef.current) !== localBaselineRef.current) {
+          pendingStateUpdateRef.current = true;
+        }
         updateStatus("offline");
         if (
           suppressReconnectRef.current ||

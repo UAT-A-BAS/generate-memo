@@ -50,6 +50,13 @@ export class MemoRoom {
     this.doc = new Y.Doc();
     this.sessions = new Map();
     this.loaded = false;
+    this.messageQueue = Promise.resolve();
+  }
+
+  enqueue(task) {
+    const next = this.messageQueue.then(task, task);
+    this.messageQueue = next.catch(() => {});
+    return next;
   }
 
   async load() {
@@ -83,7 +90,6 @@ export class MemoRoom {
     const updatedAt = Number(message.updatedAt || Date.now());
     const userId = String(message.user?.id || message.userId || "unknown");
     const map = this.doc.getMap(MAP_NAME);
-    const before = Y.encodeStateVector(this.doc);
 
     this.doc.transact(() => {
       map.set(DATA_KEY, message.draft);
@@ -93,10 +99,12 @@ export class MemoRoom {
     });
 
     await this.persistDoc();
-    const update = Y.encodeStateAsUpdate(this.doc, before);
-    if (update.byteLength > 0) {
-      this.broadcast(update, exceptSessionId);
-    }
+    this.broadcast(JSON.stringify({
+      type: "draft-update",
+      draft: message.draft,
+      updatedAt,
+      updatedBy: userId,
+    }), exceptSessionId);
     return true;
   }
 
@@ -106,7 +114,7 @@ export class MemoRoom {
     if (request.method === "POST") {
       const message = safeJsonParse(await request.text());
       const saved = message?.initialSyncComplete === true
-        ? await this.saveDraftSnapshot(message, "")
+        ? await this.enqueue(() => this.saveDraftSnapshot(message, ""))
         : false;
       return Response.json(
         { ok: saved },
@@ -137,22 +145,29 @@ export class MemoRoom {
       type: "room-snapshot",
       draft: roomSnapshot?.draft ?? null,
       updatedAt: roomSnapshot?.updatedAt ?? 0,
+      updatedBy: roomSnapshot?.updatedBy ?? "",
     }));
     socket.send(Y.encodeStateAsUpdate(this.doc));
 
-    socket.addEventListener("message", async (event) => {
-      if (typeof event.data === "string") {
-        await this.handleTextMessage(sessionId, event.data);
-        return;
-      }
+    socket.addEventListener("message", (event) => {
+      this.enqueue(async () => {
+        if (typeof event.data === "string") {
+          await this.handleTextMessage(sessionId, event.data);
+          return;
+        }
 
-      const update = await toUint8Array(event.data);
-      const session = this.sessions.get(sessionId);
-      if (!update || !session?.initialSyncComplete) return;
-      Y.applyUpdate(this.doc, update);
-      await this.persistDoc();
-      this.broadcast(update, sessionId);
-      socket.send(JSON.stringify({ type: "saved" }));
+        const update = await toUint8Array(event.data);
+        const session = this.sessions.get(sessionId);
+        if (!update || !session?.initialSyncComplete) return;
+        Y.applyUpdate(this.doc, update);
+        await this.persistDoc();
+        this.broadcast(update, sessionId);
+        try {
+          socket.send(JSON.stringify({ type: "saved", saveId: "" }));
+        } catch {
+          this.closeSession(sessionId);
+        }
+      }).catch(() => {});
     });
 
     socket.addEventListener("close", () => this.closeSession(sessionId));
@@ -184,7 +199,15 @@ export class MemoRoom {
     if (message?.type === "draft-save" && session.initialSyncComplete) {
       const saved = await this.saveDraftSnapshot(message, sessionId);
       if (saved) {
-        session.socket.send(JSON.stringify({ type: "saved" }));
+        try {
+          session.socket.send(JSON.stringify({
+            type: "saved",
+            saveId: typeof message.saveId === "string" ? message.saveId : "",
+            updatedAt: Number(message.updatedAt || Date.now()),
+          }));
+        } catch {
+          this.closeSession(sessionId);
+        }
       }
     }
   }

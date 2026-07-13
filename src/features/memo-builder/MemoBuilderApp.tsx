@@ -1507,6 +1507,14 @@ function scenarioRowsAreCompletelyEmpty(rows: ScenarioRow[]) {
   );
 }
 
+type DeleteSelectionKind = "date" | "section" | "heading" | "scenario";
+
+type DeleteSelectionTarget = {
+  kind: DeleteSelectionKind;
+  rows: ScenarioRow[];
+  parentKey?: string;
+};
+
 function AppendixPanel({
   rows,
   updateDraft,
@@ -1522,7 +1530,7 @@ function AppendixPanel({
   const [workbookPreview, setWorkbookPreview] = useState<ScenarioWorkbookPreview | null>(null);
   const [selectedWorkbookSheet, setSelectedWorkbookSheet] = useState("");
   const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
-  const [selectedDeleteRows, setSelectedDeleteRows] = useState<Set<string>>(new Set());
+  const [selectedDeleteTargets, setSelectedDeleteTargets] = useState<Set<string>>(new Set());
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const scenarioImportInputRef = useRef<HTMLInputElement>(null);
 
@@ -1584,43 +1592,121 @@ function AppendixPanel({
     ];
   }
 
-  function deleteSelectionState(targetRows: ScenarioRow[]) {
-    const selectedCount = targetRows.reduce(
-      (count, row) => count + (selectedDeleteRows.has(row.id) ? 1 : 0),
-      0,
-    );
-    return {
-      checked: targetRows.length > 0 && selectedCount === targetRows.length,
-      indeterminate: selectedCount > 0 && selectedCount < targetRows.length,
-    };
+  const deleteTargets = new Map<string, DeleteSelectionTarget>();
+  const registerDeleteTarget = (
+    key: string,
+    kind: DeleteSelectionKind,
+    targetRows: ScenarioRow[],
+    parentKey?: string,
+  ) => {
+    deleteTargets.set(key, { kind, rows: targetRows, parentKey });
+  };
+
+  groups.forEach((group) => {
+    const dateKey = `date:${group.id}`;
+    registerDeleteTarget(dateKey, "date", group.rows);
+
+    buildScenarioHierarchy(group.rows).rows.forEach((row) => {
+      registerDeleteTarget(`scenario:${row.id}`, "scenario", [row], dateKey);
+    });
+
+    scenarioSectionGroups(group.rows).forEach((section) => {
+      const sectionKey = `section:${group.id}:${section.id}`;
+      registerDeleteTarget(sectionKey, "section", section.rows, dateKey);
+      const sectionNode = buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id);
+
+      function registerNode(node: ScenarioHierarchyNode, parentKey: string) {
+        const nodeKey = `heading:${group.id}:${node.id}`;
+        registerDeleteTarget(nodeKey, "heading", scenarioRowsForNode(node), parentKey);
+        node.rows.forEach((row) => {
+          registerDeleteTarget(`scenario:${row.id}`, "scenario", [row], nodeKey);
+        });
+        node.children.forEach((child) => registerNode(child, nodeKey));
+      }
+
+      if (sectionNode) {
+        sectionNode.rows.forEach((row) => {
+          registerDeleteTarget(`scenario:${row.id}`, "scenario", [row], sectionKey);
+        });
+        sectionNode.children.forEach((child) => registerNode(child, sectionKey));
+      }
+    });
+  });
+
+  const selectedDeleteRows = new Set<string>();
+  selectedDeleteTargets.forEach((targetKey) => {
+    deleteTargets.get(targetKey)?.rows.forEach((row) => selectedDeleteRows.add(row.id));
+  });
+
+  function targetAncestors(targetKey: string) {
+    const ancestors: string[] = [];
+    let parentKey = deleteTargets.get(targetKey)?.parentKey;
+    while (parentKey) {
+      ancestors.push(parentKey);
+      parentKey = deleteTargets.get(parentKey)?.parentKey;
+    }
+    return ancestors;
   }
 
-  function toggleDeleteSelection(targetRows: ScenarioRow[]) {
-    if (!targetRows.length) return;
-    setSelectedDeleteRows((current) => {
+  function targetDescendants(targetKey: string) {
+    return [...deleteTargets.keys()].filter((candidateKey) => {
+      let parentKey = deleteTargets.get(candidateKey)?.parentKey;
+      while (parentKey) {
+        if (parentKey === targetKey) return true;
+        parentKey = deleteTargets.get(parentKey)?.parentKey;
+      }
+      return false;
+    });
+  }
+
+  function targetIsCovered(targetKey: string) {
+    return selectedDeleteTargets.has(targetKey) || targetAncestors(targetKey).some((key) => selectedDeleteTargets.has(key));
+  }
+
+  function toggleDeleteSelection(targetKey: string) {
+    const target = deleteTargets.get(targetKey);
+    if (!target || !target.rows.length) return;
+
+    setSelectedDeleteTargets((current) => {
       const next = new Set(current);
-      const shouldRemove = targetRows.every((row) => next.has(row.id));
-      targetRows.forEach((row) => {
-        if (shouldRemove) next.delete(row.id);
-        else next.add(row.id);
-      });
+      const ancestors = targetAncestors(targetKey).filter((key) => next.has(key));
+
+      if (ancestors.length && !next.has(targetKey)) {
+        const excludedRows = new Set(target.rows.map((row) => row.id));
+        ancestors.forEach((key) => next.delete(key));
+        const preservedRows = new Set<string>();
+        ancestors.forEach((key) => {
+          deleteTargets.get(key)?.rows.forEach((row) => {
+            if (!excludedRows.has(row.id)) preservedRows.add(row.id);
+          });
+        });
+        preservedRows.forEach((rowId) => next.add(`scenario:${rowId}`));
+        return next;
+      }
+
+      if (next.has(targetKey)) {
+        next.delete(targetKey);
+        targetDescendants(targetKey).forEach((key) => next.delete(key));
+        return next;
+      }
+
+      next.add(targetKey);
+      targetDescendants(targetKey).forEach((key) => next.delete(key));
       return next;
     });
   }
 
   function deleteCheckbox(
-    targetRows: ScenarioRow[],
+    targetKey: string,
     label: string,
   ) {
-    const state = deleteSelectionState(targetRows);
+    const target = deleteTargets.get(targetKey);
+    if (!target) return null;
     return (
       <input
         type="checkbox"
-        checked={state.checked}
-        ref={(element) => {
-          if (element) element.indeterminate = state.indeterminate;
-        }}
-        onChange={() => toggleDeleteSelection(targetRows)}
+        checked={targetIsCovered(targetKey)}
+        onChange={() => toggleDeleteSelection(targetKey)}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         aria-label={label}
@@ -1636,7 +1722,7 @@ function AppendixPanel({
     setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
     setExpandedDetails({});
     setMountedScenarioEditors({});
-    setSelectedDeleteRows(new Set());
+    setSelectedDeleteTargets(new Set());
     setDeleteConfirmOpen(false);
     setBulkDeleteMode(false);
   }
@@ -2145,7 +2231,7 @@ function AppendixPanel({
       >
         <summary data-scenario-header className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
           <span className="flex min-w-0 items-center gap-2">
-            {bulkDeleteMode ? deleteCheckbox([row], `Pilih skenario ${rowIndex + 1}`) : null}
+            {bulkDeleteMode ? deleteCheckbox(`scenario:${row.id}`, `Pilih skenario ${rowIndex + 1}`) : null}
             <span>Skenario {rowIndex + 1}</span>
           </span>
           <span className="flex min-w-0 items-center gap-2">
@@ -2217,7 +2303,7 @@ function AppendixPanel({
         >
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
             <span className="flex min-w-0 items-center gap-2">
-              {bulkDeleteMode ? deleteCheckbox(node.rows.concat(node.children.flatMap((child) => scenarioRowsForNode(child))), `Pilih ${scenarioHeadingName(node.depth).toLowerCase()} ${node.label}`) : null}
+              {bulkDeleteMode ? deleteCheckbox(`heading:${group.id}:${node.id}`, `Pilih ${scenarioHeadingName(node.depth).toLowerCase()} ${node.label}`) : null}
               <span>{scenarioHeadingName(node.depth)} {node.label}</span>
             </span>
             <span className="text-xs font-semibold text-slate-500">{scenarioRowsForNode(node).length} skenario</span>
@@ -2339,7 +2425,7 @@ function AppendixPanel({
               onClick={() => {
                 if (!bulkDeleteMode) {
                   setBulkDeleteMode(true);
-                  setSelectedDeleteRows(new Set());
+                  setSelectedDeleteTargets(new Set());
                   return;
                 }
                 if (selectedDeleteRows.size) setDeleteConfirmOpen(true);
@@ -2356,7 +2442,7 @@ function AppendixPanel({
               <IconButton
                 onClick={() => {
                   setBulkDeleteMode(false);
-                  setSelectedDeleteRows(new Set());
+                  setSelectedDeleteTargets(new Set());
                 }}
                 className="h-11"
                 data-appendix-bulk-delete-cancel
@@ -2408,7 +2494,7 @@ function AppendixPanel({
               >
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
                   <span className="flex min-w-0 items-center gap-2">
-                    {bulkDeleteMode ? deleteCheckbox(group.rows, `Pilih tanggal ${groupIndex + 1}`) : null}
+                    {bulkDeleteMode ? deleteCheckbox(`date:${group.id}`, `Pilih tanggal ${groupIndex + 1}`) : null}
                     <span>Tanggal {groupIndex + 1}</span>
                   </span>
                   <span className="text-xs font-semibold text-[#5b6778]">
@@ -2454,7 +2540,7 @@ function AppendixPanel({
                         >
                           <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
                             <span className="flex items-center gap-2">
-                              {bulkDeleteMode ? deleteCheckbox(section.rows, `Pilih bagian ${section.marker}`) : null}
+                              {bulkDeleteMode ? deleteCheckbox(`section:${group.id}:${section.id}`, `Pilih bagian ${section.marker}`) : null}
                               <span>Bagian {section.marker}</span>
                             </span>
                             <span className="min-w-0 text-right text-xs font-semibold text-[#5b6778]">
