@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Copy,
   Download,
+  FileDown,
   FileJson,
   FileText,
   MessageSquare,
@@ -1520,6 +1521,9 @@ function AppendixPanel({
   const [scenarioImportError, setScenarioImportError] = useState("");
   const [workbookPreview, setWorkbookPreview] = useState<ScenarioWorkbookPreview | null>(null);
   const [selectedWorkbookSheet, setSelectedWorkbookSheet] = useState("");
+  const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
+  const [selectedDeleteRows, setSelectedDeleteRows] = useState<Set<string>>(new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const scenarioImportInputRef = useRef<HTMLInputElement>(null);
 
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
@@ -1572,6 +1576,70 @@ function AppendixPanel({
   }
 
   const groups = scenarioDateGroups(rows);
+
+  function scenarioRowsForNode(node: ScenarioHierarchyNode): ScenarioRow[] {
+    return [
+      ...node.rows,
+      ...node.children.flatMap((child) => scenarioRowsForNode(child)),
+    ];
+  }
+
+  function deleteSelectionState(targetRows: ScenarioRow[]) {
+    const selectedCount = targetRows.reduce(
+      (count, row) => count + (selectedDeleteRows.has(row.id) ? 1 : 0),
+      0,
+    );
+    return {
+      checked: targetRows.length > 0 && selectedCount === targetRows.length,
+      indeterminate: selectedCount > 0 && selectedCount < targetRows.length,
+    };
+  }
+
+  function toggleDeleteSelection(targetRows: ScenarioRow[]) {
+    if (!targetRows.length) return;
+    setSelectedDeleteRows((current) => {
+      const next = new Set(current);
+      const shouldRemove = targetRows.every((row) => next.has(row.id));
+      targetRows.forEach((row) => {
+        if (shouldRemove) next.delete(row.id);
+        else next.add(row.id);
+      });
+      return next;
+    });
+  }
+
+  function deleteCheckbox(
+    targetRows: ScenarioRow[],
+    label: string,
+  ) {
+    const state = deleteSelectionState(targetRows);
+    return (
+      <input
+        type="checkbox"
+        checked={state.checked}
+        ref={(element) => {
+          if (element) element.indeterminate = state.indeterminate;
+        }}
+        onChange={() => toggleDeleteSelection(targetRows)}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        aria-label={label}
+        data-scenario-delete-checkbox
+        className="h-4 w-4 shrink-0 rounded border-slate-400 text-[#1b4d78] focus:ring-[#1b4d78]"
+      />
+    );
+  }
+
+  function applyBulkDelete() {
+    if (!selectedDeleteRows.size) return;
+    const nextRows = rows.filter((row) => !selectedDeleteRows.has(row.id));
+    setRows(nextRows.length ? nextRows : [createScenarioRow()], true);
+    setExpandedDetails({});
+    setMountedScenarioEditors({});
+    setSelectedDeleteRows(new Set());
+    setDeleteConfirmOpen(false);
+    setBulkDeleteMode(false);
+  }
 
   useEffect(() => {
     function openField(event: Event) {
@@ -2076,10 +2144,13 @@ function AppendixPanel({
         className="rounded-lg border border-slate-200 bg-slate-50"
       >
         <summary data-scenario-header className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
-          <span>Skenario {rowIndex + 1}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            {bulkDeleteMode ? deleteCheckbox([row], `Pilih skenario ${rowIndex + 1}`) : null}
+            <span>Skenario {rowIndex + 1}</span>
+          </span>
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-xs font-medium text-slate-500">{row.pic || "PIC belum diisi"}</span>
-            <button
+            {!bulkDeleteMode ? <button
               type="button"
               onClick={(event) => {
                 event.preventDefault();
@@ -2091,7 +2162,7 @@ function AppendixPanel({
               aria-label="Hapus skenario"
             >
               <Trash2 size={15} />
-            </button>
+            </button> : null}
           </span>
         </summary>
         {scenarioOpen ? (
@@ -2144,9 +2215,12 @@ function AppendixPanel({
           open={detailOpen(`heading:${node.id}`, true)}
           onToggle={(event) => rememberDetailState(`heading:${node.id}`, event)}
         >
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
-            <span>{scenarioHeadingName(node.depth)} {node.label}</span>
-            <span className="text-xs font-semibold text-slate-500">{node.rows.length} skenario</span>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+            <span className="flex min-w-0 items-center gap-2">
+              {bulkDeleteMode ? deleteCheckbox(node.rows.concat(node.children.flatMap((child) => scenarioRowsForNode(child))), `Pilih ${scenarioHeadingName(node.depth).toLowerCase()} ${node.label}`) : null}
+              <span>{scenarioHeadingName(node.depth)} {node.label}</span>
+            </span>
+            <span className="text-xs font-semibold text-slate-500">{scenarioRowsForNode(node).length} skenario</span>
           </summary>
           <div className="mt-2 grid gap-3">
             <FieldLabel
@@ -2191,24 +2265,26 @@ function AppendixPanel({
               />
             ) : null}
 
-            <div className="flex flex-wrap justify-end gap-1.5">
-              <IconButton
-                aria-label="Tambah skenario"
-                onClick={() => addScenarioAtPath(group, section, node.path)}
-                data-scenario-add={`heading-${node.depth}-scenario`}
-              >
-                <Plus size={16} /> Skenario
-              </IconButton>
-              {node.depth < 3 ? (
+            {!bulkDeleteMode ? (
+              <div className="flex flex-wrap justify-end gap-1.5">
                 <IconButton
-                  aria-label={`Tambah ${scenarioHeadingName(node.depth + 1).toLowerCase()}`}
-                  onClick={() => addChildHeading(group, section, node.path)}
-                  data-scenario-add={`heading-${node.depth + 1}`}
+                  aria-label="Tambah skenario"
+                  onClick={() => addScenarioAtPath(group, section, node.path)}
+                  data-scenario-add={`heading-${node.depth}-scenario`}
                 >
-                  <Plus size={16} /> {scenarioHeadingName(node.depth + 1)}
+                  <Plus size={16} /> Skenario
                 </IconButton>
-              ) : null}
-            </div>
+                {node.depth < 3 ? (
+                  <IconButton
+                    aria-label={`Tambah ${scenarioHeadingName(node.depth + 1).toLowerCase()}`}
+                    onClick={() => addChildHeading(group, section, node.path)}
+                    data-scenario-add={`heading-${node.depth + 1}`}
+                  >
+                    <Plus size={16} /> {scenarioHeadingName(node.depth + 1)}
+                  </IconButton>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </details>
       </section>
@@ -2229,8 +2305,19 @@ function AppendixPanel({
               onChange={handleScenarioImport}
               data-scenario-import-input
             />
+            <a
+              href="/template-assets/Template%20Skenario%20untuk%20MEMO_AXM.xlsx"
+              download="Template Skenario untuk MEMO_AXM.xlsx"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              aria-label="Download template skenario XLSX"
+              data-scenario-template-download
+            >
+              <FileDown size={16} />
+              Template XLSX
+            </a>
             <IconButton
               onClick={() => scenarioImportInputRef.current?.click()}
+              disabled={bulkDeleteMode}
               className="h-11"
             >
               <Upload size={16} />
@@ -2238,6 +2325,7 @@ function AppendixPanel({
             </IconButton>
             <IconButton
               onClick={() => setAllDetails(!allDetailsOpen)}
+              disabled={bulkDeleteMode}
               aria-expanded={allDetailsOpen}
               aria-controls="appendix-scenario-groups"
               data-appendix-toggle-all
@@ -2246,6 +2334,37 @@ function AppendixPanel({
               {allDetailsOpen ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
               {allDetailsOpen ? "Collapse All" : "Expand All"}
             </IconButton>
+            <IconButton
+              variant={bulkDeleteMode ? "danger" : "secondary"}
+              onClick={() => {
+                if (!bulkDeleteMode) {
+                  setBulkDeleteMode(true);
+                  setSelectedDeleteRows(new Set());
+                  return;
+                }
+                if (selectedDeleteRows.size) setDeleteConfirmOpen(true);
+              }}
+              aria-pressed={bulkDeleteMode}
+              disabled={bulkDeleteMode && selectedDeleteRows.size === 0}
+              data-appendix-bulk-delete
+              className="h-11"
+            >
+              <Trash2 size={16} />
+              {bulkDeleteMode ? `Hapus (${selectedDeleteRows.size})` : "Hapus"}
+            </IconButton>
+            {bulkDeleteMode ? (
+              <IconButton
+                onClick={() => {
+                  setBulkDeleteMode(false);
+                  setSelectedDeleteRows(new Set());
+                }}
+                className="h-11"
+                data-appendix-bulk-delete-cancel
+              >
+                <X size={16} />
+                Batal
+              </IconButton>
+            ) : null}
           </div>
         )}
       />
@@ -2257,6 +2376,17 @@ function AppendixPanel({
           data-scenario-import-error
         >
           {scenarioImportError}
+        </div>
+      ) : null}
+      {bulkDeleteMode ? (
+        <div
+          className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          role="status"
+          aria-live="polite"
+          data-appendix-bulk-delete-status
+        >
+          <span>Pilih tanggal, bagian, subbagian, atau skenario yang ingin dihapus.</span>
+          <span className="font-bold">{selectedDeleteRows.size} skenario dipilih</span>
         </div>
       ) : null}
       <div id="appendix-scenario-groups" className="mt-4">
@@ -2277,7 +2407,10 @@ function AppendixPanel({
                 className="group/date"
               >
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
-                  <span>Tanggal {groupIndex + 1}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    {bulkDeleteMode ? deleteCheckbox(group.rows, `Pilih tanggal ${groupIndex + 1}`) : null}
+                    <span>Tanggal {groupIndex + 1}</span>
+                  </span>
                   <span className="text-xs font-semibold text-[#5b6778]">
                     {formatDateRangeID(group.startDate, group.endDate, group.dates)} · {group.rows.length} skenario
                   </span>
@@ -2320,7 +2453,10 @@ function AppendixPanel({
                           className="group/section"
                         >
                           <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
-                            <span>Bagian {section.marker}</span>
+                            <span className="flex items-center gap-2">
+                              {bulkDeleteMode ? deleteCheckbox(section.rows, `Pilih bagian ${section.marker}`) : null}
+                              <span>Bagian {section.marker}</span>
+                            </span>
                             <span className="min-w-0 text-right text-xs font-semibold text-[#5b6778]">
                               <span data-scenario-section-title className="block break-words">
                                 {section.title || "Belum diberi nama"}
@@ -2384,48 +2520,52 @@ function AppendixPanel({
                               );
                             })()}
 
-                            <div className="mt-3 flex flex-wrap justify-end gap-1.5">
-                              <IconButton
-                                onClick={() => addScenarioToSection(group, section)}
-                                data-scenario-add="section-scenario"
-                              >
-                                <Plus size={16} />
-                                Skenario
-                              </IconButton>
-                              <IconButton
-                                aria-label="Tambah subbagian"
-                                onClick={() => {
-                                  const path = scenarioHeadingPath(section.rows[0] ?? createScenarioRow()).slice(0, 1);
-                                  addChildHeading(group, section, path);
-                                }}
-                                data-scenario-add="section-subbagian"
-                              >
-                                <Plus size={16} /> Subbagian
-                              </IconButton>
-                            </div>
+                            {!bulkDeleteMode ? (
+                              <div className="mt-3 flex flex-wrap justify-end gap-1.5">
+                                <IconButton
+                                  onClick={() => addScenarioToSection(group, section)}
+                                  data-scenario-add="section-scenario"
+                                >
+                                  <Plus size={16} />
+                                  Skenario
+                                </IconButton>
+                                <IconButton
+                                  aria-label="Tambah subbagian"
+                                  onClick={() => {
+                                    const path = scenarioHeadingPath(section.rows[0] ?? createScenarioRow()).slice(0, 1);
+                                    addChildHeading(group, section, path);
+                                  }}
+                                  data-scenario-add="section-subbagian"
+                                >
+                                  <Plus size={16} /> Subbagian
+                                </IconButton>
+                              </div>
+                            ) : null}
                           </div>
                         </details>
                       </section>
                     )}
                   />
 
-                  <div className="flex flex-wrap gap-2">
-                    <IconButton onClick={() => addDateAfterGroup(group)} data-scenario-add="date-date">
-                      <Plus size={16} />
-                      Tanggal
-                    </IconButton>
-                    <IconButton onClick={() => addSectionToGroup(group)} data-scenario-add="date-section">
-                      <Plus size={16} />
-                      Bagian
-                    </IconButton>
-                    <IconButton
-                      aria-label="Tambah skenario tanpa bagian"
-                      onClick={() => addRootScenario(group)}
-                      data-scenario-add="date-scenario"
-                    >
-                      <Plus size={16} /> Skenario
-                    </IconButton>
-                  </div>
+                  {!bulkDeleteMode ? (
+                    <div className="flex flex-wrap gap-2">
+                      <IconButton onClick={() => addDateAfterGroup(group)} data-scenario-add="date-date">
+                        <Plus size={16} />
+                        Tanggal
+                      </IconButton>
+                      <IconButton onClick={() => addSectionToGroup(group)} data-scenario-add="date-section">
+                        <Plus size={16} />
+                        Bagian
+                      </IconButton>
+                      <IconButton
+                        aria-label="Tambah skenario tanpa bagian"
+                        onClick={() => addRootScenario(group)}
+                        data-scenario-add="date-scenario"
+                      >
+                        <Plus size={16} /> Skenario
+                      </IconButton>
+                    </div>
+                  ) : null}
                 </div>
               </details>
             </section>
@@ -2445,6 +2585,51 @@ function AppendixPanel({
               <li key={issue.id} data-validation-issue-id={issue.id}>- {issue.label}</li>
             ))}
           </ul>
+        </div>
+      ) : null}
+      {deleteConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDeleteConfirmOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="appendix-delete-title"
+            data-appendix-delete-confirm
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-50 text-rose-600">
+                <Trash2 size={18} />
+              </span>
+              <div>
+                <h2 id="appendix-delete-title" className="text-base font-bold text-slate-950">Hapus skenario terpilih?</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {selectedDeleteRows.size} skenario akan dihapus dari lampiran. Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <IconButton
+                onClick={() => setDeleteConfirmOpen(false)}
+                data-appendix-delete-cancel
+              >
+                Batal
+              </IconButton>
+              <IconButton
+                variant="danger"
+                onClick={applyBulkDelete}
+                data-appendix-delete-confirm-action
+              >
+                <Trash2 size={15} />
+                Hapus permanen
+              </IconButton>
+            </div>
+          </div>
         </div>
       ) : null}
       <ScenarioImportDialog

@@ -479,10 +479,11 @@ function mergedCell(
   children: Paragraph[],
   width: number,
   merge: ConsecutiveMergeState,
+  verticalAlign: TableVerticalAlign = VerticalAlign.CENTER,
 ) {
   return new TableCell({
     rowSpan: merge.span > 1 ? merge.span : undefined,
-    verticalAlign: VerticalAlign.CENTER,
+    verticalAlign,
     margins: { top: 45, bottom: 45, left: 90, right: 90 },
     width: {
       size: Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
@@ -781,6 +782,7 @@ function developmentTable(
                       ? DEVELOPMENT_COLUMN_WIDTHS[1]
                       : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
                     itemMerge,
+                    VerticalAlign.TOP,
                   ),
                 ]),
             ...(descriptionMerge.hidden
@@ -1298,7 +1300,7 @@ function pageChildren(
           pageBreakBefore: options.pageBreakBefore,
           spacing: {
             before: 0,
-            after: 660,
+            after: 240,
             line: 1,
             lineRule: LineRuleType.EXACT,
           },
@@ -1351,7 +1353,7 @@ function pageChildren(
         previewSection(title, [
           paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
             size: 22,
-            spacingAfter: 120,
+            spacingAfter: isTableSectionContinuation(developmentRows[0]) ? 0 : 120,
           }),
         ], sectionRule),
         developmentTable(developmentRows, draft.developmentRows.length > 1),

@@ -612,6 +612,57 @@ test("optional scenario hierarchy exposes minimalist contextual add actions", as
   await expect(firstSubsubsection.getByRole("button", { name: /Tambah sub/ })).toHaveCount(0);
 });
 
+test("scenario template downloads from the appendix toolbar", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download template skenario XLSX" }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe("Template Skenario untuk MEMO_AXM.xlsx");
+});
+
+test("bulk appendix delete cascades from a date and requires confirmation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const baseRow = completeDraft().appendixScenarios[0];
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [
+      {
+        ...baseRow,
+        id: "bulk-delete-a",
+        headingPath: [{ id: "bulk-heading", title: "Bagian Bulk" }],
+        sectionGroupId: "bulk-heading",
+        section: "Bagian Bulk",
+        scenario: richText("Skenario A"),
+      },
+      {
+        ...baseRow,
+        id: "bulk-delete-b",
+        headingPath: [{ id: "bulk-heading", title: "Bagian Bulk" }],
+        sectionGroupId: "bulk-heading",
+        section: "Bagian Bulk",
+        scenario: richText("Skenario B"),
+      },
+    ],
+  });
+
+  const panel = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Lampiran Skenario" }),
+  }).first();
+  await panel.locator("[data-appendix-bulk-delete]").click();
+  await expect(panel.locator("[data-scenario-delete-checkbox]")).toHaveCount(4);
+  await panel.getByRole("checkbox", { name: "Pilih tanggal 1" }).check();
+  await expect(panel.locator("[data-appendix-bulk-delete-status]")).toContainText("2 skenario dipilih");
+  await panel.locator("[data-appendix-bulk-delete]").click();
+  await expect(page.locator("[data-appendix-delete-confirm]")).toContainText("2 skenario");
+  await page.locator("[data-appendix-delete-cancel]").click();
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(2);
+  await panel.locator("[data-appendix-bulk-delete-cancel]").click();
+  await panel.locator("[data-appendix-bulk-delete]").click();
+  await panel.getByRole("checkbox", { name: "Pilih tanggal 1" }).check();
+  await panel.locator("[data-appendix-bulk-delete]").click();
+  await page.locator("[data-appendix-delete-confirm-action]").click();
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(1);
+});
+
 test("contextual scenario add buttons insert inside their own hierarchy level", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
@@ -1700,21 +1751,26 @@ test("closing blocks use one-line spacing and continuation content starts compac
     attachments: "",
   });
 
-  const contactPage = page.locator('aside article[data-page-kind="main"]').filter({
+  const mainPages = page.locator('aside article[data-page-kind="main"]');
+  const contactPage = mainPages.filter({
     has: page.getByRole("heading", { name: "PIC yang Dapat Dihubungi", exact: true }),
   });
   await expect(contactPage).toHaveCount(1);
+  const schedulePage = mainPages.filter({
+    has: page.getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true }),
+  });
+  await expect(schedulePage).toHaveCount(1);
   await expect(
-    contactPage.getByRole("heading", {
+    schedulePage.getByRole("heading", {
       name: "Perihal: Pilot Implementasi BDS Web Gen 2 versi 4.3.0, Sambungan",
       exact: true,
     }),
   ).toBeVisible();
 
-  const continuationRule = contactPage.locator("div.h-px");
+  const continuationRule = schedulePage.locator("div.h-px");
   await expect(continuationRule).toHaveCount(1);
   const continuationRuleBox = await continuationRule.boundingBox();
-  const scheduleTitleBox = await contactPage
+  const scheduleTitleBox = await schedulePage
     .getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true })
     .boundingBox();
   expect(continuationRuleBox).toBeTruthy();
@@ -1842,7 +1898,7 @@ test("consecutive duplicate table values keep each column default alignment", as
     const cell = page.locator('aside td[rowspan="2"]').filter({ hasText: text });
     await expect(cell).toHaveCount(1);
     await expect(cell).not.toHaveClass(/text-center/);
-    await expect(cell).toHaveClass(/align-middle/);
+    await expect(cell).toHaveClass(text === "Nilai pengembangan sama" ? /align-top/ : /align-middle/);
   }
 
   const downloadPromise = page.waitForEvent("download");
@@ -2815,13 +2871,13 @@ test("editor and preview split can be resized", async ({ page }) => {
   expect((after?.width ?? 0) - (before?.width ?? 0)).toBeGreaterThan(100);
 });
 
-test("closing rule is omitted only when closing starts a page", async ({ page }) => {
+test("closing sections stay together on their dedicated page", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
   const closing = page.locator("[data-preview-closing]");
   await expect(closing).toHaveCount(1);
-  await expect(closing).toHaveCSS("border-top-width", "0px");
+  await expect(closing).toHaveCSS("border-top-width", "1px");
 
   const firstDownloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
@@ -2831,9 +2887,8 @@ test("closing rule is omitted only when closing starts a page", async ({ page })
     firstXml.lastIndexOf("<w:p>", firstClosingIndex),
     firstXml.indexOf("</w:p>", firstClosingIndex),
   );
-  expect(firstClosingParagraph).not.toContain("<w:top");
-  expect(firstClosingParagraph).toContain('w:before="0"');
-  expect(firstClosingParagraph).not.toContain('w:before="220"');
+  expect(firstClosingParagraph).toContain("<w:top");
+  expect(firstClosingParagraph).toContain('w:before="220"');
 
   await importDraft(page, {
     ...completeDraft(),

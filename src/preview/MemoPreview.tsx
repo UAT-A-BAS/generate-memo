@@ -527,7 +527,7 @@ function renderGroupedBlocks(
             fieldId={`development-item-${developmentRows[0].row.id}`}
           key={`development-${index}`}
         >
-          <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.projectName}:</p>
+          <p className={continuation ? "mb-0" : "mb-2"}>Berikut adalah fitur pengembangan pada {draft.metadata.projectName}:</p>
           <MemoTable
             headers={numbered ? ["No.", "Pengembangan", "Keterangan"] : ["Pengembangan", "Keterangan"]}
             columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
@@ -550,7 +550,7 @@ function renderGroupedBlocks(
                 ) : null}
                 {itemMerge.hidden ? null : (
                   <td
-                    className="border border-slate-900 px-2 py-1 align-middle"
+                    className="border border-slate-900 px-2 py-1 align-top"
                     rowSpan={itemMerge.span}
                     data-preview-field-id={`development-item-${item.row.id}`}
                   >
@@ -779,7 +779,7 @@ function renderGroupedBlocks(
 
 function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
   const isAppendix = page.kind === "appendix";
-  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 108) : (isAppendix ? 88 : 64);
+  const contentTop = page.continuationTitle ? (isAppendix ? 88 : 92) : (isAppendix ? 88 : 64);
 
   return (
     <div

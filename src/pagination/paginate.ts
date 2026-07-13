@@ -183,6 +183,13 @@ function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
   return Math.max(textLines, structuralLines, paragraphCount) * 18 + Math.max(0, paragraphCount - 1) * 4;
 }
 
+function isClosingBlock(block: PreviewBlock) {
+  return block.type === "contacts" ||
+    block.type === "signature" ||
+    block.type === "cc" ||
+    block.type === "initials";
+}
+
 function compactTextHeight(value: string, charsPerLine = 76) {
   return Math.max(1, visualLineCount(value, charsPerLine)) * 16;
 }
@@ -653,12 +660,15 @@ function packPages(
 
   for (const block of blocks) {
     const hasContent = current.blocks.length > 0;
+    const closingBlock = options.kind === "main" && isClosingBlock(block);
+    const currentHasClosing = current.blocks.some(isClosingBlock);
     let sectionHeadingHeight = repeatedTableHeadingHeight(
       block,
       current.blocks[current.blocks.length - 1],
     );
     const wouldOverflow = used + sectionHeadingHeight + block.estimatedHeight > limit;
-    const shouldBreakForOverflow = wouldOverflow && hasContent;
+    const shouldStartDedicatedClosingPage = closingBlock && hasContent && !currentHasClosing;
+    const shouldBreakForOverflow = (wouldOverflow || shouldStartDedicatedClosingPage) && hasContent;
 
     if (shouldBreakForOverflow) {
       pages.push(current);
