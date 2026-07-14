@@ -546,7 +546,7 @@ function renderGroupedBlocks(
               return (
               <tr key={item.id}>
                 {numbered ? (
-                  <td className="w-12 border border-slate-900 px-2 py-1 text-center align-middle">{item.index + 1}</td>
+                  <td className="w-12 border border-slate-900 px-2 py-1 text-center align-top">{item.index + 1}</td>
                 ) : null}
                 {itemMerge.hidden ? null : (
                   <td
@@ -851,6 +851,7 @@ export function MemoPreview({
             <HeaderFooterRenderer
               pageNumber={index + 1}
               totalPages={pages.length}
+              kind={page.kind}
             />
             <PageContent draft={draft} page={page} />
           </PageContainer>

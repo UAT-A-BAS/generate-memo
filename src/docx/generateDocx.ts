@@ -424,9 +424,14 @@ function previewSection(title: string, content: FileChild[], rule: SectionRule =
   ]);
 }
 
-function bodyCell(children: Paragraph[], width: number, shaded = false) {
+function bodyCell(
+  children: Paragraph[],
+  width: number,
+  shaded = false,
+  verticalAlign: TableVerticalAlign = VerticalAlign.CENTER,
+) {
   return new TableCell({
-    verticalAlign: VerticalAlign.CENTER,
+    verticalAlign,
     margins: { top: 45, bottom: 45, left: 90, right: 90 },
     shading: shaded ? { fill: TABLE_HEADER_FILL } : undefined,
     width: {
@@ -769,7 +774,12 @@ function developmentTable(
           cantSplit: true,
           children: [
             ...(numbered
-              ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0])]
+              ? [bodyCell(
+                  [paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })],
+                  DEVELOPMENT_COLUMN_WIDTHS[0],
+                  false,
+                  VerticalAlign.TOP,
+                )]
               : []),
             ...(itemMerge.hidden
               ? []

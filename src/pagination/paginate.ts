@@ -169,7 +169,7 @@ function richVisualBlockHeight(doc: RichTextDoc, base = 0, charsPerLine = 56) {
   return base + Math.max(textLines, structuralLines) * 22 + Math.max(0, paragraphCount - 1) * 4;
 }
 
-function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
+function compactRichHeight(doc: RichTextDoc, charsPerLine = 48, lineHeight = 18) {
   const text = richTextToPlainText(doc);
   const paragraphCount = Math.max(1, doc.content.length);
   const textLines = Math.max(1, visualLineCount(text, charsPerLine));
@@ -180,7 +180,7 @@ function compactRichHeight(doc: RichTextDoc, charsPerLine = 48) {
       0,
     ),
   );
-  return Math.max(textLines, structuralLines, paragraphCount) * 18 + Math.max(0, paragraphCount - 1) * 4;
+  return Math.max(textLines, structuralLines, paragraphCount) * lineHeight + Math.max(0, paragraphCount - 1) * 4;
 }
 
 function isClosingBlock(block: PreviewBlock) {
@@ -203,8 +203,11 @@ function ccBlockHeight(recipients: Recipient[]) {
 }
 
 function appendixRowContentHeight(row: ScenarioRow) {
-  const scenarioHeight = compactRichHeight(row.scenario, 48);
-  const expectedHeight = compactRichHeight(row.expectedResult, 50);
+  // Appendix cells are wider than the main-body columns and use a 1.08 line
+  // multiple. Keep the estimate close to the rendered table so short sections
+  // can share a page instead of being moved wholesale to the next page.
+  const scenarioHeight = compactRichHeight(row.scenario, 56, 16);
+  const expectedHeight = compactRichHeight(row.expectedResult, 58, 16);
   const picHeight = compactTextHeight(row.pic, 18);
 
   return 8 + Math.max(24, scenarioHeight, expectedHeight, picHeight);
