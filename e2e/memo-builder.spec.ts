@@ -2509,6 +2509,28 @@ test("calendar day clicks keep previous selected dates and compress adjacent day
   await expect(page.locator("[data-schedule-date]")).toHaveText("3 \u2013 4, 7 Juli 2026");
 });
 
+test("calendar drag adds an inclusive range without replacing selected dates", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    pilotSchedule: {
+      startDate: "2026-07-01",
+      endDate: "2026-07-01",
+      dates: ["2026-07-01"],
+    },
+  });
+
+  await page.locator('[data-field-id="schedule"] button').click();
+  const popup = page.locator("[data-date-range-popup]");
+  const julySeven = popup.locator('[data-date-value="2026-07-07"]');
+  const julyThree = popup.locator('[data-date-value="2026-07-03"]');
+  await julySeven.dragTo(julyThree);
+  await popup.locator('[data-date-value="2026-07-10"]').click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(page.locator("[data-schedule-date]")).toHaveText("1, 3 \u2013 7, 10 Juli 2026");
+});
+
 test("table rich text removes trailing empty paragraphs after lists", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {

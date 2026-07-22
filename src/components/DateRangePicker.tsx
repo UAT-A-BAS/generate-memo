@@ -2,7 +2,17 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   datesFromRange,
   formatDateRangeID,
@@ -21,6 +31,13 @@ type DateRangePickerProps = {
 };
 
 type DatePickerMode = "day" | "month" | "year";
+
+type DragSelection = {
+  pointerId: number;
+  startDate: string;
+  endDate: string;
+  hasMoved: boolean;
+};
 
 const monthNames = [
   "January",
@@ -84,8 +101,13 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<DatePickerMode>("day");
+  const hintId = useId();
   const anchorRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const dateGridRef = useRef<HTMLDivElement>(null);
+  const dragSelectionRef = useRef<DragSelection | null>(null);
+  const suppressClickRef = useRef(false);
+  const [dragSelection, setDragSelection] = useState<DragSelection | null>(null);
   const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 704 });
   const start = parseInputDate(startDate);
   const end = parseInputDate(endDate);
@@ -101,6 +123,22 @@ export function DateRangePicker({
 
   const days = useMemo(() => calendarDays(viewYear, viewMonth), [viewYear, viewMonth]);
   const displayValue = selectedDates.length ? formatDateRangeID(startDate, endDate, selectedDates) : "";
+  const dragDates = useMemo(
+    () =>
+      dragSelection?.hasMoved
+        ? datesFromRange(dragSelection.startDate, dragSelection.endDate)
+        : [],
+    [dragSelection],
+  );
+  const dragDateSet = useMemo(() => new Set(dragDates), [dragDates]);
+  const visualDates = useMemo(
+    () => normalizeDateSelection([...selectedDates, ...dragDates]),
+    [dragDates, selectedDates],
+  );
+  const visualDateSet = useMemo(() => new Set(visualDates), [visualDates]);
+  const dragLabel = dragDates.length
+    ? formatDateRangeID(dragDates[0], dragDates.at(-1) ?? dragDates[0], dragDates)
+    : "";
   const yearStart = Math.floor(viewYear / 16) * 16;
 
   const updatePopupPosition = useCallback(() => {
@@ -181,9 +219,20 @@ export function DateRangePicker({
         setViewMonth(focusDate.getMonth());
       }
       setMode("day");
+      dragSelectionRef.current = null;
+      setDragSelection(null);
     }
 
     setOpen((value) => !value);
+  }
+
+  function commitDates(nextValues: readonly string[]) {
+    const nextDates = normalizeDateSelection(nextValues);
+    onChange({
+      startDate: nextDates[0] ?? "",
+      endDate: nextDates.at(-1) ?? "",
+      dates: nextDates,
+    });
   }
 
   function chooseDay(day: Date) {
@@ -192,15 +241,112 @@ export function DateRangePicker({
       ? selectedDates.filter((date) => date !== value)
       : normalizeDateSelection([...selectedDates, value]);
 
-    onChange({
-      startDate: nextDates[0] ?? "",
-      endDate: nextDates.at(-1) ?? "",
-      dates: nextDates,
-    });
+    commitDates(nextDates);
+  }
+
+  function dateValueAtPoint(clientX: number, clientY: number) {
+    const grid = dateGridRef.current;
+    const target = document.elementFromPoint(clientX, clientY);
+    const dateButton = target instanceof Element
+      ? target.closest<HTMLElement>("[data-date-value]")
+      : null;
+
+    if (!grid || !dateButton || !grid.contains(dateButton)) return "";
+    return dateButton.dataset.dateValue ?? "";
+  }
+
+  function beginDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const target = event.target;
+    const dateButton = target instanceof Element
+      ? target.closest<HTMLElement>("[data-date-value]")
+      : null;
+    const value = dateButton?.dataset.dateValue;
+    if (!value || !event.currentTarget.contains(dateButton)) return;
+
+    const nextDrag: DragSelection = {
+      pointerId: event.pointerId,
+      startDate: value,
+      endDate: value,
+      hasMoved: false,
+    };
+    dragSelectionRef.current = nextDrag;
+    setDragSelection(nextDrag);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function updateDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    const current = dragSelectionRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    const endDate = dateValueAtPoint(event.clientX, event.clientY);
+    if (!endDate || endDate === current.endDate) return;
+
+    const nextDrag = {
+      ...current,
+      endDate,
+      hasMoved: current.hasMoved || endDate !== current.startDate,
+    };
+    dragSelectionRef.current = nextDrag;
+    setDragSelection(nextDrag);
+  }
+
+  function finishDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    const current = dragSelectionRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    let committed = false;
+    if (current.hasMoved) {
+      commitDates([
+        ...selectedDates,
+        ...datesFromRange(current.startDate, current.endDate),
+      ]);
+      committed = true;
+    } else {
+      const day = parseInputDate(current.startDate);
+      if (day) {
+        chooseDay(day);
+        committed = true;
+      }
+    }
+
+    if (committed) {
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+
+    dragSelectionRef.current = null;
+    setDragSelection(null);
+  }
+
+  function cancelDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    const current = dragSelectionRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragSelectionRef.current = null;
+    setDragSelection(null);
+  }
+
+  function handleDayClick(event: ReactMouseEvent<HTMLButtonElement>, day: Date) {
+    if (suppressClickRef.current) {
+      event.preventDefault();
+      return;
+    }
+    chooseDay(day);
   }
 
   function clear() {
-    onChange({ startDate: "", endDate: "", dates: [] });
+    commitDates([]);
   }
 
   function today() {
@@ -264,8 +410,40 @@ export function DateRangePicker({
 
           {mode === "day" ? (
             <>
-              <p className="mb-2 text-center text-sm font-bold text-[#0056a8]">Pilih tanggal</p>
-              <div className="grid grid-cols-7 gap-y-1 text-center text-xs">
+              <p className="text-center text-sm font-bold text-[#0056a8]">Pilih tanggal</p>
+              <div
+                id={hintId}
+                className={`mb-3 mt-2 rounded-xl border px-3 py-2 text-center transition-colors ${
+                  dragSelection
+                    ? "border-[#8fc1e5] bg-[#eaf5fc]"
+                    : "border-[#d7e5f0] bg-[#f5f9fc]"
+                }`}
+              >
+                <p className="text-[11px] font-semibold leading-4 text-[#164d7d]">
+                  {dragSelection?.hasMoved
+                    ? `Lepas untuk menambahkan ${dragLabel}`
+                    : dragSelection
+                      ? "Geser ke tanggal akhir untuk membuat rentang"
+                      : "Klik satu tanggal · tahan dan geser untuk rentang"}
+                </p>
+                {!dragSelection && displayValue ? (
+                  <p className="mt-0.5 truncate text-[10px] leading-4 text-[#60758a]" title={displayValue}>
+                    Terpilih: {displayValue}
+                  </p>
+                ) : null}
+              </div>
+              <div
+                ref={dateGridRef}
+                data-date-grid
+                data-dragging={dragSelection ? "true" : "false"}
+                onPointerDown={beginDragSelection}
+                onPointerMove={updateDragSelection}
+                onPointerUp={finishDragSelection}
+                onPointerCancel={cancelDragSelection}
+                onDragStart={(event) => event.preventDefault()}
+                className="grid touch-none select-none grid-cols-7 gap-y-1 text-center text-xs"
+                aria-describedby={hintId}
+              >
                 {dayLabels.map((day) => (
                   <div key={day} className="py-1 text-[#8ca1b8]">
                     {day}
@@ -275,15 +453,35 @@ export function DateRangePicker({
                   const muted = day.getMonth() !== viewMonth;
                   const value = toInputDate(day);
                   const selected = selectedDateSet.has(value);
+                  const visuallySelected = visualDateSet.has(value);
+                  const previewed = dragDateSet.has(value);
+                  const parsedValue = parseInputDate(value);
+                  const previousDate = parsedValue ? new Date(parsedValue) : null;
+                  const nextDate = parsedValue ? new Date(parsedValue) : null;
+                  previousDate?.setDate(previousDate.getDate() - 1);
+                  nextDate?.setDate(nextDate.getDate() + 1);
+                  const connectedBefore = previousDate
+                    ? visualDateSet.has(toInputDate(previousDate))
+                    : false;
+                  const connectedAfter = nextDate
+                    ? visualDateSet.has(toInputDate(nextDate))
+                    : false;
+                  const rangeMiddle = visuallySelected && connectedBefore && connectedAfter;
                   return (
                     <button
                       type="button"
                       key={day.toISOString()}
-                      onClick={() => chooseDay(day)}
+                      data-date-value={value}
+                      onClick={(event) => handleDayClick(event, day)}
                       aria-pressed={selected}
-                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-sm transition ${
-                        selected
-                          ? "bg-[#0067b1] font-bold text-white"
+                      title={formatDateRangeID(value, value, [value])}
+                      className={`mx-auto flex h-8 w-8 cursor-grab items-center justify-center rounded-lg text-sm outline-none transition-colors duration-75 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[#0067b1] focus-visible:ring-offset-2 ${
+                        previewed && !rangeMiddle
+                          ? "bg-[#005a9f] font-bold text-white shadow-[0_2px_7px_rgba(0,90,159,0.28)]"
+                          : rangeMiddle
+                            ? "bg-[#d8ebf8] font-bold text-[#005a9f]"
+                            : visuallySelected
+                              ? "bg-[#0067b1] font-bold text-white shadow-[0_2px_7px_rgba(0,103,177,0.22)]"
                           : muted
                             ? "text-[#b3c0ce] hover:bg-[#edf4fb]"
                             : "text-[#0f2d4a] hover:bg-[#edf4fb]"
