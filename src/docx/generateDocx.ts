@@ -983,18 +983,26 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
     const sectionRows = block.meta.headingRows.map((heading) =>
       new TableRow({
         cantSplit: true,
-        children: [
-          compactCell(
-            [appendixParagraph(`${heading.label}.`, { bold: true, size: 22, align: AlignmentType.CENTER })],
-            APPENDIX_COLUMN_WIDTHS[0],
-            true,
-          ),
-          compactSpanningCell(
-            [appendixParagraph(heading.title, { bold: true, size: 22 })],
-            3,
-            true,
-          ),
-        ],
+        children: heading.label
+          ? [
+              compactCell(
+                [appendixParagraph(`${heading.label}.`, { bold: true, size: 22, align: AlignmentType.CENTER })],
+                APPENDIX_COLUMN_WIDTHS[0],
+                true,
+              ),
+              compactSpanningCell(
+                [appendixParagraph(heading.title, { bold: true, size: 22 })],
+                3,
+                true,
+              ),
+            ]
+          : [
+              compactSpanningCell(
+                [appendixParagraph(heading.title, { bold: true, size: 22 })],
+                4,
+                true,
+              ),
+            ],
       }),
     );
     return [

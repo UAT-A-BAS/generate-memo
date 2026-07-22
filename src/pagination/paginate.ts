@@ -544,11 +544,23 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   });
   rowsByDate.forEach((rows, dateId) => {
     const labels = new Map<string, { label: string; title: string; depth: number }>();
+    const hierarchy = buildScenarioHierarchy(rows);
+    const singleRootLabel = hierarchy.children.length === 1
+      ? hierarchy.children[0]?.label
+      : undefined;
     const visit = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
-      labels.set(node.id, { label: node.label, title: node.title, depth: node.depth });
+      const singleRootPrefix = singleRootLabel ? `${singleRootLabel}.` : "";
+      const label = !singleRootLabel
+        ? node.label
+        : node.label === singleRootLabel
+          ? ""
+          : node.label.startsWith(singleRootPrefix)
+            ? node.label.slice(singleRootPrefix.length)
+            : node.label;
+      labels.set(node.id, { label, title: node.title, depth: node.depth });
       visit(node.children);
     });
-    visit(buildScenarioHierarchy(rows).children);
+    visit(hierarchy.children);
     labelsByDate.set(dateId, labels);
   });
 
@@ -591,7 +603,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       commonDepth < headingPath.length &&
       headingPath[commonDepth]?.id === previousHeadingIds[commonDepth]
     ) commonDepth += 1;
-    const headingRows = isSplitContinuation
+    const headingRows = (isSplitContinuation
       ? []
       : headingPath.slice(commonDepth).map((heading, offset) => {
           const resolved = labelsByDate.get(dateGroupId)?.get(heading.id);
@@ -601,7 +613,8 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
             title: resolved?.title ?? heading.title,
             depth: resolved?.depth ?? commonDepth + offset + 1,
           };
-        });
+        }))
+      .filter((heading) => heading.label || heading.title.trim());
     const showSection = headingRows.length > 0;
     const lastHeading = headingRows.at(-1);
 

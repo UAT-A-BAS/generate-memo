@@ -1136,11 +1136,12 @@ test("calendar popup escapes sortable row clipping", async ({ page }) => {
   await expect(calendar).toHaveCSS("position", "fixed");
 });
 
-test("appendix section lettering restarts for each date and fills available page space", async ({ page }) => {
+test("appendix single sections omit lettering per date and fill available page space", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, denseAppendixDraft());
 
-  await expect(page.locator("aside table").getByText("A.", { exact: true })).toHaveCount(3);
+  await expect(page.locator("aside table").getByText("A.", { exact: true })).toHaveCount(0);
+  await expect(page.locator("aside table").getByText(/^Bagian [1-3]$/)).toHaveCount(3);
   await expect(page.locator("aside").getByText(/Lampiran - Skenario .*Sambungan/)).toHaveCount(0);
 });
 
@@ -1195,7 +1196,7 @@ test("one appendix section continues across A4 pages without a new section", asy
 
   const appendixPages = page.locator('aside article[data-page-kind="appendix"]');
   await expect(appendixPages).toHaveCount(2);
-  await expect(appendixPages.getByText("A.", { exact: true })).toHaveCount(1);
+  await expect(appendixPages.getByText("A.", { exact: true })).toHaveCount(0);
   await expect(appendixPages.getByText(sectionTitle, { exact: true })).toHaveCount(1);
 
   const pageOverflow = await appendixPages
@@ -2331,8 +2332,116 @@ test("appendix scenario uses section header numbering", async ({ page }) => {
   await page.getByRole("textbox", { name: "Bagian * A" }).fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
 
   const appendixTable = page.locator("aside table").last();
-  await expect(appendixTable).toContainText("A.Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
+  await expect(appendixTable.getByText("A.", { exact: true })).toHaveCount(0);
+  await expect(appendixTable.getByText("Verifikasi Landing Page Pemol Giro Badan (SEEDS)", { exact: true })).toBeVisible();
   await expect(appendixTable).toContainText("1.");
+});
+
+test("appendix uses local numeric headings for one section and letters for multiple sections", async ({ page }) => {
+  const base = completeDraft();
+  const scenario = base.appendixScenarios[0];
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...base,
+    appendixScenarios: [
+      {
+        ...scenario,
+        id: "single-root-row",
+        dateGroupId: "single-hierarchy-date",
+        startDate: "2026-07-09",
+        endDate: "2026-07-09",
+        sectionGroupId: "single-root",
+        section: "Bagian Tunggal",
+        headingPath: [{ id: "single-root", title: "Bagian Tunggal" }],
+        scenario: richText("Skenario bagian tunggal"),
+      },
+      {
+        ...scenario,
+        id: "single-child-row",
+        dateGroupId: "single-hierarchy-date",
+        startDate: "2026-07-09",
+        endDate: "2026-07-09",
+        sectionGroupId: "single-root",
+        section: "Bagian Tunggal",
+        headingPath: [
+          { id: "single-root", title: "Bagian Tunggal" },
+          { id: "single-child", title: "Subbagian Tunggal" },
+        ],
+        scenario: richText("Skenario subbagian tunggal"),
+      },
+      {
+        ...scenario,
+        id: "single-grandchild-row",
+        dateGroupId: "single-hierarchy-date",
+        startDate: "2026-07-09",
+        endDate: "2026-07-09",
+        sectionGroupId: "single-root",
+        section: "Bagian Tunggal",
+        headingPath: [
+          { id: "single-root", title: "Bagian Tunggal" },
+          { id: "single-child", title: "Subbagian Tunggal" },
+          { id: "single-grandchild", title: "Sub-subbagian Tunggal" },
+        ],
+        scenario: richText("Skenario sub-subbagian tunggal"),
+      },
+      {
+        ...scenario,
+        id: "multiple-alpha-row",
+        dateGroupId: "multiple-hierarchy-date",
+        startDate: "2026-07-10",
+        endDate: "2026-07-10",
+        sectionGroupId: "multiple-alpha",
+        section: "Bagian Alpha",
+        headingPath: [{ id: "multiple-alpha", title: "Bagian Alpha" }],
+        scenario: richText("Skenario bagian alpha"),
+      },
+      {
+        ...scenario,
+        id: "multiple-beta-row",
+        dateGroupId: "multiple-hierarchy-date",
+        startDate: "2026-07-10",
+        endDate: "2026-07-10",
+        sectionGroupId: "multiple-beta",
+        section: "Bagian Beta",
+        headingPath: [{ id: "multiple-beta", title: "Bagian Beta" }],
+        scenario: richText("Skenario bagian beta"),
+      },
+    ],
+  });
+
+  const appendixTable = page.locator('aside article[data-page-kind="appendix"] table').last();
+  const headingRow = (title: string) => appendixTable
+    .getByText(title, { exact: true })
+    .locator("xpath=ancestor::tr[1]");
+
+  await expect(headingRow("Bagian Tunggal").locator("td")).toHaveCount(1);
+  await expect(headingRow("Bagian Tunggal").locator("td")).toHaveAttribute("colspan", "4");
+  await expect(headingRow("Subbagian Tunggal").locator("td").first()).toHaveText("1.");
+  await expect(headingRow("Sub-subbagian Tunggal").locator("td").first()).toHaveText("1.1.");
+  await expect(headingRow("Bagian Alpha").locator("td").first()).toHaveText("A.");
+  await expect(headingRow("Bagian Beta").locator("td").first()).toHaveText("B.");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const appendixXml = documentTableAround(
+    await documentXmlFrom(await downloadPromise),
+    ">Hasil/Keterangan</w:t>",
+  );
+  const docxRow = (title: string) => {
+    const textIndex = appendixXml.indexOf(title);
+    expect(textIndex).toBeGreaterThan(-1);
+    return appendixXml.slice(
+      appendixXml.lastIndexOf("<w:tr", textIndex),
+      appendixXml.indexOf("</w:tr>", textIndex) + "</w:tr>".length,
+    );
+  };
+
+  expect(docxRow("Bagian Tunggal").match(/<w:tc\b/g) ?? []).toHaveLength(1);
+  expect(docxRow("Bagian Tunggal")).toContain('<w:gridSpan w:val="4"/>');
+  expect(docxRow("Subbagian Tunggal")).toContain(">1.</w:t>");
+  expect(docxRow("Sub-subbagian Tunggal")).toContain(">1.1.</w:t>");
+  expect(docxRow("Bagian Alpha")).toContain(">A.</w:t>");
+  expect(docxRow("Bagian Beta")).toContain(">B.</w:t>");
 });
 
 test("lampiran toggle shows attachment list in preview", async ({ page }) => {
