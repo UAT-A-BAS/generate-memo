@@ -190,6 +190,17 @@ function isClosingBlock(block: PreviewBlock) {
     block.type === "initials";
 }
 
+function contiguousClosingHeight(blocks: PreviewBlock[], startIndex: number) {
+  let height = 0;
+
+  for (const block of blocks.slice(startIndex)) {
+    if (!isClosingBlock(block)) break;
+    height += block.estimatedHeight;
+  }
+
+  return height;
+}
+
 function compactTextHeight(value: string, charsPerLine = 76) {
   return Math.max(1, visualLineCount(value, charsPerLine)) * 16;
 }
@@ -661,7 +672,7 @@ function packPages(
     return block.type === "development-row" ? 88 : 80;
   };
 
-  for (const block of blocks) {
+  for (const [blockIndex, block] of blocks.entries()) {
     const hasContent = current.blocks.length > 0;
     const closingBlock = options.kind === "main" && isClosingBlock(block);
     const currentHasClosing = current.blocks.some(isClosingBlock);
@@ -670,7 +681,10 @@ function packPages(
       current.blocks[current.blocks.length - 1],
     );
     const wouldOverflow = used + sectionHeadingHeight + block.estimatedHeight > limit;
-    const shouldStartDedicatedClosingPage = closingBlock && hasContent && !currentHasClosing;
+    const closingGroupWouldOverflow = closingBlock && !currentHasClosing &&
+      used + contiguousClosingHeight(blocks, blockIndex) > limit;
+    const shouldStartDedicatedClosingPage = closingBlock && hasContent &&
+      !currentHasClosing && closingGroupWouldOverflow;
     const shouldBreakForOverflow = (wouldOverflow || shouldStartDedicatedClosingPage) && hasContent;
 
     if (shouldBreakForOverflow) {

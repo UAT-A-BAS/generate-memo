@@ -1779,6 +1779,13 @@ test("closing blocks use one-line spacing and continuation content starts compac
       exact: true,
     }),
   ).toBeVisible();
+  await expect(
+    schedulePage.getByRole("heading", {
+      name: "PIC yang Dapat Dihubungi",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(schedulePage.getByText("abc/uat-a", { exact: true })).toBeVisible();
 
   const continuationRule = schedulePage.locator("div.h-px");
   await expect(continuationRule).toHaveCount(1);
@@ -1836,6 +1843,10 @@ test("closing blocks use one-line spacing and continuation content starts compac
   expect(scheduleContinuationIndex).toBeGreaterThan(-1);
   expect(scheduleContext).toContain('w:before="240"');
   expect(scheduleContext).not.toContain('w:before="120"');
+
+  const contactIndex = xml.indexOf("PIC yang Dapat Dihubungi", scheduleIndex);
+  expect(contactIndex).toBeGreaterThan(scheduleIndex);
+  expect(xml.slice(scheduleIndex, contactIndex)).not.toContain("<w:pageBreakBefore/>");
 
   const closingIndex = xml.indexOf("Demikian informasi ini kami sampaikan");
   const closingContext = xml.slice(Math.max(0, closingIndex - 500), closingIndex + 150);
@@ -2420,6 +2431,23 @@ test("schedule keeps the complete date range together in preview and DOCX", asyn
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml).toContain("12 – 19 Juni 2026");
+});
+
+test("schedule combines a shared year across different months in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    pilotSchedule: { startDate: "2026-07-23", endDate: "2026-08-04" },
+  });
+
+  const expected = "23 Juli \u2013 4 Agustus 2026";
+  await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain(expected.replaceAll(" ", "\u00A0"));
+  expect(xml).not.toContain("23\u00A0Juli\u00A02026\u00A0\u2013\u00A04\u00A0Agustus\u00A02026");
 });
 
 test("all memo calendars render skipped dates as compact ranges in preview and DOCX", async ({ page }) => {

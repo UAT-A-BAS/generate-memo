@@ -9,6 +9,10 @@ const monthYearFormatter = new Intl.DateTimeFormat("id-ID", {
   year: "numeric",
 });
 
+const monthFormatter = new Intl.DateTimeFormat("id-ID", {
+  month: "long",
+});
+
 const dayFormatter = new Intl.DateTimeFormat("id-ID", {
   day: "numeric",
 });
@@ -120,7 +124,27 @@ function formatDateSegmentID(segment: { start: string; end: string }) {
     return `${dayFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
   }
 
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${dayFormatter.format(start)} ${monthFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
+  }
+
   return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
+}
+
+function formatDateSegmentWithoutYear(segment: { start: string; end: string }) {
+  const start = toDate(segment.start);
+  const end = toDate(segment.end);
+  if (!start || !end) return "-";
+
+  if (segment.start === segment.end) {
+    return `${dayFormatter.format(start)} ${monthFormatter.format(start)}`;
+  }
+
+  if (start.getMonth() === end.getMonth()) {
+    return `${dayFormatter.format(start)} – ${dayFormatter.format(end)} ${monthFormatter.format(end)}`;
+  }
+
+  return `${dayFormatter.format(start)} ${monthFormatter.format(start)} – ${dayFormatter.format(end)} ${monthFormatter.format(end)}`;
 }
 
 export function formatDateSelectionID(values: readonly string[]) {
@@ -137,6 +161,10 @@ export function formatDateSelectionID(values: readonly string[]) {
 
   if (sameMonth) {
     return `${segments.map(segmentDayText).join(", ")} ${monthYearFormatter.format(last)}`;
+  }
+
+  if (first && last && first.getFullYear() === last.getFullYear()) {
+    return `${segments.map(formatDateSegmentWithoutYear).join(", ")} ${last.getFullYear()}`;
   }
 
   return segments.map(formatDateSegmentID).join(", ");
@@ -166,6 +194,10 @@ export function formatDateRangeID(startValue: string, endValue: string, selected
 
   if (sameMonth) {
     return `${dayFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
+  }
+
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${dayFormatter.format(start)} ${monthFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
   }
 
   return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
