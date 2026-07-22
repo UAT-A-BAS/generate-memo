@@ -2327,9 +2327,7 @@ test("review comments can be added to a field and focused", async ({ page }) => 
 
 test("appendix preview omits the only section heading", async ({ page }) => {
   await page.goto("http://localhost:3002");
-
-  await page.getByLabel("Nama Project").fill("BDS Web Gen 2 versi 4.3.0");
-  await page.getByRole("textbox", { name: "Bagian A" }).fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
+  await importDraft(page, completeDraft());
 
   const appendixTable = page.locator("aside table").last();
   await expect(appendixTable.getByText("A.", { exact: true })).toHaveCount(0);
@@ -3565,9 +3563,19 @@ test("one appendix section allows an empty title and exports without a heading r
     }],
   });
 
-  await expect(page.getByRole("textbox", { name: "Bagian A" })).toBeVisible();
+  const disabledSection = page.locator('[data-scenario-section-disabled="true"]');
+  const sectionTitle = page.getByRole("textbox", { name: "Bagian A" });
+  const tooltip = disabledSection.getByRole("tooltip");
+
+  await expect(sectionTitle).toBeDisabled();
   await expect(page.getByRole("textbox", { name: "Bagian * A" })).toHaveCount(0);
-  await expect(page.getByText("Tanpa judul (opsional)", { exact: true })).toBeVisible();
+  await expect(page.getByText("Tidak perlu diisi", { exact: true })).toBeVisible();
+  await expect(tooltip).toHaveText("Tidak perlu diisi jika hanya 1 Bagian/Poin pada Lampiran Skenario Memo");
+  await expect(tooltip).toHaveCSS("opacity", "0");
+  await disabledSection.hover();
+  await expect(tooltip).toHaveCSS("opacity", "1");
+  await disabledSection.focus();
+  await expect(tooltip).toHaveCSS("opacity", "1");
   await expect(page.locator('aside [data-preview-field-id^="scenario-section-"]')).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download");
@@ -3591,6 +3599,9 @@ test("newly added mandatory appendix fields also block DOCX generation", async (
 
   await expect(appendixPanel.getByRole("textbox", { name: "Bagian * A" })).toBeVisible();
   await expect(appendixPanel.getByRole("textbox", { name: "Bagian * B" })).toBeVisible();
+  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * A" })).toBeEnabled();
+  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * B" })).toBeEnabled();
+  await expect(appendixPanel.locator('[data-scenario-section-disabled="true"]')).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();

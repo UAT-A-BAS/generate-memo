@@ -2543,59 +2543,79 @@ function AppendixPanel({
                     itemLabel={(section) => `bagian ${section.marker}`}
                     renderItem={(section) => {
                       const titleIsRequired = scenarioSectionGroups(group.rows).length > 1;
+                      const disabledReasonId = `scenario-section-disabled-reason-${section.id}`;
                       return (
                         <section data-scenario-heading-level="1" className="rounded-xl border border-[#d8e1eb] bg-white p-2">
-                        <details
-                          open={detailOpen(`section:${section.id}`, true)}
-                          onToggle={(event) => rememberDetailState(`section:${section.id}`, event)}
-                          className="group/section"
-                        >
-                          <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
-                            <span className="flex items-center gap-2">
-                              {bulkDeleteMode ? deleteCheckbox(`section:${group.id}:${section.id}`, `Pilih bagian ${section.marker}`) : null}
-                              <span>Bagian {section.marker}</span>
-                            </span>
-                            <span className="min-w-0 text-right text-xs font-semibold text-[#5b6778]">
-                              <span data-scenario-section-title className="block break-words">
-                                {section.title || (titleIsRequired ? "Belum diberi nama" : "Tanpa judul (opsional)")}
+                          <details
+                            open={detailOpen(`section:${section.id}`, true)}
+                            onToggle={(event) => rememberDetailState(`section:${section.id}`, event)}
+                            className="group/section"
+                          >
+                            <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-1.5 text-sm font-bold text-[#0f2d4a] hover:bg-[#f7f9fc] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
+                              <span className="flex items-center gap-2">
+                                {bulkDeleteMode ? deleteCheckbox(`section:${group.id}:${section.id}`, `Pilih bagian ${section.marker}`) : null}
+                                <span>Bagian {section.marker}</span>
                               </span>
-                              <span data-scenario-section-count className="mt-0.5 block whitespace-nowrap">
-                                {section.rows.length} skenario
-                              </span>
-                            </span>
-                          </summary>
-                          <div className="mt-2">
-                            <FieldLabel
-                              label="Bagian"
-                              fieldId={`scenario-section-${section.rows[0]?.id}`}
-                              required={titleIsRequired}
-                            >
-                              <div className="grid grid-cols-[42px_1fr] overflow-hidden rounded-lg border border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
-                                <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
-                                  {section.marker}
+                              <span className="min-w-0 text-right text-xs font-semibold text-[#5b6778]">
+                                <span data-scenario-section-title className="block break-words">
+                                  {section.title || (titleIsRequired ? "Belum diberi nama" : "Tidak perlu diisi")}
                                 </span>
-                                <AutoResizeTextarea
-                                  value={section.title}
-                                  rows={1}
-                                  onChange={(event) => updateSectionTitle(section, event.target.value)}
-                                  className="min-h-10 border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none"
+                                <span data-scenario-section-count className="mt-0.5 block whitespace-nowrap">
+                                  {section.rows.length} skenario
+                                </span>
+                              </span>
+                            </summary>
+                            <div className="mt-2">
+                              <FieldLabel
+                                label="Bagian"
+                                fieldId={`scenario-section-${section.rows[0]?.id}`}
+                                required={titleIsRequired}
+                              >
+                                <div
+                                  className="group/disabled-section relative"
+                                  tabIndex={titleIsRequired ? undefined : 0}
+                                  aria-label={titleIsRequired ? undefined : `Bagian ${section.marker} dinonaktifkan`}
+                                  aria-describedby={titleIsRequired ? undefined : disabledReasonId}
+                                  data-scenario-section-disabled={titleIsRequired ? undefined : "true"}
+                                >
+                                  <div className={`grid grid-cols-[42px_1fr] overflow-hidden rounded-lg border ${titleIsRequired ? "border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10" : "cursor-not-allowed border-slate-300 bg-slate-100"}`}>
+                                    <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
+                                      {section.marker}
+                                    </span>
+                                    <AutoResizeTextarea
+                                      value={section.title}
+                                      rows={1}
+                                      disabled={!titleIsRequired}
+                                      aria-describedby={titleIsRequired ? undefined : disabledReasonId}
+                                      onChange={(event) => updateSectionTitle(section, event.target.value)}
+                                      className="min-h-10 border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                                    />
+                                  </div>
+                                  {!titleIsRequired ? (
+                                    <span
+                                      id={disabledReasonId}
+                                      role="tooltip"
+                                      className="pointer-events-none absolute bottom-[calc(100%+0.5rem)] left-0 z-20 w-max max-w-[320px] rounded-md bg-[#0f2d4a] px-3 py-2 text-xs font-semibold leading-4 text-white opacity-0 shadow-lg transition-opacity group-hover/disabled-section:opacity-100 group-focus/disabled-section:opacity-100 motion-reduce:transition-none"
+                                    >
+                                      Tidak perlu diisi jika hanya 1 Bagian/Poin pada Lampiran Skenario Memo
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </FieldLabel>
+
+                              <div className="mt-3">
+                                <DragDropList
+                                  items={buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id)?.rows ?? []}
+                                  onReorder={(nextSectionRows) => {
+                                    const node = buildScenarioHierarchy(section.rows).children.find((item) => item.id === section.id);
+                                    if (node) replaceNodeRows(node, nextSectionRows);
+                                  }}
+                                  listId={scenarioListId(section.id)}
+                                  withContext={false}
+                                  itemLabel={(_, index) => `skenario ${index + 1}`}
+                                  renderItem={(row, rowIndex) => scenarioEditor(row, rowIndex)}
                                 />
                               </div>
-                            </FieldLabel>
-
-                            <div className="mt-3">
-                              <DragDropList
-                                items={buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id)?.rows ?? []}
-                                onReorder={(nextSectionRows) => {
-                                  const node = buildScenarioHierarchy(section.rows).children.find((item) => item.id === section.id);
-                                  if (node) replaceNodeRows(node, nextSectionRows);
-                                }}
-                                listId={scenarioListId(section.id)}
-                                withContext={false}
-                                itemLabel={(_, index) => `skenario ${index + 1}`}
-                                renderItem={(row, rowIndex) => scenarioEditor(row, rowIndex)}
-                              />
-                            </div>
 
                             {(() => {
                               const sectionNode = buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id);
