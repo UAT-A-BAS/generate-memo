@@ -253,6 +253,15 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
 
   const validatedDateGroups = new Set<string>();
   const validatedHeadingGroups = new Set<string>();
+  const sectionIdsByDate = new Map<string, Set<string>>();
+  draft.appendixScenarios.forEach((row) => {
+    const firstHeading = scenarioHeadingPath(row)[0];
+    if (!firstHeading) return;
+    const dateGroupKey = row.dateGroupId ?? row.id;
+    const sectionIds = sectionIdsByDate.get(dateGroupKey) ?? new Set<string>();
+    sectionIds.add(firstHeading.id);
+    sectionIdsByDate.set(dateGroupKey, sectionIds);
+  });
   draft.appendixScenarios.forEach((row, index) => {
     const dateGroupKey = row.dateGroupId ?? row.id;
     if (!validatedDateGroups.has(dateGroupKey)) {
@@ -264,7 +273,8 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
     scenarioHeadingPath(row).forEach((heading, headingIndex) => {
       if (validatedHeadingGroups.has(heading.id)) return;
       validatedHeadingGroups.add(heading.id);
-      if (!hasText(heading.title)) {
+      const titleIsRequired = headingIndex > 0 || (sectionIdsByDate.get(dateGroupKey)?.size ?? 0) > 1;
+      if (titleIsRequired && !hasText(heading.title)) {
         add(
           headingIndex === 0 ? `scenario-section-${row.id}` : `scenario-heading-${heading.id}`,
           `Lampiran Skenario ${index + 1}: ${scenarioHeadingName(headingIndex + 1)}`,
@@ -2531,8 +2541,10 @@ function AppendixPanel({
                     listId={group.id}
                     withContext={false}
                     itemLabel={(section) => `bagian ${section.marker}`}
-                    renderItem={(section) => (
-                      <section data-scenario-heading-level="1" className="rounded-xl border border-[#d8e1eb] bg-white p-2">
+                    renderItem={(section) => {
+                      const titleIsRequired = scenarioSectionGroups(group.rows).length > 1;
+                      return (
+                        <section data-scenario-heading-level="1" className="rounded-xl border border-[#d8e1eb] bg-white p-2">
                         <details
                           open={detailOpen(`section:${section.id}`, true)}
                           onToggle={(event) => rememberDetailState(`section:${section.id}`, event)}
@@ -2545,7 +2557,7 @@ function AppendixPanel({
                             </span>
                             <span className="min-w-0 text-right text-xs font-semibold text-[#5b6778]">
                               <span data-scenario-section-title className="block break-words">
-                                {section.title || "Belum diberi nama"}
+                                {section.title || (titleIsRequired ? "Belum diberi nama" : "Tanpa judul (opsional)")}
                               </span>
                               <span data-scenario-section-count className="mt-0.5 block whitespace-nowrap">
                                 {section.rows.length} skenario
@@ -2556,7 +2568,7 @@ function AppendixPanel({
                             <FieldLabel
                               label="Bagian"
                               fieldId={`scenario-section-${section.rows[0]?.id}`}
-                              required
+                              required={titleIsRequired}
                             >
                               <div className="grid grid-cols-[42px_1fr] overflow-hidden rounded-lg border border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10">
                                 <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
@@ -2630,7 +2642,8 @@ function AppendixPanel({
                           </div>
                         </details>
                       </section>
-                    )}
+                      );
+                    }}
                   />
 
                   {!bulkDeleteMode ? (

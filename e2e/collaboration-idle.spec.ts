@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function installFakeCollaborationSocket(page: Page) {
   await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket;
     Object.defineProperty(window, "__MEMO_COLLAB_IDLE_TIMERS__", {
       configurable: true,
       value: {
@@ -66,9 +67,19 @@ async function installFakeCollaborationSocket(page: Page) {
       }
     }
 
+    const RoutedWebSocket = new Proxy(NativeWebSocket, {
+      construct(Target, args) {
+        const url = String(args[0] ?? "");
+        if (url.startsWith("wss://generate-memo-collab.alex-marcello08.workers.dev/collab/")) {
+          return new FakeWebSocket(url);
+        }
+        return Reflect.construct(Target, args);
+      },
+    });
+
     Object.defineProperty(window, "WebSocket", {
       configurable: true,
-      value: FakeWebSocket,
+      value: RoutedWebSocket,
     });
   });
 }

@@ -705,30 +705,17 @@ function renderGroupedBlocks(
                 ) : null}
                 {item.meta.headingRows.map((heading) => (
                   <tr key={heading.id} className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
-                    {heading.label ? (
-                      <>
-                        <td className="border border-slate-900 px-1 py-0.5 text-center align-middle" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
-                          {heading.label}.
-                        </td>
-                        <td
-                          className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle"
-                          colSpan={3}
-                          style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}
-                          data-preview-field-id={heading.depth === 1 ? `scenario-section-${item.row.id}` : `scenario-heading-${heading.id}`}
-                        >
-                          {heading.title}
-                        </td>
-                      </>
-                    ) : (
-                      <td
-                        className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle"
-                        colSpan={4}
-                        style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}
-                        data-preview-field-id={`scenario-section-${item.row.id}`}
-                      >
-                        {heading.title}
-                      </td>
-                    )}
+                    <td className="border border-slate-900 px-1 py-0.5 text-center align-middle" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
+                      {heading.label}.
+                    </td>
+                    <td
+                      className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle"
+                      colSpan={3}
+                      style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}
+                      data-preview-field-id={heading.depth === 1 ? `scenario-section-${item.row.id}` : `scenario-heading-${heading.id}`}
+                    >
+                      {heading.title}
+                    </td>
                   </tr>
                 ))}
                 <tr>

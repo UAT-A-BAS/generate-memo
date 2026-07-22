@@ -492,7 +492,7 @@ test("MOM scenario import replaces the completely empty appendix placeholder", a
   await expect(page.locator("[data-scenario-row]:not([open])")).toHaveCount(0);
   await expect(page.locator("[data-scenario-date-group]")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("1 Juli 2026");
-  await expect(page.getByRole("textbox", { name: /Bagian \* A/ }).first()).toHaveValue("Fitur Alpha");
+  await expect(page.getByRole("textbox", { name: "Bagian A" }).first()).toHaveValue("Fitur Alpha");
   await expect(page.getByLabel("Nama Project")).toHaveValue("");
 });
 
@@ -511,7 +511,7 @@ test("MOM scenario import appends only appendix scenarios", async ({ page }) => 
   await expect(page.getByLabel("Nama Project")).toHaveValue(originalProject);
   await expect(page.getByLabel("Jabatan / Unit").first()).toHaveValue("Kepala Operasi Cabang Pluit");
   await expect(page.locator("[data-scenario-row]")).toHaveCount(originalRows + 3);
-  await expect(page.getByRole("textbox", { name: /Bagian \* [A-Z]+/ }).nth(1)).toHaveValue("Fitur Alpha");
+  await expect(page.getByRole("textbox", { name: /Bagian [A-Z]+/ }).nth(1)).toHaveValue("Fitur Alpha");
   await expect(page.locator('[data-field-id^="scenario-pic-"] textarea').last()).toHaveValue("");
   await expect(page.getByRole("button", { name: /Tanggal \d+ \*/ }).last()).toContainText("8 – 9 Juli 2026");
   await expect(page.locator("[data-scenario-row]").last()).toContainText("Langkah Beta");
@@ -708,7 +708,7 @@ test("contextual scenario add buttons insert inside their own hierarchy level", 
 
   const appendixText = await page.locator('aside article[data-page-kind="appendix"]').first().textContent() ?? "";
   expect(appendixText.indexOf("Skenario level tanggal baru")).toBeLessThan(
-    appendixText.indexOf("Verifikasi Utama"),
+    appendixText.indexOf("Skenario langsung"),
   );
   expect(appendixText.indexOf("Skenario level bagian baru")).toBeLessThan(
     appendixText.indexOf("Verifikasi Input"),
@@ -1141,7 +1141,7 @@ test("appendix single sections omit lettering per date and fill available page s
   await importDraft(page, denseAppendixDraft());
 
   await expect(page.locator("aside table").getByText("A.", { exact: true })).toHaveCount(0);
-  await expect(page.locator("aside table").getByText(/^Bagian [1-3]$/)).toHaveCount(3);
+  await expect(page.locator("aside table").getByText(/^Bagian [1-3]$/)).toHaveCount(0);
   await expect(page.locator("aside").getByText(/Lampiran - Skenario .*Sambungan/)).toHaveCount(0);
 });
 
@@ -1197,7 +1197,7 @@ test("one appendix section continues across A4 pages without a new section", asy
   const appendixPages = page.locator('aside article[data-page-kind="appendix"]');
   await expect(appendixPages).toHaveCount(2);
   await expect(appendixPages.getByText("A.", { exact: true })).toHaveCount(0);
-  await expect(appendixPages.getByText(sectionTitle, { exact: true })).toHaveCount(1);
+  await expect(appendixPages.getByText(sectionTitle, { exact: true })).toHaveCount(0);
 
   const pageOverflow = await appendixPages
     .locator("[data-preview-page-content]")
@@ -1209,7 +1209,7 @@ test("one appendix section continues across A4 pages without a new section", asy
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  expect((xml.match(new RegExp(sectionTitle, "g")) ?? []).length).toBe(1);
+  expect(xml).not.toContain(sectionTitle);
   expect((xml.match(/>Hasil\/Keterangan<\/w:t>/g) ?? []).length).toBe(2);
 });
 
@@ -2325,15 +2325,15 @@ test("review comments can be added to a field and focused", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "Isi nama kolaborator" })).toHaveCount(0);
 });
 
-test("appendix scenario uses section header numbering", async ({ page }) => {
+test("appendix preview omits the only section heading", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await page.getByLabel("Nama Project").fill("BDS Web Gen 2 versi 4.3.0");
-  await page.getByRole("textbox", { name: "Bagian * A" }).fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
+  await page.getByRole("textbox", { name: "Bagian A" }).fill("Verifikasi Landing Page Pemol Giro Badan (SEEDS)");
 
   const appendixTable = page.locator("aside table").last();
   await expect(appendixTable.getByText("A.", { exact: true })).toHaveCount(0);
-  await expect(appendixTable.getByText("Verifikasi Landing Page Pemol Giro Badan (SEEDS)", { exact: true })).toBeVisible();
+  await expect(appendixTable.getByText("Verifikasi Landing Page Pemol Giro Badan (SEEDS)", { exact: true })).toHaveCount(0);
   await expect(appendixTable).toContainText("1.");
 });
 
@@ -2414,8 +2414,7 @@ test("appendix uses local numeric headings for one section and letters for multi
     .getByText(title, { exact: true })
     .locator("xpath=ancestor::tr[1]");
 
-  await expect(headingRow("Bagian Tunggal").locator("td")).toHaveCount(1);
-  await expect(headingRow("Bagian Tunggal").locator("td")).toHaveAttribute("colspan", "4");
+  await expect(appendixTable.getByText("Bagian Tunggal", { exact: true })).toHaveCount(0);
   await expect(headingRow("Subbagian Tunggal").locator("td").first()).toHaveText("1.");
   await expect(headingRow("Sub-subbagian Tunggal").locator("td").first()).toHaveText("1.1.");
   await expect(headingRow("Bagian Alpha").locator("td").first()).toHaveText("A.");
@@ -2436,8 +2435,7 @@ test("appendix uses local numeric headings for one section and letters for multi
     );
   };
 
-  expect(docxRow("Bagian Tunggal").match(/<w:tc\b/g) ?? []).toHaveLength(1);
-  expect(docxRow("Bagian Tunggal")).toContain('<w:gridSpan w:val="4"/>');
+  expect(appendixXml).not.toContain("Bagian Tunggal");
   expect(docxRow("Subbagian Tunggal")).toContain(">1.</w:t>");
   expect(docxRow("Sub-subbagian Tunggal")).toContain(">1.1.</w:t>");
   expect(docxRow("Bagian Alpha")).toContain(">A.</w:t>");
@@ -2478,10 +2476,11 @@ test("appendix hierarchy adds date, section, and scenario in place", async ({ pa
     .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
     .first();
 
-  const sectionInputs = appendixPanel.getByRole("textbox", { name: /Bagian \* [A-Z]+/ });
+  const sectionInputs = appendixPanel.getByRole("textbox", { name: /Bagian(?: \*)? [A-Z]+/ });
   await expect(sectionInputs).toHaveCount(1);
   await appendixPanel.getByRole("button", { name: "Bagian", exact: true }).click();
   await expect(sectionInputs).toHaveCount(2);
+  await expect(appendixPanel.getByRole("textbox", { name: /Bagian \* [A-Z]+/ })).toHaveCount(2);
 
   await expect(appendixPanel.getByRole("button", { name: "Skenario", exact: true })).toHaveCount(2);
   await appendixPanel.getByRole("button", { name: "Skenario", exact: true }).first().click();
@@ -3547,13 +3546,37 @@ test("all rendered mandatory fields block DOCX generation when empty", async ({ 
     "initials",
     "initialsBureau",
     "scenario-date-scenario-test",
-    "scenario-section-scenario-test",
     "scenario-pic-scenario-test",
     "scenario-text-scenario-test",
     "scenario-expected-scenario-test",
   ]) {
     await expect(page.locator(`[data-validation-issue-id="${id}"]`)).toHaveCount(1);
   }
+  await expect(page.locator('[data-validation-issue-id="scenario-section-scenario-test"]')).toHaveCount(0);
+});
+
+test("one appendix section allows an empty title and exports without a heading row", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [{
+      ...completeDraft().appendixScenarios[0],
+      section: "",
+    }],
+  });
+
+  await expect(page.getByRole("textbox", { name: "Bagian A" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Bagian * A" })).toHaveCount(0);
+  await expect(page.getByText("Tanpa judul (opsional)", { exact: true })).toBeVisible();
+  await expect(page.locator('aside [data-preview-field-id^="scenario-section-"]')).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const appendixXml = documentTableAround(
+    await documentXmlFrom(await downloadPromise),
+    ">Hasil/Keterangan</w:t>",
+  );
+  expect(appendixXml).not.toContain(">A.</w:t>");
 });
 
 test("newly added mandatory appendix fields also block DOCX generation", async ({ page }) => {
@@ -3565,6 +3588,9 @@ test("newly added mandatory appendix fields also block DOCX generation", async (
     .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
     .first();
   await appendixPanel.getByRole("button", { name: "Bagian", exact: true }).click();
+
+  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * A" })).toBeVisible();
+  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * B" })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();

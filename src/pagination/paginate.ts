@@ -550,14 +550,19 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       : undefined;
     const visit = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
       const singleRootPrefix = singleRootLabel ? `${singleRootLabel}.` : "";
+      const isSingleRoot = node.label === singleRootLabel;
       const label = !singleRootLabel
         ? node.label
-        : node.label === singleRootLabel
+        : isSingleRoot
           ? ""
           : node.label.startsWith(singleRootPrefix)
             ? node.label.slice(singleRootPrefix.length)
             : node.label;
-      labels.set(node.id, { label, title: node.title, depth: node.depth });
+      labels.set(node.id, {
+        label,
+        title: isSingleRoot ? "" : node.title,
+        depth: node.depth,
+      });
       visit(node.children);
     });
     visit(hierarchy.children);
