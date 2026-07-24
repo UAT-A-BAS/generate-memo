@@ -1,6 +1,7 @@
 {
   "name": "memo-builder-fresh",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,7 +9,9 @@
     "deploy:collab": "npx wrangler@4.101.0 deploy --config wrangler.collab.toml",
     "build": "next build",
     "start": "next start",
+    "serve:e2e": "npm run build && node tests/serve-static.mjs",
     "lint": "eslint",
+    "test:worker": "node --test tests/worker-collab.test.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

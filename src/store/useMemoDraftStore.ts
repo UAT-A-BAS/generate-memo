@@ -163,19 +163,35 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
     if (typeof window === "undefined") return;
 
     try {
+      const storedDraft = window.localStorage.getItem(STORAGE_KEY);
+      let draft = createInitialMemoDraft();
+      let status: SaveStatus = "idle";
+      if (storedDraft) {
+        const parsed = JSON.parse(storedDraft) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Draft lokal tidak valid dan telah direset.");
+        }
+        draft = normalizeMemoDraft(parsed as Partial<MemoDraft>);
+        status = "loaded";
+      }
+      set({
+        draft,
+        history: [],
+        editCheckpoint: undefined,
+        hasLoaded: true,
+        status,
+        error: undefined,
+      });
+    } catch (error) {
       set({
         draft: createInitialMemoDraft(),
         history: [],
         editCheckpoint: undefined,
         hasLoaded: true,
-        status: "idle",
-        error: undefined,
-      });
-    } catch (error) {
-      set({
-        hasLoaded: true,
         status: "error",
-        error: error instanceof Error ? error.message : "Gagal memuat draft lokal",
+        error: error instanceof Error
+          ? `Gagal memuat draft lokal: ${error.message}`
+          : "Gagal memuat draft lokal",
       });
     }
   },

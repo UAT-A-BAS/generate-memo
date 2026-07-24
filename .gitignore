@@ -15,6 +15,7 @@
 /test-results
 /screenshots
 /.worktrees
+/.wrangler
 
 # next.js
 /.next/

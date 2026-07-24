@@ -3,7 +3,7 @@ import type { ScenarioHeading, ScenarioRow } from "@/types/memo";
 import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
 import { createScenarioRow } from "@/templates/bcaMemoTemplate";
-import { datesFromRange } from "@/utils/formatDateRangeID";
+import { datesFromRange, isValidInputDate } from "@/utils/formatDateRangeID";
 import { createId } from "@/utils/ids";
 import { scenarioHierarchyDepth } from "@/utils/scenarioHierarchy";
 
@@ -194,7 +194,9 @@ function parseDateRange(value: string) {
   const source = value.trim();
   if (!source) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(source)) {
-    return { startDate: source, endDate: source, dates: [source] };
+    return isValidInputDate(source)
+      ? { startDate: source, endDate: source, dates: [source] }
+      : null;
   }
 
   const numeric = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s*(?:-|–|—|s\/d)\s*(\d{1,2})[\/-](\d{1,2})[\/-](\d{4}))?$/i.exec(source);

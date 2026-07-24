@@ -468,6 +468,15 @@ function CollaborationPanel({
       <SyncPill label={collaboration.syncLabel} tone={syncTone} />
       <SyncPill label={`Users: ${Math.max(1, collaboration.collaborators.length)}`} tone="neutral" />
       <SyncPill label={`Last synced: ${collaboration.lastSyncedAt ?? "-"}`} tone="neutral" />
+      {collaboration.lastError ? (
+        <span
+          className="max-w-72 rounded-[12px] border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700"
+          role="alert"
+          data-collaboration-error
+        >
+          {collaboration.lastError}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -2772,6 +2781,8 @@ export function MemoBuilderApp() {
   const editControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
   const editControlIndexRef = useRef(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [draftFileError, setDraftFileError] = useState("");
+  const [exportError, setExportError] = useState("");
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [commentMode, setCommentMode] = useState(false);
@@ -2784,6 +2795,7 @@ export function MemoBuilderApp() {
   const [editorPanePercent, setEditorPanePercent] = useState(40);
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
+  const localDraftError = useMemoDraftStore((state) => state.error);
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
   const updateMetadata = useMemoDraftStore((state) => state.updateMetadata);
   const replaceDraft = useMemoDraftStore((state) => state.replaceDraft);
@@ -2927,20 +2939,30 @@ export function MemoBuilderApp() {
     }
     resetDraft();
     setValidationIssues([]);
+    setDraftFileError("");
+    setExportError("");
   }
 
   async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const text = await file.text();
-    const payload = JSON.parse(text);
-    const mapped =
-      payload.appendixScenarios || payload.metadata ? payload : generateMomJsonToMemoDraft(payload);
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text) as Record<string, unknown>;
+      const mapped =
+        payload.appendixScenarios || payload.metadata ? payload : generateMomJsonToMemoDraft(payload);
 
-    importDraft(mapped);
-    setValidationIssues([]);
-    event.target.value = "";
+      importDraft(mapped);
+      setValidationIssues([]);
+      setDraftFileError("");
+    } catch (error) {
+      setDraftFileError(
+        error instanceof Error ? error.message : "File draft tidak dapat dibaca.",
+      );
+    } finally {
+      event.target.value = "";
+    }
   }
 
   async function exportDocx() {
@@ -2952,10 +2974,15 @@ export function MemoBuilderApp() {
     }
 
     setIsExporting(true);
+    setExportError("");
     try {
       const blob = await generateMemoDocxBlob(draft);
       downloadBlob(blob, memoDocxFileName(draft));
       setValidationIssues([]);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Dokumen Word gagal dibuat.",
+      );
     } finally {
       setIsExporting(false);
     }
@@ -3329,6 +3356,16 @@ export function MemoBuilderApp() {
           </div>
         </div>
       </header>
+      {draftFileError || exportError || localDraftError ? (
+        <div
+          className="mx-4 mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
+          role="alert"
+          aria-live="polite"
+          data-draft-error
+        >
+          {draftFileError || exportError || localDraftError}
+        </div>
+      ) : null}
 
       <div
         ref={splitContainerRef}

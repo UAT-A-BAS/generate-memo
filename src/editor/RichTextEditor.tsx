@@ -14,6 +14,18 @@ type RichTextEditorProps = {
   minHeight?: number;
 };
 
+type RichTextEditorWindow = Window & typeof globalThis & {
+  __MEMO_RICH_TEXT_CHANGE_DELAY_MS__?: number;
+};
+
+function changeDelayMs() {
+  if (typeof window === "undefined") return 40;
+  const override = Number(
+    (window as RichTextEditorWindow).__MEMO_RICH_TEXT_CHANGE_DELAY_MS__,
+  );
+  return Number.isFinite(override) && override >= 0 ? override : 40;
+}
+
 function preserveEditorSelection(event: React.MouseEvent<HTMLButtonElement>) {
   event.preventDefault();
 }
@@ -86,7 +98,7 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
       if (changeTimerRef.current) {
         clearTimeout(changeTimerRef.current);
       }
-      changeTimerRef.current = setTimeout(flushPendingChange, 40);
+      changeTimerRef.current = setTimeout(flushPendingChange, changeDelayMs());
     },
     onBlur: flushPendingChange,
   });
@@ -113,11 +125,9 @@ export function RichTextEditor({ value, onChange, minHeight = 120 }: RichTextEdi
 
   useEffect(
     () => () => {
-      if (changeTimerRef.current) {
-        clearTimeout(changeTimerRef.current);
-      }
+      flushPendingChange();
     },
-    [],
+    [flushPendingChange],
   );
 
   if (!editor) {

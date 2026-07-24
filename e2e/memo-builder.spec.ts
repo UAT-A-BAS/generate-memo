@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import JSZip from "jszip";
+import { validateMemoDraftPayload } from "../workers/collab/draftValidation.mjs";
 
 function richText(text: string) {
   return {
@@ -2179,6 +2180,34 @@ test("enter after bold starts plain text", async ({ page }) => {
   expect(html).toContain("<p>Normal</p>");
 });
 
+test("rich text pending changes flush when the editor unmounts", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__MEMO_RICH_TEXT_CHANGE_DELAY_MS__", {
+      configurable: true,
+      value: 5_000,
+    });
+  });
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      memoType: "Nasional",
+    },
+    referenceEnabled: true,
+    reference: richText(""),
+  });
+
+  const editor = page.locator('[data-field-id="reference"] .ProseMirror');
+  await editor.fill("Referensi belum terflush");
+  await page.getByLabel("Tampilkan Referensi").uncheck();
+  await page.getByLabel("Tampilkan Referensi").check();
+
+  await expect(page.locator('[data-field-id="reference"] .ProseMirror')).toContainText(
+    "Referensi belum terflush",
+  );
+});
+
 test("double click does not enable bold typing", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
@@ -2224,6 +2253,29 @@ test("collaboration syncs metadata fields between pages", async ({ browser }) =>
   const secondContext = await browser.newContext();
   const first = await firstContext.newPage();
   const second = await secondContext.newPage();
+  const sentDrafts: unknown[] = [];
+  const sentMessageTypes: string[] = [];
+  const pageErrors: string[] = [];
+  let observedSockets = 0;
+  second.on("pageerror", (error) => pageErrors.push(error.stack ?? error.message));
+  second.on("websocket", (socket) => {
+    observedSockets += 1;
+    socket.on("framesent", (frame) => {
+      const text = typeof frame.payload === "string"
+        ? frame.payload
+        : Buffer.isBuffer(frame.payload)
+          ? frame.payload.toString("utf8")
+          : "";
+      if (!text) return;
+      try {
+        const message = JSON.parse(text) as { type?: string; draft?: unknown };
+        if (message.type) sentMessageTypes.push(message.type);
+        if (message.type === "draft-save") sentDrafts.push(message.draft);
+      } catch {
+        // Ignore non-JSON websocket frames.
+      }
+    });
+  });
 
   await first.goto("http://localhost:3002");
   await first.getByRole("button", { name: "Start Collab" }).click();
@@ -2239,7 +2291,14 @@ test("collaboration syncs metadata fields between pages", async ({ browser }) =>
   await secondIdentityDialog.getByRole("button", { name: "Lanjut" }).click();
   await expect(first.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
   await expect(second.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
+  expect(observedSockets).toBe(1);
   await second.getByLabel("Nama Project").fill("Collab Nama Project");
+  await second.waitForTimeout(1_000);
+  await expect(second.getByLabel("Nama Project")).toHaveValue("Collab Nama Project");
+  await expect.poll(() => sentMessageTypes).toContain("draft-save");
+  expect(sentDrafts.length).toBeGreaterThan(0);
+  expect(validateMemoDraftPayload(sentDrafts.at(-1))).toEqual({ ok: true });
+  expect(pageErrors).toEqual([]);
 
   await expect(first.getByLabel("Nama Project")).toHaveValue("Collab Nama Project", {
     timeout: 10000,
@@ -2613,6 +2672,32 @@ test("calendar day clicks keep previous selected dates and compress adjacent day
   await popup.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect(page.locator("[data-schedule-date]")).toHaveText("3 \u2013 4, 7 Juli 2026");
+});
+
+test("Hari ini uses the browser local date before 07.00 Bangkok", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-23T18:00:00.000Z"));
+  await page.goto("http://localhost:3002");
+
+  await page.locator('[data-field-id="schedule"] button').click();
+  const popup = page.locator("[data-date-range-popup]");
+  await popup.getByRole("button", { name: "Hari ini" }).click();
+  await popup.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.locator("[data-schedule-date]")).toHaveText("24 Juli 2026");
+});
+
+test("invalid ISO calendar dates are removed during draft import", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    pilotSchedule: {
+      startDate: "2026-02-31",
+      endDate: "2026-02-31",
+      dates: ["2026-02-31"],
+    },
+  });
+
+  await expect(page.locator('[data-field-id="schedule"] button')).toContainText("Pilih tanggal");
 });
 
 test("calendar drag adds an inclusive range without replacing selected dates", async ({ page }) => {
@@ -3348,6 +3433,58 @@ test("save draft uses the project name followed by MEMO", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Save" }).click();
   await expect((await downloadPromise).suggestedFilename()).toBe("BDS Web Gen 2 versi 4.3.0_MEMO.json");
+});
+
+test("autosaved local draft survives a reload", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.getByLabel("Nama Project").fill("Draft Persisten");
+  await page.waitForTimeout(3200);
+
+  await page.reload();
+
+  await expect(page.getByLabel("Nama Project")).toHaveValue("Draft Persisten");
+});
+
+test("corrupt local draft resets safely and reports the load failure", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.evaluate(() => {
+    window.localStorage.setItem("memo-builder-fresh:blank-draft-v2", "{broken");
+  });
+
+  await page.reload();
+
+  await expect(page.locator("[data-draft-error]")).toContainText("Gagal memuat draft lokal");
+  await expect(page.getByLabel("Nama Project")).toHaveValue("");
+});
+
+test("invalid draft JSON reports an error and leaves the file input reusable", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const input = page.locator("[data-draft-import-input]");
+  const invalidFile = {
+    name: "invalid-draft.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{invalid"),
+  };
+
+  await input.setInputFiles(invalidFile);
+  await expect(page.locator("[data-draft-error]")).toBeVisible();
+  await expect(input).toHaveValue("");
+  await input.setInputFiles(invalidFile);
+  await expect(page.locator("[data-draft-error]")).toBeVisible();
+});
+
+test("DOCX template failure is visible and releases the export button", async ({ page }) => {
+  await page.route("**/template-assets/validation-template.docx", (route) =>
+    route.fulfill({ status: 503, body: "unavailable" })
+  );
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  const generate = page.getByRole("button", { name: "Buat dokumen Word cepat" });
+  await generate.click();
+
+  await expect(page.locator("[data-draft-error]")).toContainText("HTTP 503");
+  await expect(generate).toBeEnabled();
 });
 
 test("memo list bullets, appendix title, signer wrapping, and DOCX borders follow the document rules", async ({ page }) => {

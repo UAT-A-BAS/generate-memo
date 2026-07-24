@@ -14,7 +14,10 @@ import type {
 import { emptyRichText } from "@/types/richText";
 import { generatePerihal } from "@/utils/generatePerihal";
 import { createId } from "@/utils/ids";
-import { normalizeDateSelection } from "@/utils/formatDateRangeID";
+import {
+  isValidInputDate,
+  normalizeDateSelection,
+} from "@/utils/formatDateRangeID";
 import { scenarioHeadingPath, withScenarioHeadingPath } from "@/utils/scenarioHierarchy";
 
 export function createRecipient(seed: Partial<Recipient> = {}): Recipient {
@@ -226,10 +229,12 @@ export type MemoDraftInput = Partial<Omit<MemoDraft, "metadata">> & {
 
 function normalizeDateFields<T extends { startDate?: string; endDate?: string; dates?: string[] }>(value: T) {
   const dates = normalizeDateSelection(value.dates);
+  const validStartDate = isValidInputDate(value.startDate ?? "") ? value.startDate ?? "" : "";
+  const validEndDate = isValidInputDate(value.endDate ?? "") ? value.endDate ?? "" : "";
   return {
     ...value,
-    startDate: dates[0] ?? value.startDate ?? "",
-    endDate: dates.at(-1) ?? value.endDate ?? value.startDate ?? "",
+    startDate: dates[0] ?? validStartDate,
+    endDate: dates.at(-1) ?? (validEndDate || validStartDate),
     dates,
   };
 }
@@ -256,8 +261,11 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     ? input.appendixScenarios.map((row) => {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
         const dates = normalizeDateSelection(row.dates);
-        const startDate = dates[0] ?? row.startDate ?? legacyDate;
-        const endDate = dates.at(-1) ?? row.endDate ?? row.startDate ?? legacyDate;
+        const rawStartDate = row.startDate ?? legacyDate;
+        const validStartDate = isValidInputDate(rawStartDate) ? rawStartDate : "";
+        const validEndDate = isValidInputDate(row.endDate ?? "") ? row.endDate ?? "" : "";
+        const startDate = dates[0] ?? validStartDate;
+        const endDate = dates.at(-1) ?? (validEndDate || validStartDate);
         const section = row.section?.trim() ? row.section : previousScenarioSection;
         const normalizedStartDate = startDate || previousScenarioStartDate;
         const normalizedEndDate = endDate || previousScenarioEndDate || normalizedStartDate;

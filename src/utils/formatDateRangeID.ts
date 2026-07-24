@@ -18,9 +18,20 @@ const dayFormatter = new Intl.DateTimeFormat("id-ID", {
 });
 
 function toDate(value: string) {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() + 1 !== month ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
 }
 
 function toInputDate(date: Date) {
@@ -47,6 +58,10 @@ export function normalizeDateSelection(values: readonly string[] | undefined) {
   }
 
   return Array.from(unique).sort();
+}
+
+export function isValidInputDate(value: string) {
+  return Boolean(toDate(value));
 }
 
 export function datesFromRange(startValue: string, endValue: string) {
@@ -208,5 +223,5 @@ export function formatDateRangeNonBreakingID(startValue: string, endValue: strin
 }
 
 export function todayInputValue() {
-  return new Date().toISOString().slice(0, 10);
+  return toInputDate(new Date());
 }

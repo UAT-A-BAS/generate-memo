@@ -1462,9 +1462,13 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
   const pages = paginateMemoDraft(draft);
   const mainPages = pages.filter((page) => page.kind === "main" && hasExportablePageContent(page));
   const appendixPages = pages.filter((page) => page.kind === "appendix" && hasExportablePageContent(page));
-  const validationTemplateBuffer = await fetch("/template-assets/validation-template.docx").then(
-    (response) => response.arrayBuffer(),
-  );
+  const templateResponse = await fetch("/template-assets/validation-template.docx");
+  if (!templateResponse.ok) {
+    throw new Error(
+      `Template DOCX gagal dimuat (HTTP ${templateResponse.status}).`,
+    );
+  }
+  const validationTemplateBuffer = await templateResponse.arrayBuffer();
 
   const doc = new Document({
     title: draft.metadata.perihal,
