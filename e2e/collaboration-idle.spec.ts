@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as Y from "yjs";
+import {
+  DEFAULT_COLLAB_WORKER_URL,
+  resolveCollaborationWorkerBaseUrl,
+} from "../src/collaboration/workerUrl";
 
 declare global {
   interface Window {
@@ -112,6 +116,21 @@ async function startCollaboration(page: Page) {
   });
   return page.evaluate(() => window.__memoWs.instances.length);
 }
+
+test("production pages never connect to a loopback collaboration worker", () => {
+  expect(
+    resolveCollaborationWorkerBaseUrl(
+      "http://127.0.0.1:8787",
+      "generate-memo.pages.dev",
+    ),
+  ).toBe(DEFAULT_COLLAB_WORKER_URL);
+  expect(
+    resolveCollaborationWorkerBaseUrl(
+      "http://127.0.0.1:8787",
+      "127.0.0.1",
+    ),
+  ).toBe("http://127.0.0.1:8787");
+});
 
 test("collaboration closes an idle WebSocket without background reconnecting, then resumes on activity", async ({ page }) => {
   await installFakeCollaborationSocket(page);

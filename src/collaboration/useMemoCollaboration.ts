@@ -12,6 +12,10 @@ import * as Y from "yjs";
 import type { MemoDraft } from "@/types/memo";
 import { normalizeMemoDraft } from "@/templates/bcaMemoTemplate";
 import { saveCollaboratorIdentity } from "@/collaboration/collaboratorIdentity";
+import {
+  DEFAULT_COLLAB_WORKER_URL,
+  resolveCollaborationWorkerBaseUrl,
+} from "@/collaboration/workerUrl";
 
 type ConnectionStatus = "offline" | "syncing" | "connected" | "saved";
 
@@ -47,9 +51,8 @@ type PresenceMessage = {
 };
 
 const ROOM_PARAM = "room";
-const WORKER_BASE_URL =
-  process.env.NEXT_PUBLIC_COLLAB_WORKER_URL ??
-  "https://generate-memo-collab.alex-marcello08.workers.dev";
+const CONFIGURED_WORKER_BASE_URL =
+  process.env.NEXT_PUBLIC_COLLAB_WORKER_URL ?? DEFAULT_COLLAB_WORKER_URL;
 const DOC_PREFIX = "generate-memo";
 const LOCAL_ORIGIN = "memo-builder-local";
 const REMOTE_ORIGIN = "memo-builder-remote";
@@ -131,14 +134,27 @@ function collaborationDocId(roomId: string) {
   return `${DOC_PREFIX}:${roomId}`;
 }
 
+function workerBaseUrl() {
+  return resolveCollaborationWorkerBaseUrl(
+    CONFIGURED_WORKER_BASE_URL,
+    window.location.hostname,
+  );
+}
+
 function workerWebSocketUrl(roomId: string) {
-  const url = new URL(`/collab/${encodeURIComponent(collaborationDocId(roomId))}`, WORKER_BASE_URL);
+  const url = new URL(
+    `/collab/${encodeURIComponent(collaborationDocId(roomId))}`,
+    workerBaseUrl(),
+  );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
 }
 
 function workerHttpUrl(roomId: string) {
-  return new URL(`/collab/${encodeURIComponent(collaborationDocId(roomId))}`, WORKER_BASE_URL).toString();
+  return new URL(
+    `/collab/${encodeURIComponent(collaborationDocId(roomId))}`,
+    workerBaseUrl(),
+  ).toString();
 }
 
 function safeJsonParse(value: string) {
