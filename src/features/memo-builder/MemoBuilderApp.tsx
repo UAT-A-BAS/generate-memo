@@ -46,6 +46,7 @@ import {
   createDevelopmentRow,
   createScenarioRow,
   createSignerRow,
+  normalizeMemoDraft,
 } from "@/templates/bcaMemoTemplate";
 import { generateMemoDocxBlob, memoDocxFileName } from "@/docx/generateDocx";
 import { paginateMemoDraft } from "@/pagination/paginate";
@@ -1012,6 +1013,109 @@ function CollaboratorIdentityDialog({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function DraftCommentsDecisionDialog({
+  open,
+  onRemoveComments,
+  onKeepComments,
+}: {
+  open: boolean;
+  onRemoveComments: () => void;
+  onKeepComments: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>("[data-import-comments-primary]")
+        ?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      previouslyFocused?.focus();
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/40 px-4 py-6"
+      data-review-ignore
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="draft-comments-dialog-title"
+        aria-describedby="draft-comments-dialog-description"
+        data-draft-comments-dialog
+        className="w-full max-w-[520px] rounded-2xl border border-[#d8e2ec] bg-white p-5 shadow-[0_24px_70px_rgba(15,45,74,0.24)] sm:p-6"
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const buttons = Array.from(
+            dialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
+          );
+          const first = buttons[0];
+          const last = buttons.at(-1);
+          if (!first || !last) return;
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
+      >
+        <div className="flex items-start gap-3.5">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#e8f1f8] text-[#1b4d78]">
+            <MessageSquare size={19} />
+          </span>
+          <div className="min-w-0">
+            <h2
+              id="draft-comments-dialog-title"
+              className="text-[17px] font-bold tracking-[-0.01em] text-[#0f2d4a]"
+            >
+              Komentar ditemukan
+            </h2>
+            <p
+              id="draft-comments-dialog-description"
+              className="mt-2 text-sm font-medium leading-6 text-[#5b6778]"
+            >
+              Draft yang akan dimuat mengandung komentar. Apakah Anda ingin tetap menyimpan
+              komentar tersebut di dalam dokumen?
+            </p>
+          </div>
+        </div>
+        <div className="mt-6 grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={onRemoveComments}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-[13px] font-bold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus:ring-4 focus:ring-rose-100"
+          >
+            <Trash2 size={15} />
+            Hapus Komentar
+          </button>
+          <button
+            type="button"
+            onClick={onKeepComments}
+            data-import-comments-primary
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#1b4d78] bg-[#1b4d78] px-3 text-[13px] font-bold text-white shadow-[0_10px_22px_rgba(27,77,120,0.2)] transition hover:bg-[#163754] focus:outline-none focus:ring-4 focus:ring-[#1b4d78]/15"
+          >
+            <MessageSquare size={15} />
+            Simpan Komentar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2781,8 +2885,10 @@ export function MemoBuilderApp() {
   const editControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
   const editControlIndexRef = useRef(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [isImportingDraft, setIsImportingDraft] = useState(false);
   const [draftFileError, setDraftFileError] = useState("");
   const [exportError, setExportError] = useState("");
+  const [pendingDraftImport, setPendingDraftImport] = useState<MemoDraft | null>(null);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [commentMode, setCommentMode] = useState(false);
@@ -2943,24 +3049,48 @@ export function MemoBuilderApp() {
     setExportError("");
   }
 
+  function completeDraftImport(nextDraft: MemoDraft) {
+    importDraft(nextDraft);
+    setPendingDraftImport(null);
+    setValidationIssues([]);
+    setDraftFileError("");
+  }
+
+  function removeCommentsFromPendingDraft() {
+    if (!pendingDraftImport) return;
+    completeDraftImport({
+      ...pendingDraftImport,
+      reviewComments: [],
+      reviewAuditLog: pendingDraftImport.reviewAuditLog.filter(
+        (entry) => entry.action === "collaboration-started",
+      ),
+    });
+  }
+
   async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setIsImportingDraft(true);
     try {
       const text = await file.text();
       const payload = JSON.parse(text) as Record<string, unknown>;
       const mapped =
         payload.appendixScenarios || payload.metadata ? payload : generateMomJsonToMemoDraft(payload);
+      const normalized = normalizeMemoDraft(mapped as Partial<MemoDraft>);
 
-      importDraft(mapped);
-      setValidationIssues([]);
+      if (normalized.reviewComments.length) {
+        setPendingDraftImport(normalized);
+      } else {
+        completeDraftImport(normalized);
+      }
       setDraftFileError("");
     } catch (error) {
       setDraftFileError(
         error instanceof Error ? error.message : "File draft tidak dapat dibaca.",
       );
     } finally {
+      setIsImportingDraft(false);
       event.target.value = "";
     }
   }
@@ -3345,9 +3475,12 @@ export function MemoBuilderApp() {
               <FileJson size={16} />
               Save
             </AppleToolbarButton>
-            <AppleToolbarButton onClick={() => fileInputRef.current?.click()}>
+            <AppleToolbarButton
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImportingDraft}
+            >
               <Upload size={16} />
-              Load
+              {isImportingDraft ? "Loading..." : "Load"}
             </AppleToolbarButton>
             <AppleToolbarButton onClick={handleResetDraft} tone="danger">
               <RefreshCcw size={16} />
@@ -3659,6 +3792,13 @@ export function MemoBuilderApp() {
         onNameChange={setIdentityInput}
         onCancel={cancelIdentityDialog}
         onContinue={continueIdentityDialog}
+      />
+      <DraftCommentsDecisionDialog
+        open={Boolean(pendingDraftImport)}
+        onRemoveComments={removeCommentsFromPendingDraft}
+        onKeepComments={() => {
+          if (pendingDraftImport) completeDraftImport(pendingDraftImport);
+        }}
       />
       <div
         className="fixed bottom-[18px] right-[18px] z-40 flex flex-col gap-2 rounded-[10px] border border-[#c9d3df]/90 bg-white/95 p-2 shadow-[0_16px_34px_rgba(23,32,42,0.16)] backdrop-blur max-[760px]:bottom-3 max-[760px]:right-3 max-[760px]:flex-row"

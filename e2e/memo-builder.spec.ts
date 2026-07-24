@@ -106,6 +106,68 @@ function completeDraft() {
   };
 }
 
+function draftWithReviewComments() {
+  const createdAt = "2026-07-24T08:00:00.000Z";
+  return {
+    ...completeDraft(),
+    reviewComments: [
+      {
+        id: "review-import-project",
+        type: "field",
+        targetId: "projectName",
+        targetLabel: "Nama Project",
+        path: [],
+        text: "Komentar project dari draft",
+        author: "Reviewer Import",
+        resolved: false,
+        createdAt,
+        updatedAt: createdAt,
+        replies: [],
+      },
+      {
+        id: "review-import-contact",
+        type: "field",
+        targetId: "contact-name-contact-test",
+        targetLabel: "PIC",
+        path: [],
+        text: "Komentar PIC dari draft",
+        author: "Reviewer Import",
+        resolved: false,
+        createdAt,
+        updatedAt: createdAt,
+        replies: [],
+      },
+    ],
+    reviewAuditLog: [
+      {
+        id: "audit-comment-import",
+        action: "comment-created",
+        actor: "Reviewer Import",
+        description: "menambahkan komentar pada Nama Project",
+        commentId: "review-import-project",
+        targetLabel: "Nama Project",
+        createdAt,
+      },
+      {
+        id: "audit-comment-import-contact",
+        action: "comment-created",
+        actor: "Reviewer Import",
+        description: "menambahkan komentar pada PIC",
+        commentId: "review-import-contact",
+        targetLabel: "PIC",
+        createdAt,
+      },
+      {
+        id: "audit-collab-import",
+        action: "collaboration-started",
+        actor: "Reviewer Import",
+        description: "memulai kolaborasi",
+        createdAt,
+      },
+    ],
+  };
+}
+
 function denseAppendixDraft() {
   return {
     ...completeDraft(),
@@ -254,12 +316,23 @@ function pdfBorderStressDraft() {
   };
 }
 
-async function importDraft(page: Page, payload: unknown) {
+async function selectDraftFile(page: Page, payload: unknown) {
   await page.locator("[data-draft-import-input]").setInputFiles({
     name: "draft.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(payload)),
   });
+}
+
+async function importDraft(page: Page, payload: unknown) {
+  await selectDraftFile(page, payload);
+  const comments = (payload as { reviewComments?: unknown } | null)?.reviewComments;
+  if (Array.isArray(comments) && comments.length) {
+    await page
+      .getByRole("dialog", { name: "Komentar ditemukan" })
+      .getByRole("button", { name: "Simpan Komentar" })
+      .click();
+  }
 }
 
 async function documentXmlFrom(download: Download) {
@@ -477,6 +550,66 @@ test("shows memo generator credit at page end", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await expect(page.getByText("Developed by Alex Surya Marcelo (UAT - A) • Memo Generator")).toBeVisible();
+});
+
+test("draft import asks whether comments should be kept", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const imported = draftWithReviewComments();
+
+  await selectDraftFile(page, imported);
+
+  const dialog = page.getByRole("dialog", { name: "Komentar ditemukan" });
+  const removeComments = dialog.getByRole("button", { name: "Hapus Komentar" });
+  const keepComments = dialog.getByRole("button", { name: "Simpan Komentar" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(
+    "Draft yang akan dimuat mengandung komentar. Apakah Anda ingin tetap menyimpan komentar tersebut di dalam dokumen?",
+  );
+  await expect(keepComments).toBeFocused();
+  await expect(page.getByLabel("Nama Project")).not.toHaveValue(
+    imported.metadata.projectName,
+  );
+
+  const removeBox = await removeComments.boundingBox();
+  const keepBox = await keepComments.boundingBox();
+  expect(removeBox?.x).toBeLessThan(keepBox?.x ?? 0);
+
+  await page.keyboard.press("Tab");
+  await expect(removeComments).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(keepComments).toBeFocused();
+  await keepComments.click();
+
+  await expect(page.getByLabel("Nama Project")).toHaveValue(imported.metadata.projectName);
+  await page.getByRole("button", { name: "Komentar Review" }).click();
+  await expect(page.getByText("Komentar project dari draft", { exact: true })).toBeVisible();
+  await expect(page.getByText("Komentar PIC dari draft", { exact: true })).toBeVisible();
+});
+
+test("draft import can remove comments while retaining collaboration history", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const imported = draftWithReviewComments();
+
+  await selectDraftFile(page, imported);
+  await page
+    .getByRole("dialog", { name: "Komentar ditemukan" })
+    .getByRole("button", { name: "Hapus Komentar" })
+    .click();
+
+  await expect(page.getByLabel("Nama Project")).toHaveValue(imported.metadata.projectName);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const downloadPath = await (await downloadPromise).path();
+  expect(downloadPath).toBeTruthy();
+  const exported = JSON.parse(await readFile(downloadPath as string, "utf8")) as {
+    reviewComments: unknown[];
+    reviewAuditLog: Array<{ action: string }>;
+  };
+
+  expect(exported.reviewComments).toEqual([]);
+  expect(exported.reviewAuditLog).toEqual([
+    expect.objectContaining({ action: "collaboration-started" }),
+  ]);
 });
 
 test("MOM scenario import replaces the completely empty appendix placeholder", async ({ page }) => {
