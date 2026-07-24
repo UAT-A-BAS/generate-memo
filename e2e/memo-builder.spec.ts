@@ -329,8 +329,8 @@ async function importDraft(page: Page, payload: unknown) {
   const comments = (payload as { reviewComments?: unknown } | null)?.reviewComments;
   if (Array.isArray(comments) && comments.length) {
     await page
-      .getByRole("dialog", { name: "Komentar ditemukan" })
-      .getByRole("button", { name: "Simpan Komentar" })
+      .getByRole("dialog", { name: "Comment ditemukan" })
+      .getByRole("button", { name: "Simpan Comment" })
       .click();
   }
 }
@@ -558,12 +558,12 @@ test("draft import asks whether comments should be kept", async ({ page }) => {
 
   await selectDraftFile(page, imported);
 
-  const dialog = page.getByRole("dialog", { name: "Komentar ditemukan" });
-  const removeComments = dialog.getByRole("button", { name: "Hapus Komentar" });
-  const keepComments = dialog.getByRole("button", { name: "Simpan Komentar" });
+  const dialog = page.getByRole("dialog", { name: "Comment ditemukan" });
+  const removeComments = dialog.getByRole("button", { name: "Hapus Comment" });
+  const keepComments = dialog.getByRole("button", { name: "Simpan Comment" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(
-    "Draft yang akan dimuat mengandung komentar. Apakah Anda ingin tetap menyimpan komentar tersebut di dalam dokumen?",
+    "Draft yang akan dimuat mengandung comment. Apakah Anda ingin tetap menyimpan comment tersebut di dalam dokumen?",
   );
   await expect(keepComments).toBeFocused();
   await expect(page.getByLabel("Nama Project")).not.toHaveValue(
@@ -592,8 +592,8 @@ test("draft import can remove comments while retaining collaboration history", a
 
   await selectDraftFile(page, imported);
   await page
-    .getByRole("dialog", { name: "Komentar ditemukan" })
-    .getByRole("button", { name: "Hapus Komentar" })
+    .getByRole("dialog", { name: "Comment ditemukan" })
+    .getByRole("button", { name: "Hapus Comment" })
     .click();
 
   await expect(page.getByLabel("Nama Project")).toHaveValue(imported.metadata.projectName);
@@ -3568,23 +3568,25 @@ test("save draft uses the project name followed by MEMO", async ({ page }) => {
   await expect((await downloadPromise).suggestedFilename()).toBe("BDS Web Gen 2 versi 4.3.0_MEMO.json");
 });
 
-test("autosaved local draft survives a reload", async ({ page }) => {
+test("personal draft survives an immediate reload without starting collaboration", async ({
+  page,
+}) => {
   await page.goto("http://localhost:3002");
   await page.getByLabel("Nama Project").fill("Draft Persisten");
-  await page.waitForTimeout(3200);
 
   await page.reload();
 
   await expect(page.getByLabel("Nama Project")).toHaveValue("Draft Persisten");
+  await expect(page.getByRole("button", { name: "Start Collab" })).toBeVisible();
+  await expect(page.getByText("Personal Draft", { exact: true })).toBeVisible();
 });
 
 test("corrupt local draft resets safely and reports the load failure", async ({ page }) => {
-  await page.goto("http://localhost:3002");
-  await page.evaluate(() => {
+  await page.addInitScript(() => {
     window.localStorage.setItem("memo-builder-fresh:blank-draft-v2", "{broken");
   });
 
-  await page.reload();
+  await page.goto("http://localhost:3002");
 
   await expect(page.locator("[data-draft-error]")).toContainText("Gagal memuat draft lokal");
   await expect(page.getByLabel("Nama Project")).toHaveValue("");

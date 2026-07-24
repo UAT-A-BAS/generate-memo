@@ -1085,14 +1085,14 @@ function DraftCommentsDecisionDialog({
               id="draft-comments-dialog-title"
               className="text-[17px] font-bold tracking-[-0.01em] text-[#0f2d4a]"
             >
-              Komentar ditemukan
+              Comment ditemukan
             </h2>
             <p
               id="draft-comments-dialog-description"
               className="mt-2 text-sm font-medium leading-6 text-[#5b6778]"
             >
-              Draft yang akan dimuat mengandung komentar. Apakah Anda ingin tetap menyimpan
-              komentar tersebut di dalam dokumen?
+              Draft yang akan dimuat mengandung comment. Apakah Anda ingin tetap menyimpan
+              comment tersebut di dalam dokumen?
             </p>
           </div>
         </div>
@@ -1103,7 +1103,7 @@ function DraftCommentsDecisionDialog({
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-[13px] font-bold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus:ring-4 focus:ring-rose-100"
           >
             <Trash2 size={15} />
-            Hapus Komentar
+            Hapus Comment
           </button>
           <button
             type="button"
@@ -1112,7 +1112,7 @@ function DraftCommentsDecisionDialog({
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#1b4d78] bg-[#1b4d78] px-3 text-[13px] font-bold text-white shadow-[0_10px_22px_rgba(27,77,120,0.2)] transition hover:bg-[#163754] focus:outline-none focus:ring-4 focus:ring-[#1b4d78]/15"
           >
             <MessageSquare size={15} />
-            Simpan Komentar
+            Simpan Comment
           </button>
         </div>
       </div>
@@ -2884,6 +2884,7 @@ export function MemoBuilderApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
   const editControlIndexRef = useRef(0);
+  const draftObservedForAutosaveRef = useRef<MemoDraft | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImportingDraft, setIsImportingDraft] = useState(false);
   const [draftFileError, setDraftFileError] = useState("");
@@ -2946,8 +2947,31 @@ export function MemoBuilderApp() {
 
   useEffect(() => {
     if (!hasLoaded) return;
-    const timer = window.setInterval(saveToLocal, 3000);
-    return () => window.clearInterval(timer);
+    if (draftObservedForAutosaveRef.current === null) {
+      draftObservedForAutosaveRef.current = draft;
+      return;
+    }
+    if (draftObservedForAutosaveRef.current === draft) return;
+    draftObservedForAutosaveRef.current = draft;
+
+    const timer = window.setTimeout(saveToLocal, 250);
+    return () => window.clearTimeout(timer);
+  }, [draft, hasLoaded, saveToLocal]);
+
+  useEffect(() => {
+    if (!hasLoaded) return;
+
+    const persistLatestDraft = () => saveToLocal();
+    const persistWhenHidden = () => {
+      if (document.visibilityState === "hidden") persistLatestDraft();
+    };
+
+    window.addEventListener("pagehide", persistLatestDraft);
+    document.addEventListener("visibilitychange", persistWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", persistLatestDraft);
+      document.removeEventListener("visibilitychange", persistWhenHidden);
+    };
   }, [hasLoaded, saveToLocal]);
 
   useEffect(() => {
