@@ -20,17 +20,6 @@ const ARRAY_LIMITS = {
   reviewAuditLog: 5_000,
 };
 
-function validationFailure(code, field, error, details = {}) {
-  return {
-    ok: false,
-    code,
-    field,
-    error,
-    ...(Number.isFinite(details.actual) ? { actual: details.actual } : {}),
-    ...(Number.isFinite(details.limit) ? { limit: details.limit } : {}),
-  };
-}
-
 function isRecord(value) {
   return Boolean(value) &&
     typeof value === "object" &&
@@ -42,75 +31,21 @@ function isString(value, maxLength = MAX_STRING_LENGTH) {
   return typeof value === "string" && value.length <= maxLength;
 }
 
-function findJsonValueError(value, field = "draft", depth = 0) {
-  if (depth > MAX_DEPTH) {
-    return validationFailure(
-      "json_depth_limit",
-      field,
-      "Kedalaman struktur draft melebihi batas.",
-      { actual: depth, limit: MAX_DEPTH },
-    );
-  }
-  if (value === null || typeof value === "boolean") return null;
-  if (typeof value === "number") {
-    return Number.isFinite(value)
-      ? null
-      : validationFailure("number_invalid", field, "Nilai angka draft tidak valid.");
-  }
-  if (typeof value === "string") {
-    return value.length <= MAX_STRING_LENGTH
-      ? null
-      : validationFailure(
-          "string_limit",
-          field,
-          "Panjang teks draft melebihi batas.",
-          { actual: value.length, limit: MAX_STRING_LENGTH },
-        );
-  }
-  if (Array.isArray(value)) {
-    if (value.length > MAX_ARRAY_LENGTH) {
-      return validationFailure(
-        "array_limit",
-        field,
-        "Jumlah item draft melebihi batas umum.",
-        { actual: value.length, limit: MAX_ARRAY_LENGTH },
-      );
-    }
-    for (let index = 0; index < value.length; index += 1) {
-      const error = findJsonValueError(value[index], `${field}[${index}]`, depth + 1);
-      if (error) return error;
-    }
-    return null;
-  }
-  if (!isRecord(value)) {
-    return validationFailure("value_type_invalid", field, "Tipe nilai draft tidak valid.");
-  }
-  const entries = Object.entries(value);
-  if (entries.length > MAX_OBJECT_KEYS) {
-    return validationFailure(
-      "object_key_limit",
-      field,
-      "Jumlah field pada objek draft melebihi batas.",
-      { actual: entries.length, limit: MAX_OBJECT_KEYS },
-    );
-  }
-  for (const [key, item] of entries) {
-    if (key.length > 128) {
-      return validationFailure(
-        "object_key_length_limit",
-        field,
-        "Panjang nama field draft melebihi batas.",
-        { actual: key.length, limit: 128 },
-      );
-    }
-    const error = findJsonValueError(item, `${field}.${key}`, depth + 1);
-    if (error) return error;
-  }
-  return null;
-}
-
 function validateJsonValue(value, depth = 0) {
-  return findJsonValueError(value, "value", depth) === null;
+  if (depth > MAX_DEPTH) return false;
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return value.length <= MAX_STRING_LENGTH;
+  if (Array.isArray(value)) {
+    return value.length <= MAX_ARRAY_LENGTH &&
+      value.every((item) => validateJsonValue(item, depth + 1));
+  }
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= MAX_OBJECT_KEYS &&
+    entries.every(([key, item]) =>
+      key.length <= 128 && validateJsonValue(item, depth + 1)
+    );
 }
 
 function validateRichTextNode(node, budget, depth = 0) {
@@ -153,43 +88,6 @@ function validateObjectArray(value, limit, validator) {
   return Array.isArray(value) &&
     value.length <= limit &&
     value.every((item) => isRecord(item) && validator(item));
-}
-
-function validateDraftCollection(field, value, limit, validator) {
-  if (!Array.isArray(value)) {
-    return validationFailure(
-      "collection_type_invalid",
-      field,
-      "Koleksi draft harus berupa array.",
-    );
-  }
-  if (value.length > limit) {
-    return validationFailure(
-      "collection_limit",
-      field,
-      "Jumlah item pada koleksi draft melebihi batas.",
-      { actual: value.length, limit },
-    );
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    const row = value[index];
-    const rowField = `${field}[${index}]`;
-    if (!isRecord(row)) {
-      return validationFailure(
-        "row_type_invalid",
-        rowField,
-        "Baris draft harus berupa objek.",
-      );
-    }
-    if (!validator(row)) {
-      return validationFailure(
-        "row_format_invalid",
-        rowField,
-        "Format baris draft tidak valid.",
-      );
-    }
-  }
-  return null;
 }
 
 function validateOptionalDates(record) {
@@ -259,32 +157,11 @@ function validateComment(row) {
 }
 
 export function validateMemoDraftPayload(draft) {
-  if (!isRecord(draft)) {
-    return validationFailure(
-      "draft_type_invalid",
-      "draft",
-      "Draft harus berupa objek JSON yang valid.",
-    );
+  if (!isRecord(draft) || !validateJsonValue(draft)) {
+    return { ok: false, error: "Draft harus berupa objek JSON yang valid." };
   }
-  const jsonError = findJsonValueError(draft);
-  if (jsonError) return jsonError;
-  if (typeof draft.id !== "string") {
-    return validationFailure("field_type_invalid", "id", "ID draft harus berupa teks.");
-  }
-  if (draft.id.length > 256) {
-    return validationFailure(
-      "string_limit",
-      "id",
-      "Panjang ID draft melebihi batas.",
-      { actual: draft.id.length, limit: 256 },
-    );
-  }
-  if (draft.version !== 1) {
-    return validationFailure(
-      "version_invalid",
-      "version",
-      "Versi draft tidak didukung.",
-    );
+  if (!isString(draft.id, 256) || draft.version !== 1) {
+    return { ok: false, error: "Identitas atau versi draft tidak valid." };
   }
   if (!isRecord(draft.metadata) || !validateStringFields(draft.metadata, [
     "noMemo",
@@ -297,21 +174,10 @@ export function validateMemoDraftPayload(draft) {
   ]) ||
     typeof draft.metadata.autoPerihal !== "boolean" ||
     typeof draft.metadata.accessLinkEnabled !== "boolean") {
-    return validationFailure("field_format_invalid", "metadata", "Metadata draft tidak valid.");
+    return { ok: false, error: "Metadata draft tidak valid." };
   }
-  if (!validateRichText(draft.introduction)) {
-    return validationFailure(
-      "rich_text_invalid",
-      "introduction",
-      "Konten rich text pengantar tidak valid.",
-    );
-  }
-  if (!validateRichText(draft.reference)) {
-    return validationFailure(
-      "rich_text_invalid",
-      "reference",
-      "Konten rich text referensi tidak valid.",
-    );
+  if (!validateRichText(draft.introduction) || !validateRichText(draft.reference)) {
+    return { ok: false, error: "Konten rich text draft tidak valid." };
   }
   if (typeof draft.referenceEnabled !== "boolean" ||
     typeof draft.attachmentsEnabled !== "boolean" ||
@@ -319,30 +185,28 @@ export function validateMemoDraftPayload(draft) {
     !isString(draft.initials) ||
     !isString(draft.initialsBureau) ||
     !isString(draft.updatedAt)) {
-    return validationFailure("field_format_invalid", "draft", "Field utama draft tidak valid.");
+    return { ok: false, error: "Field utama draft tidak valid." };
   }
   if (!isRecord(draft.pilotSchedule) ||
     !validateStringFields(draft.pilotSchedule, ["startDate", "endDate"]) ||
     !validateOptionalDates(draft.pilotSchedule)) {
-    return validationFailure(
-      "field_format_invalid",
-      "pilotSchedule",
-      "Jadwal pilot tidak valid.",
-    );
+    return { ok: false, error: "Jadwal pilot tidak valid." };
   }
 
-  const collectionRules = [
-    ["recipients", draft.recipients, ARRAY_LIMITS.recipients, validateRecipient],
-    ["developmentRows", draft.developmentRows, ARRAY_LIMITS.developmentRows, validateDevelopment],
-    ["activities", draft.activities, ARRAY_LIMITS.activities, validateActivity],
-    ["contacts", draft.contacts, ARRAY_LIMITS.contacts, (row) =>
-      validateStringFields(row, ["id", "name", "email"])],
-    ["signers", draft.signers, ARRAY_LIMITS.signers, (row) =>
-      validateStringFields(row, ["id", "name", "title"])],
-    ["ccRecipients", draft.ccRecipients, ARRAY_LIMITS.ccRecipients, validateRecipient],
-    ["appendixScenarios", draft.appendixScenarios, ARRAY_LIMITS.appendixScenarios, validateScenario],
-    ["reviewComments", draft.reviewComments, ARRAY_LIMITS.reviewComments, validateComment],
-    ["reviewAuditLog", draft.reviewAuditLog, ARRAY_LIMITS.reviewAuditLog, (row) =>
+  const arraysValid =
+    validateObjectArray(draft.recipients, ARRAY_LIMITS.recipients, validateRecipient) &&
+    validateObjectArray(draft.developmentRows, ARRAY_LIMITS.developmentRows, validateDevelopment) &&
+    validateObjectArray(draft.activities, ARRAY_LIMITS.activities, validateActivity) &&
+    validateObjectArray(draft.contacts, ARRAY_LIMITS.contacts, (row) =>
+      validateStringFields(row, ["id", "name", "email"])
+    ) &&
+    validateObjectArray(draft.signers, ARRAY_LIMITS.signers, (row) =>
+      validateStringFields(row, ["id", "name", "title"])
+    ) &&
+    validateObjectArray(draft.ccRecipients, ARRAY_LIMITS.ccRecipients, validateRecipient) &&
+    validateObjectArray(draft.appendixScenarios, ARRAY_LIMITS.appendixScenarios, validateScenario) &&
+    validateObjectArray(draft.reviewComments, ARRAY_LIMITS.reviewComments, validateComment) &&
+    validateObjectArray(draft.reviewAuditLog, ARRAY_LIMITS.reviewAuditLog, (row) =>
       validateStringFields(row, [
         "id",
         "action",
@@ -351,15 +215,12 @@ export function validateMemoDraftPayload(draft) {
         "commentId",
         "targetLabel",
         "createdAt",
-      ])],
-  ];
+      ])
+    );
 
-  for (const [field, value, limit, validator] of collectionRules) {
-    const error = validateDraftCollection(field, value, limit, validator);
-    if (error) return error;
-  }
-
-  return { ok: true };
+  return arraysValid
+    ? { ok: true }
+    : { ok: false, error: "Koleksi atau baris draft tidak valid." };
 }
 
 export function nextServerTimestamp(currentValue, requestedValue, now = Date.now()) {

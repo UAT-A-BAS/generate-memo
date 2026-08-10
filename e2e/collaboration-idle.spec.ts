@@ -9,11 +9,7 @@ declare global {
   interface Window {
     __memoWs: {
       closes: string[];
-      instances: Array<{
-        url: string;
-        readyState: number;
-        dispatchEvent: (event: Event) => boolean;
-      }>;
+      instances: Array<{ url: string; readyState: number }>;
       sends: Array<{ kind: string; value: string }>;
     };
   }
@@ -134,34 +130,6 @@ test("production pages never connect to a loopback collaboration worker", () => 
       "127.0.0.1",
     ),
   ).toBe("http://127.0.0.1:8787");
-});
-
-test("collaboration rejection identifies the field and limit without exposing draft content", async ({
-  page,
-}) => {
-  await installFakeCollaborationSocket(page);
-  await startCollaboration(page);
-
-  await page.evaluate(() => {
-    const socket = window.__memoWs.instances.at(-1);
-    if (!socket) throw new Error("Fake collaboration socket was not created.");
-    socket.dispatchEvent(new MessageEvent("message", {
-      data: JSON.stringify({
-        type: "save-error",
-        error: "collection_limit",
-        validation: {
-          code: "collection_limit",
-          field: "appendixScenarios",
-          actual: 1001,
-          limit: 1000,
-        },
-      }),
-    }));
-  });
-
-  await expect(page.locator("[data-collaboration-error]")).toHaveText(
-    "Sync collab ditolak: skenario lampiran berisi 1001 item; batas 1000. Draft tetap tersimpan di perangkat ini.",
-  );
 });
 
 test("collaboration closes an idle WebSocket without background reconnecting, then resumes on activity", async ({ page }) => {

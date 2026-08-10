@@ -44,24 +44,6 @@ function byteLength(value) {
   return new TextEncoder().encode(value).byteLength;
 }
 
-function publicValidationError(validation) {
-  if (!validation || validation.ok) return undefined;
-  const field = typeof validation.field === "string"
-    ? validation.field.replace(/[^A-Za-z0-9_.[\]-]/g, "").slice(0, 256)
-    : "draft";
-  return {
-    code: typeof validation.code === "string"
-      ? validation.code.slice(0, 64)
-      : "draft_invalid",
-    field: field || "draft",
-    ...(Number.isFinite(validation.actual) ? { actual: validation.actual } : {}),
-    ...(Number.isFinite(validation.limit) ? { limit: validation.limit } : {}),
-    message: typeof validation.error === "string"
-      ? validation.error.slice(0, 200)
-      : "Format draft tidak valid.",
-  };
-}
-
 async function readLimitedText(request, limit) {
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (Number.isFinite(declaredLength) && declaredLength > limit) return null;
@@ -206,37 +188,19 @@ export class MemoRoom {
       const rawMessage = await readLimitedText(request, MAX_HTTP_BODY_BYTES);
       if (rawMessage === null) {
         return Response.json(
-          {
-            ok: false,
-            error: "payload_too_large",
-            validation: {
-              code: "payload_too_large",
-              field: "draft",
-              limit: MAX_HTTP_BODY_BYTES,
-              message: "Ukuran snapshot draft melebihi batas HTTP.",
-            },
-          },
+          { ok: false, error: "payload_too_large" },
           { status: 413, headers: CORS_HEADERS },
         );
       }
       const message = safeJsonParse(rawMessage);
-      const validation = message?.initialSyncComplete === true
-        ? validateMemoDraftPayload(message?.draft)
-        : {
-            ok: false,
-            code: "sync_not_ready",
-            field: "draft",
-            error: "Sinkronisasi awal belum selesai.",
-          };
-      const saved = validation.ok
+      const saved = message?.initialSyncComplete === true
         ? await this.enqueue(() => this.saveDraftSnapshot(message, ""))
         : null;
       return Response.json(
         {
           ok: Boolean(saved),
           updatedAt: saved?.updatedAt,
-          error: saved ? undefined : validation.code ?? "draft_invalid",
-          validation: saved ? undefined : publicValidationError(validation),
+          error: saved ? undefined : "draft_invalid",
         },
         { status: saved ? 200 : 400, headers: CORS_HEADERS },
       );
@@ -325,10 +289,7 @@ export class MemoRoom {
     }
 
     if (message?.type === "draft-save" && session.initialSyncComplete) {
-      const validation = validateMemoDraftPayload(message?.draft);
-      const saved = validation.ok
-        ? await this.saveDraftSnapshot(message, sessionId)
-        : null;
+      const saved = await this.saveDraftSnapshot(message, sessionId);
       if (saved) {
         try {
           session.socket.send(JSON.stringify({
@@ -344,8 +305,7 @@ export class MemoRoom {
           session.socket.send(JSON.stringify({
             type: "save-error",
             saveId: typeof message.saveId === "string" ? message.saveId.slice(0, 256) : "",
-            error: validation.code ?? "draft_invalid",
-            validation: publicValidationError(validation),
+            error: "draft_invalid",
           }));
         } catch {
           this.closeSession(sessionId);
