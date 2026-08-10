@@ -41,6 +41,14 @@ type PresenceUser = {
   color: string;
 };
 
+type DraftValidationDiagnostic = {
+  code?: string;
+  field?: string;
+  actual?: number;
+  limit?: number;
+  message?: string;
+};
+
 type PresenceMessage = {
   type?: string;
   users?: PresenceUser[];
@@ -48,6 +56,8 @@ type PresenceMessage = {
   updatedAt?: number;
   updatedBy?: string;
   saveId?: string;
+  error?: string;
+  validation?: DraftValidationDiagnostic;
 };
 
 const ROOM_PARAM = "room";
@@ -169,6 +179,63 @@ function snapshotKey(updatedAt: number, userId: string) {
   return `${SNAPSHOT_PREFIX}${updatedAt}:${encodeURIComponent(userId)}`;
 }
 
+const DRAFT_FIELD_LABELS: Record<string, string> = {
+  draft: "draft",
+  id: "ID draft",
+  version: "versi draft",
+  metadata: "metadata",
+  introduction: "pengantar",
+  reference: "referensi",
+  pilotSchedule: "jadwal pilot",
+  recipients: "penerima",
+  developmentRows: "baris pengembangan",
+  activities: "aktivitas",
+  contacts: "PIC",
+  signers: "signature",
+  ccRecipients: "tembusan",
+  appendixScenarios: "skenario lampiran",
+  reviewComments: "comment",
+  reviewAuditLog: "log comment",
+};
+
+function describeDraftField(field = "draft") {
+  const normalized = field.replace(/^draft\.?/, "") || "draft";
+  const match = normalized.match(/^([A-Za-z]+)(?:\[(\d+)\])?/);
+  if (!match) return "draft";
+  const label = DRAFT_FIELD_LABELS[match[1]] ?? match[1];
+  const rowIndex = match[2] === undefined ? "" : ` baris ${Number(match[2]) + 1}`;
+  return `${label}${rowIndex}`;
+}
+
+function validationUnit(code = "") {
+  if (code === "payload_too_large") return "byte";
+  if (code.includes("string") || code.includes("key_length")) return "karakter";
+  if (code.includes("depth")) return "tingkat";
+  return "item";
+}
+
+function formatDraftValidationError(diagnostic?: DraftValidationDiagnostic) {
+  const field = describeDraftField(diagnostic?.field);
+  const code = diagnostic?.code ?? "draft_invalid";
+  const actual = Number(diagnostic?.actual);
+  const limit = Number(diagnostic?.limit);
+  const hasActual = Number.isFinite(actual);
+  const hasLimit = Number.isFinite(limit);
+  const unit = validationUnit(code);
+  const localSafety = "Draft tetap tersimpan di perangkat ini.";
+
+  if (hasActual && hasLimit) {
+    return `Sync collab ditolak: ${field} berisi ${actual} ${unit}; batas ${limit}. ${localSafety}`;
+  }
+  if (hasLimit) {
+    return `Sync collab ditolak: ${field} melebihi batas ${limit} ${unit}. ${localSafety}`;
+  }
+  if (code === "sync_not_ready") {
+    return `Sync collab belum siap. ${localSafety}`;
+  }
+  return `Sync collab ditolak: format ${field} tidak valid. ${localSafety}`;
+}
+
 function pruneSnapshotMap(map: Y.Map<unknown>) {
   const snapshotKeys: string[] = [];
   map.forEach((_, key) => {
@@ -236,10 +303,13 @@ async function persistDraftSnapshot(
     body: payload,
     keepalive,
   });
+  const result = await response.json() as {
+    updatedAt?: unknown;
+    validation?: DraftValidationDiagnostic;
+  };
   if (!response.ok) {
-    throw new Error(`Snapshot HTTP ${response.status}`);
+    throw new Error(formatDraftValidationError(result.validation));
   }
-  const result = await response.json() as { updatedAt?: unknown };
   const serverUpdatedAt = Number(result.updatedAt);
   return Number.isFinite(serverUpdatedAt) ? serverUpdatedAt : undefined;
 }
@@ -620,12 +690,14 @@ export function useMemoCollaboration(
           ) {
             localUpdatedAtRef.current = serverUpdatedAt;
           }
-        }).catch(() => {
+        }).catch((error) => {
           pendingStateUpdateRef.current = true;
           updateStatus(
             "offline",
             undefined,
-            "Draft belum tersimpan ke server. Koneksi akan dicoba kembali.",
+            error instanceof Error && error.message.startsWith("Sync collab")
+              ? error.message
+              : "Draft belum tersimpan ke server. Koneksi akan dicoba kembali.",
           );
         });
       }
@@ -685,7 +757,7 @@ export function useMemoCollaboration(
             updateStatus(
               "offline",
               undefined,
-              "Draft ditolak server karena format atau ukurannya tidak valid.",
+              formatDraftValidationError(message.validation ?? { code: message.error }),
             );
           }
           if (message.type === "presence") {

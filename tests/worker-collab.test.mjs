@@ -82,14 +82,67 @@ function roomState() {
 test("rejects malformed and oversized draft collections", () => {
   const malformed = validDraft();
   malformed.activities = [null];
-  assert.equal(validateMemoDraftPayload(malformed).ok, false);
+  const malformedResult = validateMemoDraftPayload(malformed);
+  assert.equal(malformedResult.ok, false);
+  assert.equal(malformedResult.code, "row_type_invalid");
+  assert.equal(malformedResult.field, "activities[0]");
 
   const oversized = validDraft();
   oversized.activities = Array.from({ length: 501 }, (_, index) => ({
     ...validDraft().activities[0],
     id: `activity-${index}`,
   }));
-  assert.equal(validateMemoDraftPayload(oversized).ok, false);
+  const oversizedResult = validateMemoDraftPayload(oversized);
+  assert.equal(oversizedResult.ok, false);
+  assert.equal(oversizedResult.code, "collection_limit");
+  assert.equal(oversizedResult.field, "activities");
+  assert.equal(oversizedResult.actual, 501);
+  assert.equal(oversizedResult.limit, 500);
+
+  const longText = validDraft();
+  longText.metadata.projectName = "x".repeat(100_001);
+  const longTextResult = validateMemoDraftPayload(longText);
+  assert.equal(longTextResult.ok, false);
+  assert.equal(longTextResult.code, "string_limit");
+  assert.equal(longTextResult.field, "draft.metadata.projectName");
+  assert.equal(longTextResult.actual, 100_001);
+  assert.equal(longTextResult.limit, 100_000);
+});
+
+test("WebSocket save errors expose safe field and limit diagnostics", async () => {
+  const room = new MemoRoom(roomState());
+  const messages = [];
+  room.sessions.set("session-test", {
+    initialSyncComplete: true,
+    user: null,
+    socket: {
+      send: (value) => messages.push(JSON.parse(value)),
+    },
+  });
+  const oversized = validDraft();
+  oversized.activities = Array.from({ length: 501 }, (_, index) => ({
+    ...validDraft().activities[0],
+    id: `activity-${index}`,
+  }));
+
+  await room.handleTextMessage("session-test", JSON.stringify({
+    type: "draft-save",
+    draft: oversized,
+    saveId: "save-test",
+  }));
+
+  assert.deepEqual(messages, [{
+    type: "save-error",
+    saveId: "save-test",
+    error: "collection_limit",
+    validation: {
+      code: "collection_limit",
+      field: "activities",
+      actual: 501,
+      limit: 500,
+      message: "Jumlah item pada koleksi draft melebihi batas.",
+    },
+  }]);
 });
 
 test("server timestamp clamps future clients and remains monotonic", () => {
@@ -135,6 +188,15 @@ test("HTTP persistence rejects malformed and oversized requests", async () => {
     }),
   }));
   assert.equal(malformedResponse.status, 400);
+  assert.deepEqual(await malformedResponse.json(), {
+    ok: false,
+    error: "row_type_invalid",
+    validation: {
+      code: "row_type_invalid",
+      field: "activities[0]",
+      message: "Baris draft harus berupa objek.",
+    },
+  });
 
   const oversizedResponse = await room.fetch(new Request("https://room.test", {
     method: "POST",
@@ -146,4 +208,14 @@ test("HTTP persistence rejects malformed and oversized requests", async () => {
     }),
   }));
   assert.equal(oversizedResponse.status, 413);
+  assert.deepEqual(await oversizedResponse.json(), {
+    ok: false,
+    error: "payload_too_large",
+    validation: {
+      code: "payload_too_large",
+      field: "draft",
+      limit: 1_000_000,
+      message: "Ukuran snapshot draft melebihi batas HTTP.",
+    },
+  });
 });
