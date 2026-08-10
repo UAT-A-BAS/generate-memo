@@ -218,23 +218,12 @@ async function persistDraftSnapshot(
   });
   const url = workerHttpUrl(roomId);
 
-  if (keepalive && navigator.sendBeacon) {
-    try {
-      const queued = navigator.sendBeacon(
-        url,
-        new Blob([payload], { type: "application/json" }),
-      );
-      if (queued) return undefined;
-    } catch {
-      // Fall through to a keepalive fetch.
-    }
-  }
-
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: payload,
     keepalive,
+    credentials: "omit",
   });
   if (!response.ok) {
     throw new Error(`Snapshot HTTP ${response.status}`);
