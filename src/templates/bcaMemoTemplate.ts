@@ -15,7 +15,9 @@ import { emptyRichText } from "@/types/richText";
 import { generatePerihal } from "@/utils/generatePerihal";
 import { createId } from "@/utils/ids";
 import {
+  isValidDateValue,
   isValidInputDate,
+  normalizeActivityDateSelection,
   normalizeDateSelection,
 } from "@/utils/formatDateRangeID";
 import { scenarioHeadingPath, withScenarioHeadingPath } from "@/utils/scenarioHierarchy";
@@ -239,6 +241,23 @@ function normalizeDateFields<T extends { startDate?: string; endDate?: string; d
   };
 }
 
+function normalizeActivityDateFields<T extends { startDate?: string; endDate?: string; dates?: string[] }>(value: T) {
+  const sourceDates = Array.isArray(value.dates)
+    ? value.dates.filter((date): date is string => typeof date === "string")
+    : [];
+  const dates = normalizeActivityDateSelection(sourceDates);
+  const containsInvalidDate = sourceDates.some((date) => !isValidDateValue(date));
+  const validStartDate = normalizeActivityDateSelection([value.startDate ?? ""])[0] ?? "";
+  const validEndDate = normalizeActivityDateSelection([value.endDate ?? ""])[0] ?? "";
+
+  return {
+    ...value,
+    startDate: dates[0] ?? validStartDate,
+    endDate: dates.at(-1) ?? (validEndDate || validStartDate),
+    dates: containsInvalidDate ? sourceDates : dates,
+  };
+}
+
 export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   const base = createInitialMemoDraft();
   const metadata = {
@@ -248,7 +267,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   const pilotSchedule = normalizeDateFields(input.pilotSchedule ?? base.pilotSchedule);
 
   const activities = Array.isArray(input.activities)
-    ? input.activities.map((row) => normalizeDateFields(row))
+    ? input.activities.map((row) => normalizeActivityDateFields(row))
     : base.activities;
   let previousScenarioStartDate = "";
   let previousScenarioEndDate = "";

@@ -1498,6 +1498,18 @@ test("labels split development and activity tables as continuations in preview a
     "Aktivitas Cabang dan Unit Kerja",
   );
   await expect(activityContinuation.locator("span")).toHaveText(", Sambungan");
+  await expect(
+    page.locator("aside").getByText(
+      "Berikut adalah fitur pengembangan pada BDS Web Gen 2 versi 4.3.0:",
+      { exact: true },
+    ),
+  ).toHaveCount(1);
+  await expect(
+    page.locator("aside").getByText(
+      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
+      { exact: true },
+    ),
+  ).toHaveCount(1);
   const pageOverflow = await page
     .locator('aside article[data-page-kind="main"] [data-preview-page-content]')
     .evaluateAll((contents) =>
@@ -1511,6 +1523,8 @@ test("labels split development and activity tables as continuations in preview a
   const plainXmlText = xml.replace(/<[^>]+>/g, "");
   expect(plainXmlText).toContain("Lingkup Pengembangan, Sambungan");
   expect(plainXmlText).toContain("Aktivitas Cabang dan Unit Kerja, Sambungan");
+  expect((plainXmlText.match(/Berikut adalah fitur pengembangan pada/g) ?? [])).toHaveLength(1);
+  expect((plainXmlText.match(/Berikut ini adalah aktivitas yang perlu dilakukan/g) ?? [])).toHaveLength(1);
   expect((xml.match(/<w:tblW w:type="dxa" w:w="9266"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect((xml.match(/<w:gridCol w:w="1800"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect((xml.match(/<w:gridCol w:w="300"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
@@ -2748,10 +2762,11 @@ test("schedule combines a shared year across different months in preview and DOC
   expect(xml).not.toContain("23\u00A0Juli\u00A02026\u00A0\u2013\u00A04\u00A0Agustus\u00A02026");
 });
 
-test("all memo calendars render skipped dates as compact ranges in preview and DOCX", async ({ page }) => {
+test("memo calendars keep their scope-specific skipped-date formats in preview and DOCX", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const selectedDates = ["2026-07-03", "2026-07-04", "2026-07-07"];
   const expected = "3 \u2013 4, 7 Juli 2026";
+  const activityExpected = "3-4, 7 Juli 2026";
   await importDraft(page, {
     ...completeDraft(),
     pilotSchedule: {
@@ -2774,7 +2789,7 @@ test("all memo calendars render skipped dates as compact ranges in preview and D
   });
 
   await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
-  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: expected })).toBeVisible();
+  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: activityExpected })).toBeVisible();
   await expect(page.locator('aside article[data-page-kind="appendix"]').getByText(expected, { exact: true })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
@@ -2783,8 +2798,148 @@ test("all memo calendars render skipped dates as compact ranges in preview and D
   const expectedDocx = "3\u00A0\u2013\u00A04,\u00A07\u00A0Juli\u00A02026";
   const expectedDocxAnySpacing = /3(?:\u00A0| )\u2013(?:\u00A0| )4,(?:\u00A0| )7(?:\u00A0| )Juli(?:\u00A0| )2026/g;
   expect(xml).toContain(expectedDocx);
-  expect(xml.match(expectedDocxAnySpacing)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  expect(xml.match(expectedDocxAnySpacing)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  expect(xml).toContain(activityExpected);
   expect(xml).not.toContain("3\u00A0\u2013\u00A07\u00A0Juli\u00A02026");
+});
+
+test("activity dates follow individual grouping, punctuation, month, and year rules", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const cases = [
+    {
+      id: "activity-date-range",
+      dates: ["10/08/2026", "11/08/2026", "12/08/2026"],
+      expected: "10-12 Agustus 2026",
+    },
+    {
+      id: "activity-date-two-single",
+      dates: ["2026-08-10", "2026-08-12"],
+      expected: "10 dan 12 Agustus 2026",
+    },
+    {
+      id: "activity-date-three-single",
+      dates: ["2026-08-14", "2026-08-10", "2026-08-12", "2026-08-12"],
+      expected: "10, 12, dan 14 Agustus 2026",
+    },
+    {
+      id: "activity-date-mixed",
+      dates: ["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-14"],
+      expected: "10-12, 14 Agustus 2026",
+    },
+    {
+      id: "activity-date-cross-month",
+      dates: ["2026-08-31", "2026-09-01"],
+      expected: "31 Agustus dan 1 September 2026",
+    },
+    {
+      id: "activity-date-cross-year",
+      dates: ["2026-12-31", "2027-01-01"],
+      expected: "31 Desember 2026 dan 1 Januari 2027",
+    },
+  ];
+
+  await importDraft(page, {
+    ...completeDraft(),
+    activities: cases.map((item, index) => ({
+      id: item.id,
+      startDate: item.dates[0],
+      endDate: item.dates.at(-1),
+      dates: item.dates,
+      owner: `PIC ${index + 1}`,
+      activity: richText(`Aktivitas aturan tanggal ${index + 1}`),
+    })),
+  });
+
+  for (const item of cases) {
+    await expect(
+      page.locator(`aside [data-preview-field-id="activity-date-${item.id}"]`).filter({
+        hasText: item.expected,
+      }).first(),
+    ).toBeVisible();
+  }
+
+  const previewTypography = await page
+    .locator('aside [data-preview-field-id="activity-date-activity-date-range"]')
+    .first()
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        fontStyle: style.fontStyle,
+        fontWeight: style.fontWeight,
+        textTransform: style.textTransform,
+      };
+    });
+  expect(previewTypography.fontFamily).toContain("Times New Roman");
+  expect(previewTypography.fontSize).toBe("14.67px");
+  expect(previewTypography.fontStyle).toBe("normal");
+  expect(previewTypography.fontWeight).toBe("400");
+  expect(previewTypography.textTransform).toBe("none");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const plainXmlText = xml.replace(/<[^>]+>/g, "");
+  for (const item of cases) expect(plainXmlText).toContain(item.expected);
+  const dateIndex = xml.indexOf(cases[0].expected);
+  const dateParagraph = xml.slice(xml.lastIndexOf("<w:p>", dateIndex), xml.indexOf("</w:p>", dateIndex));
+  expect(dateParagraph).toContain('<w:sz w:val="22"/>');
+  expect(dateParagraph).toContain('<w:jc w:val="center"/>');
+});
+
+test("activity Hari ini adds to the existing individual date selection", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    activities: [{
+      ...completeDraft().activities[0],
+      startDate: "2020-01-01",
+      endDate: "2020-01-01",
+      dates: ["2020-01-01"],
+    }],
+  });
+
+  await page.locator('[data-field-id="activity-date-activity-test"] button').click();
+  const popup = page.locator("[data-date-range-popup]");
+  await expect(popup).toContainText("Klik tanggal untuk menambah atau menghapus pilihan");
+  await popup.getByRole("button", { name: "Hari ini", exact: true }).click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+
+  const today = new Date();
+  const todayText = new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(today);
+  await expect(page.locator('aside [data-preview-field-id="activity-date-activity-test"]').first()).toHaveText(
+    `1 Januari 2020 dan ${todayText}`,
+  );
+});
+
+test("activity calendar clicks do not fill gaps between individually selected dates", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    activities: [{
+      ...completeDraft().activities[0],
+      startDate: "2026-08-10",
+      endDate: "2026-08-10",
+      dates: ["2026-08-10"],
+    }],
+  });
+
+  const activityDateField = page.locator('[data-field-id="activity-date-activity-test"]');
+  await activityDateField.getByRole("button").click();
+  const popup = page.locator("[data-date-range-popup]");
+  await popup.locator('[data-date-value="2026-08-12"]').click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(activityDateField.getByRole("button")).toContainText("10 dan 12 Agustus 2026");
+
+  await activityDateField.getByRole("button").click();
+  await popup.locator('[data-date-value="2026-08-12"]').click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(activityDateField.getByRole("button")).toContainText("10 Agustus 2026");
 });
 
 test("calendar day clicks keep previous selected dates and compress adjacent days", async ({ page }) => {
@@ -2970,6 +3125,29 @@ test("preview field click and mandatory validation share temporary yellow focus"
   await expect(projectField).toHaveClass(/field-jump-highlight/);
   await expect(page.getByLabel("Nama Project")).toBeFocused();
   await expect(projectField).not.toHaveClass(/field-jump-highlight/, { timeout: 3500 });
+});
+
+test("Kepada and Dari preview fields navigate to their connected editor fields", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  await page
+    .locator('aside [data-preview-field-id="recipient-recipient-test"]')
+    .filter({ hasText: /^Kepada$/ })
+    .first()
+    .click();
+  const recipientField = page.locator('[data-field-id="recipient-recipient-test"]');
+  await expect(recipientField).toHaveClass(/field-jump-highlight/);
+  await expect(recipientField.locator("input")).toBeFocused();
+
+  await page
+    .locator('aside [data-preview-field-id="bureau"]')
+    .filter({ hasText: /^Dari$/ })
+    .first()
+    .click();
+  const bureauField = page.locator('[data-field-id="bureau"]');
+  await expect(bureauField).toHaveClass(/field-jump-highlight/);
+  await expect(bureauField.locator("select")).toBeFocused();
 });
 
 test("review comments layout matches unresolved and resolved references", async ({ page }) => {
@@ -3554,6 +3732,18 @@ test("comment mode accepts preview hyperlinks and uses clean scenario labels", a
   await expect(commentDialog).toContainText("URL Akses");
   await commentDialog.getByRole("button", { name: "Batal" }).click();
 
+  await page.locator('aside [data-preview-field-id="recipient-recipient-test"]').filter({
+    hasText: /^Kepada$/,
+  }).first().click();
+  await expect(page.getByRole("dialog", { name: "Tambah komentar" })).toContainText("Jabatan / Unit");
+  await page.getByRole("dialog", { name: "Tambah komentar" }).getByRole("button", { name: "Batal" }).click();
+
+  await page.locator('aside [data-preview-field-id="bureau"]').filter({
+    hasText: /^Dari$/,
+  }).first().click();
+  await expect(page.getByRole("dialog", { name: "Tambah komentar" })).toContainText("Bureau UAT");
+  await page.getByRole("dialog", { name: "Tambah komentar" }).getByRole("button", { name: "Batal" }).click();
+
   await page.locator('[data-field-id="scenario-text-scenario-test"] .ProseMirror').click();
   await expect(page.getByRole("dialog", { name: "Tambah komentar" })).toContainText("Skenario");
   await expect(page.getByRole("dialog", { name: "Tambah komentar" })).not.toContainText("scenario-text-scenario-test");
@@ -3924,6 +4114,26 @@ test("every newly added repeatable mandatory row blocks DOCX generation while em
   ]) {
     await expect(validation.getByText(label)).toHaveCount(1);
   }
+});
+
+test("invalid activity calendar dates block DOCX generation", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    activities: [{
+      ...completeDraft().activities[0],
+      startDate: "2026-08-10",
+      endDate: "2026-08-10",
+      dates: ["2026-08-10", "31/02/2026"],
+    }],
+  });
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  expect(await downloadPromise).toBeNull();
+  await expect(page.locator('[data-validation-issue-id="activity-date-activity-test"]')).toHaveText(
+    "- Aktivitas 1: Tanggal tidak valid",
+  );
 });
 
 test("top-level and conditional mandatory fields block DOCX generation", async ({ page }) => {

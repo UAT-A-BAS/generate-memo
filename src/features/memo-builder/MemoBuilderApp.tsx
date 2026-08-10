@@ -70,7 +70,11 @@ import {
   saveCollaboratorIdentity,
 } from "@/collaboration/collaboratorIdentity";
 import { createId } from "@/utils/ids";
-import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import {
+  activityDateSelectionError,
+  formatActivityDateRangeID,
+  formatDateRangeID,
+} from "@/utils/formatDateRangeID";
 import { focusEditorField, revealEditorTarget } from "@/utils/fieldNavigation";
 
 const memoTypes: MemoType[] = [
@@ -230,7 +234,12 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
   }
 
   draft.activities.forEach((row, index) => {
-    if (!hasText(row.startDate) || !hasText(row.endDate)) add(`activity-date-${row.id}`, `Aktivitas ${index + 1}: Tanggal`);
+    const dateError = activityDateSelectionError(row.startDate, row.endDate, row.dates);
+    if (dateError === "empty") {
+      add(`activity-date-${row.id}`, `Aktivitas ${index + 1}: Tanggal wajib diisi`);
+    } else if (dateError === "invalid") {
+      add(`activity-date-${row.id}`, `Aktivitas ${index + 1}: Tanggal tidak valid`);
+    }
     if (!hasText(row.owner)) add(`activity-owner-${row.id}`, `Aktivitas ${index + 1}: PIC`);
     if (!hasRichText(row.activity)) add(`activity-text-${row.id}`, `Aktivitas ${index + 1}: Aktivitas`);
   });
@@ -1314,6 +1323,8 @@ function ActivitiesPanel({
                     startDate={row.startDate}
                     endDate={row.endDate}
                     dates={row.dates}
+                    formatValue={formatActivityDateRangeID}
+                    individualSelection
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>

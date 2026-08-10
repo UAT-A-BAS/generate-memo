@@ -53,7 +53,7 @@ import {
 } from "@/documentLayout";
 import { isTableSectionContinuation, paginateMemoDraft, sourceBlockId } from "@/pagination/paginate";
 import {
-  formatDateRangeID,
+  formatActivityDateRangeID,
   formatDateRangeNonBreakingID,
 } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
@@ -860,7 +860,7 @@ function activityTable(
         const dateMerge = consecutiveMergeState(
           rows,
           index,
-          (row) => formatDateRangeID(row.row.startDate, row.row.endDate, row.row.dates),
+          (row) => formatActivityDateRangeID(row.row.startDate, row.row.endDate, row.row.dates),
         );
         return (
         bodyRow({
@@ -899,7 +899,7 @@ function activityTable(
                   mergedCell(
                     [
                       paragraph(
-                        formatDateRangeID(block.row.startDate, block.row.endDate, block.row.dates),
+                        formatActivityDateRangeID(block.row.startDate, block.row.endDate, block.row.dates),
                         { size: 22, align: AlignmentType.CENTER },
                       ),
                     ],
@@ -1355,17 +1355,24 @@ function pageChildren(
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "development-row");
       const developmentRows = rows as Extract<PreviewBlock, { type: "development-row" }>[];
       const sectionRule = nextSectionRule();
-      const title = isTableSectionContinuation(developmentRows[0])
+      const continuation = isTableSectionContinuation(developmentRows[0]);
+      const title = continuation
         ? "Lingkup Pengembangan, Sambungan"
         : "Lingkup Pengembangan";
       children.push(
         ...leadingSectionSpacer(sectionRule),
-        previewSection(title, [
-          paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
-            size: 22,
-            spacingAfter: isTableSectionContinuation(developmentRows[0]) ? 0 : 120,
-          }),
-        ], sectionRule),
+        previewSection(
+          title,
+          continuation
+            ? [paragraph("", { size: 2 })]
+            : [
+                paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
+                  size: 22,
+                  spacingAfter: 120,
+                }),
+              ],
+          sectionRule,
+        ),
         developmentTable(developmentRows, draft.developmentRows.length > 1),
         tableBottomSpacer(),
       );
@@ -1377,17 +1384,24 @@ function pageChildren(
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "activity-row");
       const activityRows = rows as Extract<PreviewBlock, { type: "activity-row" }>[];
       const sectionRule = nextSectionRule();
-      const title = isTableSectionContinuation(activityRows[0])
+      const continuation = isTableSectionContinuation(activityRows[0]);
+      const title = continuation
         ? "Aktivitas Cabang dan Unit Kerja, Sambungan"
         : "Aktivitas Cabang dan Unit Kerja";
       children.push(
         ...leadingSectionSpacer(sectionRule),
-        previewSection(title, [
-          paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
-            size: 22,
-            spacingAfter: 120,
-          }),
-        ], sectionRule),
+        previewSection(
+          title,
+          continuation
+            ? [paragraph("", { size: 2 })]
+            : [
+                paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
+                  size: 22,
+                  spacingAfter: 120,
+                }),
+              ],
+          sectionRule,
+        ),
         activityTable(activityRows, draft.activities.length > 1),
         tableBottomSpacer(),
       );

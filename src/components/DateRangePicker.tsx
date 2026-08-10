@@ -17,6 +17,7 @@ import {
   datesFromRange,
   formatDateRangeID,
   normalizeDateSelection,
+  parseDateValue,
   todayInputValue,
 } from "@/utils/formatDateRangeID";
 
@@ -28,6 +29,8 @@ type DateRangePickerProps = {
   dates?: string[];
   onChange: (value: DateRangeValue) => void;
   compact?: boolean;
+  formatValue?: (startValue: string, endValue: string, selectedDates?: readonly string[]) => string;
+  individualSelection?: boolean;
 };
 
 type DatePickerMode = "day" | "month" | "year";
@@ -55,12 +58,6 @@ const monthNames = [
 ];
 
 const dayLabels = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
-
-function parseInputDate(value: string) {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
 
 function toInputDate(date: Date) {
   const year = date.getFullYear();
@@ -98,6 +95,8 @@ export function DateRangePicker({
   dates,
   onChange,
   compact,
+  formatValue = formatDateRangeID,
+  individualSelection = false,
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<DatePickerMode>("day");
@@ -109,26 +108,26 @@ export function DateRangePicker({
   const suppressClickRef = useRef(false);
   const [dragSelection, setDragSelection] = useState<DragSelection | null>(null);
   const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 704 });
-  const start = parseInputDate(startDate);
-  const end = parseInputDate(endDate);
+  const start = parseDateValue(startDate);
+  const end = parseDateValue(endDate);
   const selectedDates = useMemo(
     () => normalizeDateSelection(dates?.length ? dates : datesFromRange(startDate, endDate)),
     [dates, endDate, startDate],
   );
   const selectedDateSet = useMemo(() => new Set(selectedDates), [selectedDates]);
   const selectedDatesKey = selectedDates.join("|");
-  const initial = parseInputDate(selectedDates[0] ?? "") ?? start ?? end ?? parseInputDate(todayInputValue()) ?? new Date();
+  const initial = parseDateValue(selectedDates[0] ?? "") ?? start ?? end ?? parseDateValue(todayInputValue()) ?? new Date();
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
   const days = useMemo(() => calendarDays(viewYear, viewMonth), [viewYear, viewMonth]);
-  const displayValue = selectedDates.length ? formatDateRangeID(startDate, endDate, selectedDates) : "";
+  const displayValue = selectedDates.length ? formatValue(startDate, endDate, selectedDates) : "";
   const dragDates = useMemo(
     () =>
-      dragSelection?.hasMoved
+      !individualSelection && dragSelection?.hasMoved
         ? datesFromRange(dragSelection.startDate, dragSelection.endDate)
         : [],
-    [dragSelection],
+    [dragSelection, individualSelection],
   );
   const dragDateSet = useMemo(() => new Set(dragDates), [dragDates]);
   const visualDates = useMemo(
@@ -137,7 +136,7 @@ export function DateRangePicker({
   );
   const visualDateSet = useMemo(() => new Set(visualDates), [visualDates]);
   const dragLabel = dragDates.length
-    ? formatDateRangeID(dragDates[0], dragDates.at(-1) ?? dragDates[0], dragDates)
+    ? formatValue(dragDates[0], dragDates.at(-1) ?? dragDates[0], dragDates)
     : "";
   const yearStart = Math.floor(viewYear / 16) * 16;
 
@@ -213,7 +212,7 @@ export function DateRangePicker({
 
   function toggleOpen() {
     if (!open) {
-      const focusDate = parseInputDate(selectedDates[0] ?? "") ?? parseInputDate(startDate) ?? parseInputDate(endDate);
+      const focusDate = parseDateValue(selectedDates[0] ?? "") ?? parseDateValue(startDate) ?? parseDateValue(endDate);
       if (focusDate) {
         setViewYear(focusDate.getFullYear());
         setViewMonth(focusDate.getMonth());
@@ -256,6 +255,7 @@ export function DateRangePicker({
   }
 
   function beginDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (individualSelection) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
     const target = event.target;
@@ -277,6 +277,7 @@ export function DateRangePicker({
   }
 
   function updateDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (individualSelection) return;
     const current = dragSelectionRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
@@ -293,6 +294,7 @@ export function DateRangePicker({
   }
 
   function finishDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (individualSelection) return;
     const current = dragSelectionRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
@@ -308,7 +310,7 @@ export function DateRangePicker({
       ]);
       committed = true;
     } else {
-      const day = parseInputDate(current.startDate);
+      const day = parseDateValue(current.startDate);
       if (day) {
         chooseDay(day);
         committed = true;
@@ -327,6 +329,7 @@ export function DateRangePicker({
   }
 
   function cancelDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (individualSelection) return;
     const current = dragSelectionRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
@@ -351,10 +354,14 @@ export function DateRangePicker({
 
   function today() {
     const value = todayInputValue();
-    const date = parseInputDate(value);
+    const date = parseDateValue(value);
     if (date) {
       setViewYear(date.getFullYear());
       setViewMonth(date.getMonth());
+    }
+    if (individualSelection) {
+      commitDates([...selectedDates, value]);
+      return;
     }
     onChange({ startDate: value, endDate: value, dates: [value] });
   }
@@ -424,7 +431,9 @@ export function DateRangePicker({
                     ? `Lepas untuk menambahkan ${dragLabel}`
                     : dragSelection
                       ? "Geser ke tanggal akhir untuk membuat rentang"
-                      : "Klik satu tanggal · tahan dan geser untuk rentang"}
+                      : individualSelection
+                        ? "Klik tanggal untuk menambah atau menghapus pilihan"
+                        : "Klik satu tanggal · tahan dan geser untuk rentang"}
                 </p>
                 {!dragSelection && displayValue ? (
                   <p className="mt-0.5 truncate text-[10px] leading-4 text-[#60758a]" title={displayValue}>
@@ -436,10 +445,10 @@ export function DateRangePicker({
                 ref={dateGridRef}
                 data-date-grid
                 data-dragging={dragSelection ? "true" : "false"}
-                onPointerDown={beginDragSelection}
-                onPointerMove={updateDragSelection}
-                onPointerUp={finishDragSelection}
-                onPointerCancel={cancelDragSelection}
+                onPointerDown={individualSelection ? undefined : beginDragSelection}
+                onPointerMove={individualSelection ? undefined : updateDragSelection}
+                onPointerUp={individualSelection ? undefined : finishDragSelection}
+                onPointerCancel={individualSelection ? undefined : cancelDragSelection}
                 onDragStart={(event) => event.preventDefault()}
                 className="grid touch-none select-none grid-cols-7 gap-y-1 text-center text-xs"
                 aria-describedby={hintId}
@@ -455,7 +464,7 @@ export function DateRangePicker({
                   const selected = selectedDateSet.has(value);
                   const visuallySelected = visualDateSet.has(value);
                   const previewed = dragDateSet.has(value);
-                  const parsedValue = parseInputDate(value);
+                  const parsedValue = parseDateValue(value);
                   const previousDate = parsedValue ? new Date(parsedValue) : null;
                   const nextDate = parsedValue ? new Date(parsedValue) : null;
                   previousDate?.setDate(previousDate.getDate() - 1);
@@ -474,8 +483,10 @@ export function DateRangePicker({
                       data-date-value={value}
                       onClick={(event) => handleDayClick(event, day)}
                       aria-pressed={selected}
-                      title={formatDateRangeID(value, value, [value])}
-                      className={`mx-auto flex h-8 w-8 cursor-grab items-center justify-center rounded-lg text-sm outline-none transition-colors duration-75 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[#0067b1] focus-visible:ring-offset-2 ${
+                      title={formatValue(value, value, [value])}
+                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-sm outline-none transition-colors duration-75 focus-visible:ring-2 focus-visible:ring-[#0067b1] focus-visible:ring-offset-2 ${
+                        individualSelection ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+                      } ${
                         previewed && !rangeMiddle
                           ? "bg-[#005a9f] font-bold text-white shadow-[0_2px_7px_rgba(0,90,159,0.28)]"
                           : rangeMiddle

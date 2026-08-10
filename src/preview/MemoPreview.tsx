@@ -3,7 +3,7 @@ import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
 import { isTableSectionContinuation, paginateMemoDraft, sourceBlockId } from "@/pagination/paginate";
 import type { RichTextDoc } from "@/types/richText";
-import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import { formatActivityDateRangeID, formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToListItems, richTextToPlainText } from "@/utils/richText";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
@@ -141,7 +141,13 @@ function recipientLine(recipient: Recipient, index: number, total: number) {
   const useBullet = total > 1;
 
   return (
-    <div className="grid gap-[5px]" key={recipient.id}>
+    <div
+      className="preview-field-target grid gap-[5px]"
+      data-preview-field-id={`recipient-${recipient.id}`}
+      role="button"
+      tabIndex={0}
+      key={recipient.id}
+    >
       {useBullet ? <BulletAlignedLine>{recipient.position}</BulletAlignedLine> : <p>{recipient.position}</p>}
       {name ? (
         useBullet ? <BulletAlignedLine bullet={false}>{name}</BulletAlignedLine> : <p>{name}</p>
@@ -267,17 +273,39 @@ function renderBlock(
 ) {
   switch (block.type) {
     case "memo-heading":
+      const firstRecipientFieldId = draft.recipients[0]
+        ? `recipient-${draft.recipients[0].id}`
+        : undefined;
       return (
         <div className="mt-[57px] text-[14.67px] leading-[1.15]">
           <div className="grid grid-cols-[92px_14px_1fr] gap-x-2 gap-y-[5px]">
-            <span>Kepada</span>
+            <span
+              className={firstRecipientFieldId ? "preview-field-target" : undefined}
+              data-preview-field-id={firstRecipientFieldId}
+              role={firstRecipientFieldId ? "button" : undefined}
+              tabIndex={firstRecipientFieldId ? 0 : undefined}
+            >
+              Kepada
+            </span>
             <span>:</span>
             <div className="grid gap-[5px]">
               {draft.recipients.map((recipient, index) => recipientLine(recipient, index, draft.recipients.length))}
             </div>
-            <span>Dari</span>
+            <span
+              className="preview-field-target"
+              data-preview-field-id="bureau"
+              role="button"
+              tabIndex={0}
+            >
+              Dari
+            </span>
             <span>:</span>
-            <span>
+            <span
+              className="preview-field-target"
+              data-preview-field-id="bureau"
+              role="button"
+              tabIndex={0}
+            >
               POL Application &amp; User Acceptance Test Bureau {draft.metadata.bureau} (UAT {draft.metadata.bureau})
             </span>
             <span>Jenis Informasi</span>
@@ -527,7 +555,9 @@ function renderGroupedBlocks(
             fieldId={`development-item-${developmentRows[0].row.id}`}
           key={`development-${index}`}
         >
-          <p className={continuation ? "mb-0" : "mb-2"}>Berikut adalah fitur pengembangan pada {draft.metadata.projectName}:</p>
+          {!continuation ? (
+            <p className="mb-2">Berikut adalah fitur pengembangan pada {draft.metadata.projectName}:</p>
+          ) : null}
           <MemoTable
             headers={numbered ? ["No.", "Pengembangan", "Keterangan"] : ["Pengembangan", "Keterangan"]}
             columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
@@ -588,7 +618,9 @@ function renderGroupedBlocks(
             fieldId={`activity-text-${activityRows[0].row.id}`}
           key={`activity-${index}`}
         >
-          <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
+          {!continuation ? (
+            <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
+          ) : null}
           <MemoTable
             headers={numbered ? ["No.", "Aktivitas", "PIC", "Waktu"] : ["Aktivitas", "PIC", "Waktu"]}
             columnWidths={numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTH_PERCENTAGES : ACTIVITY_COLUMN_WIDTH_PERCENTAGES}
@@ -607,7 +639,7 @@ function renderGroupedBlocks(
               const dateMerge = consecutiveMergeState(
                 activityRows,
                 rowIndex,
-                (row) => formatDateRangeID(row.row.startDate, row.row.endDate, row.row.dates),
+                (row) => formatActivityDateRangeID(row.row.startDate, row.row.endDate, row.row.dates),
               );
               return (
               <tr key={item.id}>
@@ -638,7 +670,7 @@ function renderGroupedBlocks(
                     rowSpan={dateMerge.span}
                     data-preview-field-id={`activity-date-${item.row.id}`}
                   >
-                    {formatDateRangeID(item.row.startDate, item.row.endDate, item.row.dates)}
+                    {formatActivityDateRangeID(item.row.startDate, item.row.endDate, item.row.dates)}
                   </td>
                 )}
               </tr>

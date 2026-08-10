@@ -34,6 +34,35 @@ function toDate(value: string) {
   return date;
 }
 
+export function parseDateValue(value: string) {
+  const normalized = value.trim();
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  const localMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(normalized);
+  const year = Number(isoMatch?.[1] ?? localMatch?.[3]);
+  const month = Number(isoMatch?.[2] ?? localMatch?.[2]);
+  const day = Number(isoMatch?.[3] ?? localMatch?.[1]);
+
+  if (!isoMatch && !localMatch) return null;
+
+  const date = new Date(0);
+  date.setHours(0, 0, 0, 0);
+  date.setFullYear(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+export function isValidDateValue(value: string) {
+  return Boolean(parseDateValue(value));
+}
+
 function toInputDate(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -53,6 +82,18 @@ export function normalizeDateSelection(values: readonly string[] | undefined) {
 
   for (const value of values ?? []) {
     const date = toDate(value);
+    if (!date) continue;
+    unique.add(toInputDate(date));
+  }
+
+  return Array.from(unique).sort();
+}
+
+export function normalizeActivityDateSelection(values: readonly string[] | undefined) {
+  const unique = new Set<string>();
+
+  for (const value of values ?? []) {
+    const date = parseDateValue(value);
     if (!date) continue;
     unique.add(toInputDate(date));
   }
@@ -216,6 +257,122 @@ export function formatDateRangeID(startValue: string, endValue: string, selected
   }
 
   return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
+}
+
+type ActivityMonthGroup = {
+  year: number;
+  month: number;
+  segments: { start: string; end: string }[];
+};
+
+function activityDatesFromRange(startValue: string, endValue: string) {
+  const start = parseDateValue(startValue);
+  const end = parseDateValue(endValue);
+
+  if (!start && !end) return [];
+  if (start && !end) return [toInputDate(start)];
+  if (!start && end) return [toInputDate(end)];
+  if (!start || !end) return [];
+
+  const first = start.getTime() <= end.getTime() ? start : end;
+  const last = start.getTime() <= end.getTime() ? end : start;
+  const dates: string[] = [];
+  const cursor = new Date(first);
+
+  while (cursor.getTime() <= last.getTime()) {
+    dates.push(toInputDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function activityDateValues(
+  startValue: string,
+  endValue: string,
+  selectedDates?: readonly string[],
+) {
+  if (selectedDates?.length) return normalizeActivityDateSelection(selectedDates);
+  return activityDatesFromRange(startValue, endValue);
+}
+
+function activityMonthGroups(values: readonly string[]): ActivityMonthGroup[] {
+  const grouped = new Map<string, string[]>();
+
+  normalizeActivityDateSelection(values).forEach((value) => {
+    const date = parseDateValue(value);
+    if (!date) return;
+    const key = `${date.getFullYear()}-${date.getMonth()}`;
+    const dates = grouped.get(key) ?? [];
+    dates.push(value);
+    grouped.set(key, dates);
+  });
+
+  return Array.from(grouped.values()).map((dates) => {
+    const first = parseDateValue(dates[0]);
+    return {
+      year: first?.getFullYear() ?? 0,
+      month: first?.getMonth() ?? 0,
+      segments: compactDateSegments(dates),
+    };
+  });
+}
+
+function activityGroupDayText(group: ActivityMonthGroup) {
+  const parts = group.segments.map((segment) => {
+    const start = parseDateValue(segment.start);
+    const end = parseDateValue(segment.end);
+    if (!start || !end) return "";
+    if (segment.start === segment.end) return dayFormatter.format(start);
+    return `${dayFormatter.format(start)}-${dayFormatter.format(end)}`;
+  }).filter(Boolean);
+  const containsRange = group.segments.some((segment) => segment.start !== segment.end);
+
+  if (parts.length <= 1) return parts[0] ?? "";
+  if (containsRange) return parts.join(", ");
+  if (parts.length === 2) return `${parts[0]} dan ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, dan ${parts.at(-1)}`;
+}
+
+export function formatActivityDateRangeID(
+  startValue: string,
+  endValue: string,
+  selectedDates?: readonly string[],
+) {
+  const groups = activityMonthGroups(activityDateValues(startValue, endValue, selectedDates));
+  if (!groups.length) return "-";
+
+  const groupTexts = groups.map((group, index) => {
+    const representative = new Date(0);
+    representative.setHours(0, 0, 0, 0);
+    representative.setFullYear(group.year, group.month, 1);
+    const nextGroup = groups[index + 1];
+    const showYear = !nextGroup || nextGroup.year !== group.year;
+    return `${activityGroupDayText(group)} ${monthFormatter.format(representative)}${
+      showYear ? ` ${group.year}` : ""
+    }`;
+  });
+
+  if (groupTexts.length === 1) return groupTexts[0];
+  if (groupTexts.length === 2) {
+    const partCount = groups.reduce((total, group) => total + group.segments.length, 0);
+    return `${groupTexts[0]}${partCount >= 3 ? ", dan " : " dan "}${groupTexts[1]}`;
+  }
+  return `${groupTexts.slice(0, -1).join(", ")}, dan ${groupTexts.at(-1)}`;
+}
+
+export function activityDateSelectionError(
+  startValue: string,
+  endValue: string,
+  selectedDates?: readonly string[],
+): "empty" | "invalid" | null {
+  const sourceValues = selectedDates?.length
+    ? selectedDates
+    : [startValue, endValue].filter(Boolean);
+
+  if (!sourceValues.length) return "empty";
+  if (sourceValues.some((value) => !isValidDateValue(value))) return "invalid";
+  return null;
 }
 
 export function formatDateRangeNonBreakingID(startValue: string, endValue: string, selectedDates?: readonly string[]) {
