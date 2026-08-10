@@ -3568,28 +3568,34 @@ test("save draft uses the project name followed by MEMO", async ({ page }) => {
   await expect((await downloadPromise).suggestedFilename()).toBe("BDS Web Gen 2 versi 4.3.0_MEMO.json");
 });
 
-test("personal draft survives an immediate reload without starting collaboration", async ({
+test("personal draft resets on reload before collaboration starts", async ({
   page,
 }) => {
   await page.goto("http://localhost:3002");
-  await page.getByLabel("Nama Project").fill("Draft Persisten");
+  await page.getByLabel("Nama Project").fill("Draft Sementara");
 
   await page.reload();
 
-  await expect(page.getByLabel("Nama Project")).toHaveValue("Draft Persisten");
+  await expect(page.getByLabel("Nama Project")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Start Collab" })).toBeVisible();
   await expect(page.getByText("Personal Draft", { exact: true })).toBeVisible();
 });
 
-test("corrupt local draft resets safely and reports the load failure", async ({ page }) => {
+test("legacy personal draft is ignored and removed on entry", async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem("memo-builder-fresh:blank-draft-v2", "{broken");
+    window.localStorage.setItem(
+      "memo-builder-fresh:blank-draft-v2",
+      JSON.stringify({ metadata: { projectName: "Draft Lama" } }),
+    );
   });
 
   await page.goto("http://localhost:3002");
 
-  await expect(page.locator("[data-draft-error]")).toContainText("Gagal memuat draft lokal");
   await expect(page.getByLabel("Nama Project")).toHaveValue("");
+  await expect(page.locator("[data-draft-error]")).toHaveCount(0);
+  await expect(
+    page.evaluate(() => window.localStorage.getItem("memo-builder-fresh:blank-draft-v2")),
+  ).resolves.toBeNull();
 });
 
 test("invalid draft JSON reports an error and leaves the file input reusable", async ({ page }) => {

@@ -132,6 +132,25 @@ test("production pages never connect to a loopback collaboration worker", () => 
   ).toBe("http://127.0.0.1:8787");
 });
 
+test("starting collaboration seeds the fields already filled by the owner", async ({ page }) => {
+  await installFakeCollaborationSocket(page);
+  await page.goto("http://localhost:3002");
+  await page.getByLabel("Nama Project").fill("Draft Seed Kolaborasi");
+  await page.getByRole("button", { name: "Start Collab" }).click();
+  const identityDialog = page.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await identityDialog.getByLabel("Nama *").fill("Seed Tester");
+  await identityDialog.getByRole("button", { name: "Lanjut" }).click();
+
+  await expect.poll(() => page.evaluate(() => window.__memoWs.sends
+    .filter((message) => message.kind === "text")
+    .map((message) => JSON.parse(message.value) as {
+      type?: string;
+      draft?: { metadata?: { projectName?: string } };
+    })
+    .find((message) => message.type === "draft-save")
+    ?.draft?.metadata?.projectName)).toBe("Draft Seed Kolaborasi");
+});
+
 test("collaboration closes an idle WebSocket without background reconnecting, then resumes on activity", async ({ page }) => {
   await installFakeCollaborationSocket(page);
   const baselineSockets = await startCollaboration(page);

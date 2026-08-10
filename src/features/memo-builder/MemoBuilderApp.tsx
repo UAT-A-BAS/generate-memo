@@ -2884,7 +2884,6 @@ export function MemoBuilderApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
   const editControlIndexRef = useRef(0);
-  const draftObservedForAutosaveRef = useRef<MemoDraft | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImportingDraft, setIsImportingDraft] = useState(false);
   const [draftFileError, setDraftFileError] = useState("");
@@ -2906,8 +2905,7 @@ export function MemoBuilderApp() {
   const updateDraft = useMemoDraftStore((state) => state.updateDraft);
   const updateMetadata = useMemoDraftStore((state) => state.updateMetadata);
   const replaceDraft = useMemoDraftStore((state) => state.replaceDraft);
-  const loadFromLocal = useMemoDraftStore((state) => state.loadFromLocal);
-  const saveToLocal = useMemoDraftStore((state) => state.saveToLocal);
+  const initializeFreshDraft = useMemoDraftStore((state) => state.initializeFreshDraft);
   const importDraft = useMemoDraftStore((state) => state.importDraft);
   const resetDraft = useMemoDraftStore((state) => state.resetDraft);
   const undo = useMemoDraftStore((state) => state.undo);
@@ -2921,8 +2919,8 @@ export function MemoBuilderApp() {
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
 
   useEffect(() => {
-    loadFromLocal();
-  }, [loadFromLocal]);
+    initializeFreshDraft();
+  }, [initializeFreshDraft]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -2944,35 +2942,6 @@ export function MemoBuilderApp() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [collaboratorName, identityDialog, identityLoaded]);
-
-  useEffect(() => {
-    if (!hasLoaded) return;
-    if (draftObservedForAutosaveRef.current === null) {
-      draftObservedForAutosaveRef.current = draft;
-      return;
-    }
-    if (draftObservedForAutosaveRef.current === draft) return;
-    draftObservedForAutosaveRef.current = draft;
-
-    const timer = window.setTimeout(saveToLocal, 250);
-    return () => window.clearTimeout(timer);
-  }, [draft, hasLoaded, saveToLocal]);
-
-  useEffect(() => {
-    if (!hasLoaded) return;
-
-    const persistLatestDraft = () => saveToLocal();
-    const persistWhenHidden = () => {
-      if (document.visibilityState === "hidden") persistLatestDraft();
-    };
-
-    window.addEventListener("pagehide", persistLatestDraft);
-    document.addEventListener("visibilitychange", persistWhenHidden);
-    return () => {
-      window.removeEventListener("pagehide", persistLatestDraft);
-      document.removeEventListener("visibilitychange", persistWhenHidden);
-    };
-  }, [hasLoaded, saveToLocal]);
 
   useEffect(() => {
     document.body.classList.toggle("is-review-commenting", commentMode);

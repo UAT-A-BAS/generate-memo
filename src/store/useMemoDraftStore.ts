@@ -6,7 +6,7 @@ import {
 } from "@/templates/bcaMemoTemplate";
 import { generatePerihal } from "@/utils/generatePerihal";
 
-const STORAGE_KEY = "memo-builder-fresh:blank-draft-v2";
+const LEGACY_STORAGE_KEY = "memo-builder-fresh:blank-draft-v2";
 
 type SaveStatus = "idle" | "loaded" | "saved" | "imported" | "error";
 
@@ -21,7 +21,6 @@ type MemoDraftStore = {
   editCheckpoint?: EditCheckpoint;
   hasLoaded: boolean;
   status: SaveStatus;
-  lastSavedAt?: string;
   error?: string;
   updateDraft: (updater: (draft: MemoDraft) => MemoDraft, recordHistory?: boolean) => void;
   updateMetadata: (patch: Partial<MemoMetadata>) => void;
@@ -29,8 +28,7 @@ type MemoDraftStore = {
   commitEditSession: (key?: string) => void;
   hasActiveEditChanges: () => boolean;
   replaceDraft: (draft: MemoDraft, status?: SaveStatus) => void;
-  loadFromLocal: () => void;
-  saveToLocal: () => void;
+  initializeFreshDraft: () => void;
   importDraft: (payload: unknown) => void;
   resetDraft: () => void;
   undo: () => void;
@@ -159,58 +157,23 @@ export const useMemoDraftStore = create<MemoDraftStore>((set, get) => ({
       error: undefined,
     });
   },
-  loadFromLocal: () => {
+  initializeFreshDraft: () => {
     if (typeof window === "undefined") return;
 
     try {
-      const storedDraft = window.localStorage.getItem(STORAGE_KEY);
-      let draft = createInitialMemoDraft();
-      let status: SaveStatus = "idle";
-      if (storedDraft) {
-        const parsed = JSON.parse(storedDraft) as unknown;
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error("Draft lokal tidak valid dan telah direset.");
-        }
-        draft = normalizeMemoDraft(parsed as Partial<MemoDraft>);
-        status = "loaded";
-      }
-      set({
-        draft,
-        history: [],
-        editCheckpoint: undefined,
-        hasLoaded: true,
-        status,
-        error: undefined,
-      });
-    } catch (error) {
-      set({
-        draft: createInitialMemoDraft(),
-        history: [],
-        editCheckpoint: undefined,
-        hasLoaded: true,
-        status: "error",
-        error: error instanceof Error
-          ? `Gagal memuat draft lokal: ${error.message}`
-          : "Gagal memuat draft lokal",
-      });
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {
+      // A blocked storage API must not prevent a fresh personal session.
     }
-  },
-  saveToLocal: () => {
-    if (typeof window === "undefined") return;
 
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(get().draft));
-      set({
-        status: "saved",
-        lastSavedAt: new Date().toISOString(),
-        error: undefined,
-      });
-    } catch (error) {
-      set({
-        status: "error",
-        error: error instanceof Error ? error.message : "Gagal menyimpan draft",
-      });
-    }
+    set({
+      draft: createInitialMemoDraft(),
+      history: [],
+      editCheckpoint: undefined,
+      hasLoaded: true,
+      status: "idle",
+      error: undefined,
+    });
   },
   importDraft: (payload) => {
     set({
