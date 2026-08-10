@@ -439,9 +439,11 @@ function CollaborationPanel({
   const syncTone =
     collaboration.status === "saved"
       ? "saved"
-      : collaboration.status === "offline"
-        ? "offline"
-        : "syncing";
+      : collaboration.status === "connected"
+        ? "live"
+        : collaboration.status === "offline"
+          ? "offline"
+          : "syncing";
 
   return (
     <div

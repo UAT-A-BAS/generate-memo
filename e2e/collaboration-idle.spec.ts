@@ -151,6 +151,28 @@ test("starting collaboration seeds the fields already filled by the owner", asyn
     ?.draft?.metadata?.projectName)).toBe("Draft Seed Kolaborasi");
 });
 
+test("refreshing a collaboration room restores its snapshot as saved", async ({ page }) => {
+  const serverDoc = new Y.Doc();
+  const serverMap = serverDoc.getMap("form");
+  const updatedAt = Date.now() - 1_000;
+  serverMap.set("data", {
+    metadata: { projectName: "Draft Room Tersimpan" },
+  });
+  serverMap.set("updatedAt", updatedAt);
+  serverMap.set("updatedBy", "remote-test");
+  const serverUpdate = Buffer.from(Y.encodeStateAsUpdate(serverDoc)).toString("base64");
+
+  await installFakeCollaborationSocket(page, serverUpdate);
+  await page.goto("http://localhost:3002/?room=refresh-status-room");
+  const identityDialog = page.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await identityDialog.getByLabel("Nama *").fill("Refresh Tester");
+  await identityDialog.getByRole("button", { name: "Lanjut" }).click();
+
+  await expect(page.getByLabel("Nama Project")).toHaveValue("Draft Room Tersimpan");
+  await expect(page.getByText("Live", { exact: true })).toHaveClass(/bg-emerald/);
+  await expect(page.getByText("Saved", { exact: true })).toHaveClass(/bg-emerald/);
+});
+
 test("collaboration closes an idle WebSocket without background reconnecting, then resumes on activity", async ({ page }) => {
   await installFakeCollaborationSocket(page);
   const baselineSockets = await startCollaboration(page);

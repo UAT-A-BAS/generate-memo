@@ -537,19 +537,16 @@ export function useMemoCollaboration(
           localBaselineRef.current = draftSyncKey(nextDraft);
           localUpdatedAtRef.current = updatedAt;
           syncRemoteMap(nextDraft, updatedAt, updatedBy);
-          return;
+        } else {
+          localBaselineRef.current = draftSyncKey(nextDraft);
+          localUpdatedAtRef.current = updatedAt;
+          replaceDraft(nextDraft, "loaded");
+          syncRemoteMap(nextDraft, updatedAt, updatedBy);
         }
-        localBaselineRef.current = draftSyncKey(nextDraft);
-        localUpdatedAtRef.current = updatedAt;
-        replaceDraft(nextDraft, "loaded");
-        syncRemoteMap(nextDraft, updatedAt, updatedBy);
       } finally {
         applyingRemoteRef.current = false;
       }
-      setState((current) => ({
-        ...current,
-        lastSyncedAt: formatSyncTime(new Date(updatedAt)),
-      }));
+      updateStatus("saved", formatSyncTime(new Date(updatedAt)));
     };
 
     const applyRemoteDraftSnapshot = (nextDraft: MemoDraft, updatedAt: number, updatedBy = "remote") => {
