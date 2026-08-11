@@ -318,11 +318,38 @@ function ownedCellBorders(edges: Set<CellBorderEdge>) {
 
 type DataTableSpec = {
   marker: string;
+  titleMarker?: string;
   width: number;
   grid: number[];
   indent?: number;
   spanLeadingColumnsWhenUnnumbered?: boolean;
+  unnumberedSpanCellIndex?: number;
+  borderColumnStart?: number;
+  borderColumnEnd?: number;
 };
+
+const CONTINUATION_DATA_TABLE_SPECS: DataTableSpec[] = [
+  {
+    marker: ">Keterangan</w:t>",
+    titleMarker: ">Lingkup Pengembangan</w:t>",
+    width: 9266,
+    grid: [1800, 300, 570, 1695, 4815, 86],
+    spanLeadingColumnsWhenUnnumbered: true,
+    unnumberedSpanCellIndex: 2,
+    borderColumnStart: 2,
+    borderColumnEnd: 5,
+  },
+  {
+    marker: ">Waktu</w:t>",
+    titleMarker: ">Aktivitas Cabang dan Unit Kerja</w:t>",
+    width: 9266,
+    grid: [1800, 300, 570, 3405, 1485, 1620, 86],
+    spanLeadingColumnsWhenUnnumbered: true,
+    unnumberedSpanCellIndex: 2,
+    borderColumnStart: 2,
+    borderColumnEnd: 6,
+  },
+];
 
 const SIMPLE_DATA_TABLE_SPECS: DataTableSpec[] = [
   {
@@ -445,11 +472,16 @@ function normalizeCellWidths(tableXml: string, spec: DataTableSpec) {
     const spanLeadingColumns = Boolean(
       spec.spanLeadingColumnsWhenUnnumbered && rowCells.length === spec.grid.length - 1,
     );
+    const unnumberedSpanCellIndex = spec.unnumberedSpanCellIndex ?? 0;
     let gridIndex = 0;
     let cellIndex = 0;
     return rowXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
       let normalizedCell = cellXml;
-      if (spanLeadingColumns && cellIndex === 0 && !/<w:gridSpan\b/.test(normalizedCell)) {
+      if (
+        spanLeadingColumns &&
+        cellIndex === unnumberedSpanCellIndex &&
+        !/<w:gridSpan\b/.test(normalizedCell)
+      ) {
         normalizedCell = normalizedCell.replace(
           /<w:tcPr\b[\s\S]*?<\/w:tcPr>/,
           (cellPrXml) => insertBeforeFirstProperty(
@@ -566,23 +598,29 @@ function withOwnedCellBorders(cellXml: string, edges: Set<CellBorderEdge>) {
 function normalizeOwnedCellBorders(tableXml: string, spec: DataTableSpec) {
   const rows = parseBorderRows(tableXml);
   if (!rows.length) return tableXml;
+  const borderColumnStart = spec.borderColumnStart ?? 0;
+  const borderColumnEnd = spec.borderColumnEnd ?? spec.grid.length;
+  const borderedCells = (row: BorderRow) =>
+    row.cells.filter(
+      (cell) => cell.start < borderColumnEnd && cell.end > borderColumnStart,
+    );
 
   for (const row of rows) {
-    for (const cell of row.cells) {
+    for (const cell of borderedCells(row)) {
       // Every left edge is owned by the cell on its right; the right edge is
       // emitted only for the table's outside boundary.
       cell.edges.add("left");
-      if (cell.end === spec.grid.length) cell.edges.add("right");
+      if (cell.end === borderColumnEnd) cell.edges.add("right");
     }
   }
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
     if (rowIndex === 0) {
-      for (const cell of row.cells) cell.edges.add("top");
+      for (const cell of borderedCells(row)) cell.edges.add("top");
     } else {
       const previousRow = rows[rowIndex - 1];
-      for (const cell of row.cells) {
+      for (const cell of borderedCells(row)) {
         const previousCells = Array.from({ length: cell.end - cell.start }, (_, offset) =>
           cellAt(previousRow, cell.start + offset),
         );
@@ -607,7 +645,7 @@ function normalizeOwnedCellBorders(tableXml: string, spec: DataTableSpec) {
     }
 
     if (rowIndex === rows.length - 1) {
-      for (const cell of row.cells) cell.edges.add("bottom");
+      for (const cell of borderedCells(row)) cell.edges.add("bottom");
     }
   }
 
@@ -640,6 +678,15 @@ function stableAppendixDataTable(tableXml: string) {
 function normalizeTableGrid(tableXml: string) {
   if (tableXml.includes(APPENDIX_DATA_TABLE_SPEC.marker)) {
     return stableAppendixDataTable(tableXml);
+  }
+
+  const continuationSpec = CONTINUATION_DATA_TABLE_SPECS.find(
+    (spec) =>
+      tableXml.includes(spec.marker) &&
+      Boolean(spec.titleMarker && tableXml.includes(spec.titleMarker)),
+  );
+  if (continuationSpec) {
+    return stableSimpleDataTable(tableXml, continuationSpec);
   }
 
   const simpleSpec = SIMPLE_DATA_TABLE_SPECS.find((spec) => tableXml.includes(spec.marker));

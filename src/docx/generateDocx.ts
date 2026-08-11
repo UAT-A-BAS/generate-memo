@@ -480,6 +480,54 @@ function bodyTable(
   });
 }
 
+function continuationLayoutCell(children: FileChild[], width: number) {
+  return new TableCell({
+    verticalAlign: VerticalAlign.TOP,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    width: { size: width, type: WidthType.DXA },
+    borders: noBorder,
+    children,
+  });
+}
+
+function continuationRowCells(
+  dataCells: TableCell[],
+  title?: string,
+) {
+  return [
+    continuationLayoutCell(
+      title ? [sectionTitleParagraph(title)] : [paragraph("", { size: 2 })],
+      BODY_TITLE_WIDTH,
+    ),
+    continuationLayoutCell([paragraph("", { size: 2 })], BODY_COLUMN_GAP),
+    ...dataCells,
+    continuationLayoutCell(
+      [paragraph("", { size: 2 })],
+      MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
+    ),
+  ];
+}
+
+function continuationAwareRowCells(
+  dataCells: TableCell[],
+  continuationTitle?: string,
+  includeTitle = false,
+) {
+  if (!continuationTitle) return dataCells;
+  return continuationRowCells(dataCells, includeTitle ? continuationTitle : undefined);
+}
+
+function continuationTableColumnWidths(columnWidths: number[]) {
+  return [
+    BODY_TITLE_WIDTH,
+    BODY_COLUMN_GAP,
+    ...columnWidths.map((columnWidth) =>
+      Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
+    ),
+    MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
+  ];
+}
+
 function mergedCell(
   children: Paragraph[],
   width: number,
@@ -732,16 +780,15 @@ function ccRecipientParagraphs(recipients: Recipient[], totalRecipients = recipi
 function developmentTable(
   rows: Extract<PreviewBlock, { type: "development-row" }>[],
   numbered: boolean,
-  indent = BODY_COLUMN_INDENT,
+  continuationTitle?: string,
 ) {
   const columnWidths = numbered
     ? Array.from(DEVELOPMENT_COLUMN_WIDTHS)
     : Array.from(DEVELOPMENT_SINGLE_COLUMN_WIDTHS);
-
-  return bodyTable([
+  const tableRows = [
     bodyRow({
       tableHeader: true,
-      children: [
+      children: continuationAwareRowCells([
         ...(numbered
           ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true)]
           : []),
@@ -755,7 +802,7 @@ function developmentTable(
           numbered ? DEVELOPMENT_COLUMN_WIDTHS[2] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
           true,
         ),
-      ],
+      ], continuationTitle, true),
     }),
     ...rows.map(
       (block, index) => {
@@ -772,7 +819,7 @@ function developmentTable(
         return (
         bodyRow({
           cantSplit: true,
-          children: [
+          children: continuationAwareRowCells([
             ...(numbered
               ? [bodyCell(
                   [paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })],
@@ -808,27 +855,36 @@ function developmentTable(
                     descriptionMerge,
                   ),
                 ]),
-          ],
+          ], continuationTitle),
         })
         );
       },
     ),
-  ], columnWidths, indent, dataTableBorders);
+  ];
+
+  if (continuationTitle) {
+    return table(
+      tableRows,
+      MAIN_PAGE_CONTENT_WIDTH,
+      continuationTableColumnWidths(columnWidths),
+    );
+  }
+
+  return bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
 }
 
 function activityTable(
   rows: Extract<PreviewBlock, { type: "activity-row" }>[],
   numbered: boolean,
-  indent = BODY_COLUMN_INDENT,
+  continuationTitle?: string,
 ) {
   const columnWidths = numbered
     ? Array.from(ACTIVITY_NUMBERED_COLUMN_WIDTHS)
     : Array.from(ACTIVITY_COLUMN_WIDTHS);
-
-  return bodyTable([
+  const tableRows = [
     bodyRow({
       tableHeader: true,
-      children: [
+      children: continuationAwareRowCells([
         ...(numbered
           ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
           : []),
@@ -847,7 +903,7 @@ function activityTable(
           numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
           true,
         ),
-      ],
+      ], continuationTitle, true),
     }),
     ...rows.map(
       (block, index) => {
@@ -865,7 +921,7 @@ function activityTable(
         return (
         bodyRow({
           cantSplit: true,
-          children: [
+          children: continuationAwareRowCells([
             ...(numbered
               ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]
               : []),
@@ -909,12 +965,22 @@ function activityTable(
                     dateMerge,
                   ),
                 ]),
-          ],
+          ], continuationTitle),
         })
         );
       },
     ),
-  ], columnWidths, indent, dataTableBorders);
+  ];
+
+  if (continuationTitle) {
+    return table(
+      tableRows,
+      MAIN_PAGE_CONTENT_WIDTH,
+      continuationTableColumnWidths(columnWidths),
+    );
+  }
+
+  return bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -1359,21 +1425,28 @@ function pageChildren(
       const title = continuation
         ? "Lingkup Pengembangan, Sambungan"
         : "Lingkup Pengembangan";
+      const rowsTable = developmentTable(
+        developmentRows,
+        draft.developmentRows.length > 1,
+        continuation ? title : undefined,
+      );
       children.push(
         ...leadingSectionSpacer(sectionRule),
-        previewSection(
-          title,
-          continuation
-            ? [paragraph("", { size: 2 })]
-            : [
+        ...(continuation
+          ? [rowsTable]
+          : [
+              previewSection(
+                title,
+                [
                 paragraph(`Berikut adalah fitur pengembangan pada ${draft.metadata.projectName}:`, {
                   size: 22,
                   spacingAfter: 120,
                 }),
-              ],
-          sectionRule,
-        ),
-        developmentTable(developmentRows, draft.developmentRows.length > 1),
+                ],
+                sectionRule,
+              ),
+              rowsTable,
+            ]),
         tableBottomSpacer(),
       );
       index = nextIndex;
@@ -1388,21 +1461,28 @@ function pageChildren(
       const title = continuation
         ? "Aktivitas Cabang dan Unit Kerja, Sambungan"
         : "Aktivitas Cabang dan Unit Kerja";
+      const rowsTable = activityTable(
+        activityRows,
+        draft.activities.length > 1,
+        continuation ? title : undefined,
+      );
       children.push(
         ...leadingSectionSpacer(sectionRule),
-        previewSection(
-          title,
-          continuation
-            ? [paragraph("", { size: 2 })]
-            : [
+        ...(continuation
+          ? [rowsTable]
+          : [
+              previewSection(
+                title,
+                [
                 paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
                   size: 22,
                   spacingAfter: 120,
                 }),
-              ],
-          sectionRule,
-        ),
-        activityTable(activityRows, draft.activities.length > 1),
+                ],
+                sectionRule,
+              ),
+              rowsTable,
+            ]),
         tableBottomSpacer(),
       );
       index = nextIndex;

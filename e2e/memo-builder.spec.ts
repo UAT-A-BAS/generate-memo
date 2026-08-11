@@ -1618,6 +1618,11 @@ test("labels split development and activity tables as continuations in preview a
     "Aktivitas Cabang dan Unit Kerja",
   );
   await expect(activityContinuation.locator("span")).toHaveText(", Sambungan");
+  for (const continuationHeading of [developmentContinuation, activityContinuation]) {
+    const contentColumn = continuationHeading.locator("xpath=following-sibling::div[1]");
+    await expect(contentColumn.locator(":scope > table.memo-preview-table")).toBeVisible();
+    expect(await contentColumn.evaluate((element) => element.firstElementChild?.tagName)).toBe("TABLE");
+  }
   await expect(
     page.locator("aside").getByText(
       "Berikut adalah fitur pengembangan pada BDS Web Gen 2 versi 4.3.0:",
@@ -1652,6 +1657,72 @@ test("labels split development and activity tables as continuations in preview a
   expect(xml).toMatch(
     /<w:b\/>[\s\S]{0,300}<w:t[^>]*>Lingkup Pengembangan<\/w:t><\/w:r><w:r>[\s\S]{0,300}<w:t[^>]*>, Sambungan<\/w:t>/,
   );
+  for (const [title, headers, bodyMarker, expectedGrid, borderRange] of [
+    [
+      "Lingkup Pengembangan",
+      ["No.", "Pengembangan", "Keterangan"],
+      "Pengembangan lanjutan",
+      [1800, 300, 570, 1695, 4815, 86],
+      [2, 5],
+    ],
+    [
+      "Aktivitas Cabang dan Unit Kerja",
+      ["No.", "Aktivitas", "PIC", "Waktu"],
+      "Aktivitas lanjutan",
+      [1800, 300, 570, 3405, 1485, 1620, 86],
+      [2, 6],
+    ],
+  ] as const) {
+    let continuationTitleIndex = -1;
+    let titleIndex = -1;
+    while ((titleIndex = xml.indexOf(`>${title}</w:t>`, titleIndex + 1)) >= 0) {
+      if (xml.slice(titleIndex, titleIndex + 600).includes(", Sambungan</w:t>")) {
+        continuationTitleIndex = titleIndex;
+        break;
+      }
+    }
+
+    expect(continuationTitleIndex).toBeGreaterThan(-1);
+    const tableStart = xml.lastIndexOf("<w:tbl>", continuationTitleIndex);
+    const tableEnd = xml.indexOf("</w:tbl>", continuationTitleIndex) + "</w:tbl>".length;
+    const continuationTable = xml.slice(tableStart, tableEnd);
+    expect(continuationTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
+    expect(continuationTable).toContain(bodyMarker);
+    expect(continuationTable).toContain('<w:tblW w:type="dxa" w:w="9266"/>');
+    expect(continuationTable).not.toContain("<w:tblInd");
+    expect(
+      [...continuationTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) =>
+        Number(match[1]),
+      ),
+    ).toEqual(expectedGrid);
+
+    const { rows: physicalRows } = parsePhysicalBorderTable(continuationTable);
+    const [borderColumnStart, borderColumnEnd] = borderRange;
+    const layoutCells = physicalRows
+      .flat()
+      .filter(
+        (cell) => cell.end <= borderColumnStart || cell.start >= borderColumnEnd,
+      );
+    expect(layoutCells.length).toBeGreaterThan(0);
+    for (const cell of layoutCells) expect(cell.edges.size).toBe(0);
+    expect(
+      physicalRows
+        .flat()
+        .filter(
+          (cell) => cell.start < borderColumnEnd && cell.end > borderColumnStart,
+        )
+        .some((cell) => cell.edges.size > 0),
+    ).toBe(true);
+
+    const titleRowStart = xml.lastIndexOf("<w:tr", continuationTitleIndex);
+    const titleRowEnd = xml.indexOf("</w:tr>", continuationTitleIndex) + "</w:tr>".length;
+    const titleRow = xml.slice(titleRowStart, titleRowEnd);
+    expect(titleRow).toContain("<w:tblHeader/>");
+    expect(titleRow).toContain(", Sambungan</w:t>");
+    for (const header of headers) {
+      expect(titleRow).toContain(`>${header}</w:t>`);
+    }
+  }
 });
 
 test("repeats development scope when a long description splits to continuation pages", async ({ page }) => {
