@@ -11,7 +11,7 @@ import {
   A4_PORTRAIT_HEIGHT_PX,
   MAIN_PAGE_MARGINS,
 } from "@/documentLayout";
-import { formatDateRangeID } from "@/utils/formatDateRangeID";
+import { formatActivityDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { richTextToPlainText } from "@/utils/richText";
@@ -590,7 +590,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   return blocks.map((block) => {
     const sourceId = sourceBlockId(block.id);
     const isSplitContinuation = sourceId === previousSource;
-    const dateLabel = formatDateRangeID(block.row.startDate, block.row.endDate, block.row.dates);
+    const dateLabel = formatActivityDateRangeID(block.row.startDate, block.row.endDate, block.row.dates);
     const dateGroupId = block.row.dateGroupId ?? block.row.id;
     const headingPath = scenarioHeadingPath(block.row);
     const showDate =

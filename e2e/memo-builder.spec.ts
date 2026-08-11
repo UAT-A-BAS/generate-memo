@@ -647,7 +647,7 @@ test("MOM scenario import appends only appendix scenarios", async ({ page }) => 
   await expect(page.locator("[data-scenario-row]")).toHaveCount(originalRows + 3);
   await expect(page.getByRole("textbox", { name: /Bagian [A-Z]+/ }).nth(1)).toHaveValue("Fitur Alpha");
   await expect(page.locator('[data-field-id^="scenario-pic-"] textarea').last()).toHaveValue("");
-  await expect(page.getByRole("button", { name: /Tanggal \d+ \*/ }).last()).toContainText("8 – 9 Juli 2026");
+  await expect(page.getByRole("button", { name: /Tanggal \d+ \*/ }).last()).toContainText("8-9 Juli 2026");
   await expect(page.locator("[data-scenario-row]").last()).toContainText("Langkah Beta");
 });
 
@@ -725,7 +725,7 @@ test("XLSX scenario import recognizes a standalone merged date row", async ({ pa
   await dialog.getByRole("button", { name: "Import 1 skenario" }).click();
 
   await expect(page.locator("[data-scenario-row]")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("9 – 12 Juni 2026");
+  await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("9-12 Juni 2026");
   await expect(page.locator("aside")).toContainText("Skenario sheet lain");
 });
 
@@ -2766,7 +2766,7 @@ test("memo calendars keep their scope-specific skipped-date formats in preview a
   await page.goto("http://localhost:3002");
   const selectedDates = ["2026-07-03", "2026-07-04", "2026-07-07"];
   const expected = "3 \u2013 4, 7 Juli 2026";
-  const activityExpected = "3-4, 7 Juli 2026";
+  const sharedTableExpected = "3-4 dan 7 Juli 2026";
   await importDraft(page, {
     ...completeDraft(),
     pilotSchedule: {
@@ -2789,21 +2789,20 @@ test("memo calendars keep their scope-specific skipped-date formats in preview a
   });
 
   await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
-  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: activityExpected })).toBeVisible();
-  await expect(page.locator('aside article[data-page-kind="appendix"]').getByText(expected, { exact: true })).toBeVisible();
+  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: sharedTableExpected })).toBeVisible();
+  await expect(page.locator('aside article[data-page-kind="appendix"]').getByText(sharedTableExpected, { exact: true })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   const expectedDocx = "3\u00A0\u2013\u00A04,\u00A07\u00A0Juli\u00A02026";
-  const expectedDocxAnySpacing = /3(?:\u00A0| )\u2013(?:\u00A0| )4,(?:\u00A0| )7(?:\u00A0| )Juli(?:\u00A0| )2026/g;
   expect(xml).toContain(expectedDocx);
-  expect(xml.match(expectedDocxAnySpacing)?.length ?? 0).toBeGreaterThanOrEqual(2);
-  expect(xml).toContain(activityExpected);
+  const plainXmlText = xml.replace(/<[^>]+>/g, "").replaceAll("\u00A0", " ");
+  expect(plainXmlText.split(sharedTableExpected).length - 1).toBeGreaterThanOrEqual(2);
   expect(xml).not.toContain("3\u00A0\u2013\u00A07\u00A0Juli\u00A02026");
 });
 
-test("activity dates follow individual grouping, punctuation, month, and year rules", async ({ page }) => {
+test("activity and appendix dates share individual grouping, punctuation, month, and year rules", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const cases = [
     {
@@ -2824,7 +2823,27 @@ test("activity dates follow individual grouping, punctuation, month, and year ru
     {
       id: "activity-date-mixed",
       dates: ["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-14"],
-      expected: "10-12, 14 Agustus 2026",
+      expected: "10-12 dan 14 Agustus 2026",
+    },
+    {
+      id: "activity-date-two-parts-with-range",
+      dates: ["2026-08-11", "2026-08-12", "2026-08-22"],
+      expected: "11-12 dan 22 Agustus 2026",
+    },
+    {
+      id: "activity-date-two-month-ranges",
+      dates: ["2026-08-11", "2026-08-12", "2026-09-21", "2026-09-22", "2026-09-23"],
+      expected: "11-12 Agustus dan 21-23 September 2026",
+    },
+    {
+      id: "activity-date-three-month-groups",
+      dates: ["2026-08-11", "2026-08-12", "2026-09-11", "2026-10-30"],
+      expected: "11-12 Agustus, 11 September, dan 30 Oktober 2026",
+    },
+    {
+      id: "activity-date-four-mixed-parts",
+      dates: ["2026-08-11", "2026-08-12", "2026-08-22", "2026-08-23", "2026-08-25", "2026-08-27"],
+      expected: "11-12, 22-23, 25, dan 27 Agustus 2026",
     },
     {
       id: "activity-date-cross-month",
@@ -2837,6 +2856,7 @@ test("activity dates follow individual grouping, punctuation, month, and year ru
       expected: "31 Desember 2026 dan 1 Januari 2027",
     },
   ];
+  const scenarioBase = completeDraft().appendixScenarios[0];
 
   await importDraft(page, {
     ...completeDraft(),
@@ -2848,11 +2868,32 @@ test("activity dates follow individual grouping, punctuation, month, and year ru
       owner: `PIC ${index + 1}`,
       activity: richText(`Aktivitas aturan tanggal ${index + 1}`),
     })),
+    appendixScenarios: cases.map((item, index) => ({
+      ...scenarioBase,
+      id: `scenario-${item.id}`,
+      dateGroupId: `scenario-date-${item.id}`,
+      sectionGroupId: `scenario-section-${item.id}`,
+      startDate: item.dates[0],
+      endDate: item.dates.at(-1),
+      dates: item.dates,
+      section: `Bagian aturan tanggal ${index + 1}`,
+      scenario: richText(`Skenario aturan tanggal ${index + 1}`),
+      expectedResult: richText(`Hasil aturan tanggal ${index + 1}`),
+      pic: `PIC Skenario ${index + 1}`,
+    })),
   });
 
   for (const item of cases) {
     await expect(
       page.locator(`aside [data-preview-field-id="activity-date-${item.id}"]`).filter({
+        hasText: item.expected,
+      }).first(),
+    ).toBeVisible();
+    await expect(
+      page.locator(`[data-field-id="scenario-date-scenario-${item.id}"] button`),
+    ).toContainText(item.expected);
+    await expect(
+      page.locator(`aside [data-preview-field-id="scenario-date-scenario-${item.id}"]`).filter({
         hasText: item.expected,
       }).first(),
     ).toBeVisible();
@@ -2881,7 +2922,9 @@ test("activity dates follow individual grouping, punctuation, month, and year ru
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   const plainXmlText = xml.replace(/<[^>]+>/g, "");
-  for (const item of cases) expect(plainXmlText).toContain(item.expected);
+  for (const item of cases) {
+    expect(plainXmlText.split(item.expected).length - 1).toBeGreaterThanOrEqual(2);
+  }
   const dateIndex = xml.indexOf(cases[0].expected);
   const dateParagraph = xml.slice(xml.lastIndexOf("<w:p>", dateIndex), xml.indexOf("</w:p>", dateIndex));
   expect(dateParagraph).toContain('<w:sz w:val="22"/>');
@@ -2898,6 +2941,12 @@ test("activity Hari ini adds to the existing individual date selection", async (
       endDate: "2020-01-01",
       dates: ["2020-01-01"],
     }],
+    appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
+      ...row,
+      startDate: "2020-01-01",
+      endDate: "2020-01-01",
+      dates: ["2020-01-01"],
+    })),
   });
 
   await page.locator('[data-field-id="activity-date-activity-test"] button').click();
@@ -2915,6 +2964,14 @@ test("activity Hari ini adds to the existing individual date selection", async (
   await expect(page.locator('aside [data-preview-field-id="activity-date-activity-test"]').first()).toHaveText(
     `1 Januari 2020 dan ${todayText}`,
   );
+
+  const scenarioDateField = page.locator('[data-field-id="scenario-date-scenario-test"]');
+  await scenarioDateField.getByRole("button").click();
+  const scenarioPopup = page.locator("[data-date-range-popup]");
+  await expect(scenarioPopup).toContainText("Klik tanggal untuk menambah atau menghapus pilihan");
+  await scenarioPopup.getByRole("button", { name: "Hari ini", exact: true }).click();
+  await scenarioPopup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(scenarioDateField.getByRole("button")).toContainText(`1 Januari 2020 dan ${todayText}`);
 });
 
 test("activity calendar clicks do not fill gaps between individually selected dates", async ({ page }) => {
@@ -2927,6 +2984,12 @@ test("activity calendar clicks do not fill gaps between individually selected da
       endDate: "2026-08-10",
       dates: ["2026-08-10"],
     }],
+    appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
+      ...row,
+      startDate: "2026-08-10",
+      endDate: "2026-08-10",
+      dates: ["2026-08-10"],
+    })),
   });
 
   const activityDateField = page.locator('[data-field-id="activity-date-activity-test"]');
@@ -2940,6 +3003,18 @@ test("activity calendar clicks do not fill gaps between individually selected da
   await popup.locator('[data-date-value="2026-08-12"]').click();
   await popup.getByRole("button", { name: "Done", exact: true }).click();
   await expect(activityDateField.getByRole("button")).toContainText("10 Agustus 2026");
+
+  const scenarioDateField = page.locator('[data-field-id="scenario-date-scenario-test"]');
+  await scenarioDateField.getByRole("button").click();
+  await expect(popup).toContainText("Klik tanggal untuk menambah atau menghapus pilihan");
+  await popup.locator('[data-date-value="2026-08-12"]').click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(scenarioDateField.getByRole("button")).toContainText("10 dan 12 Agustus 2026");
+
+  await scenarioDateField.getByRole("button").click();
+  await popup.locator('[data-date-value="2026-08-12"]').click();
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(scenarioDateField.getByRole("button")).toContainText("10 Agustus 2026");
 });
 
 test("calendar day clicks keep previous selected dates and compress adjacent days", async ({ page }) => {
@@ -3057,8 +3132,8 @@ test("duplicate scenario dates remain independent range groups", async ({ page }
     .first();
   const dateButtons = appendixPanel.getByRole("button", { name: /Tanggal \d+ \*/ });
   await expect(dateButtons).toHaveCount(2);
-  await expect(dateButtons.nth(0)).toContainText("7 – 21 Mei 2026");
-  await expect(dateButtons.nth(1)).toContainText("7 – 21 Mei 2026");
+  await expect(dateButtons.nth(0)).toContainText("7-21 Mei 2026");
+  await expect(dateButtons.nth(1)).toContainText("7-21 Mei 2026");
 
   await dateButtons.nth(1).click();
   const popup = page.locator("[data-date-range-popup]");
@@ -3066,8 +3141,8 @@ test("duplicate scenario dates remain independent range groups", async ({ page }
   await popup.getByRole("button", { name: "25", exact: true }).click();
   await popup.getByRole("button", { name: "Done", exact: true }).click();
 
-  await expect(dateButtons.nth(0)).toContainText("7 – 21 Mei 2026");
-  await expect(dateButtons.nth(1)).toContainText("24 – 25 Mei 2026");
+  await expect(dateButtons.nth(0)).toContainText("7-21 Mei 2026");
+  await expect(dateButtons.nth(1)).toContainText("24-25 Mei 2026");
 });
 
 test("appendix date and section groups expose hierarchy drag handles", async ({ page }) => {
@@ -3523,7 +3598,7 @@ test("DOCX keeps one non-overlapping grid for Word PDF/XPS", async ({ page }) =>
       appendixTable.indexOf("</w:tr>", textIndex) + "</w:tr>".length,
     );
   };
-  const dateRow = rowAround("9 – 10 Juli 2026");
+  const dateRow = rowAround("9-10 Juli 2026");
   expect(dateRow.match(/<w:tc\b/g) ?? []).toHaveLength(1);
   expect(dateRow).toContain('<w:gridSpan w:val="4"/>');
   expect(dateRow).toMatch(/<w:shd\b[^>]*w:fill="D9D9D9"/);
@@ -4126,6 +4201,12 @@ test("invalid activity calendar dates block DOCX generation", async ({ page }) =
       endDate: "2026-08-10",
       dates: ["2026-08-10", "31/02/2026"],
     }],
+    appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
+      ...row,
+      startDate: "2026-08-10",
+      endDate: "2026-08-10",
+      dates: ["2026-08-10", "31/02/2026"],
+    })),
   });
 
   const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
@@ -4133,6 +4214,9 @@ test("invalid activity calendar dates block DOCX generation", async ({ page }) =
   expect(await downloadPromise).toBeNull();
   await expect(page.locator('[data-validation-issue-id="activity-date-activity-test"]')).toHaveText(
     "- Aktivitas 1: Tanggal tidak valid",
+  );
+  await expect(page.locator('[data-validation-issue-id="scenario-date-scenario-test"]')).toHaveText(
+    "- Lampiran Skenario 1: Tanggal tidak valid",
   );
 });
 

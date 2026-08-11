@@ -326,10 +326,7 @@ function activityGroupDayText(group: ActivityMonthGroup) {
     if (segment.start === segment.end) return dayFormatter.format(start);
     return `${dayFormatter.format(start)}-${dayFormatter.format(end)}`;
   }).filter(Boolean);
-  const containsRange = group.segments.some((segment) => segment.start !== segment.end);
-
   if (parts.length <= 1) return parts[0] ?? "";
-  if (containsRange) return parts.join(", ");
   if (parts.length === 2) return `${parts[0]} dan ${parts[1]}`;
   return `${parts.slice(0, -1).join(", ")}, dan ${parts.at(-1)}`;
 }

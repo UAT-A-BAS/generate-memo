@@ -247,13 +247,19 @@ function normalizeActivityDateFields<T extends { startDate?: string; endDate?: s
     : [];
   const dates = normalizeActivityDateSelection(sourceDates);
   const containsInvalidDate = sourceDates.some((date) => !isValidDateValue(date));
-  const validStartDate = normalizeActivityDateSelection([value.startDate ?? ""])[0] ?? "";
-  const validEndDate = normalizeActivityDateSelection([value.endDate ?? ""])[0] ?? "";
+  const rawStartDate = value.startDate ?? "";
+  const rawEndDate = value.endDate ?? "";
+  const validStartDate = normalizeActivityDateSelection([rawStartDate])[0] ?? "";
+  const validEndDate = normalizeActivityDateSelection([rawEndDate])[0] ?? "";
 
   return {
     ...value,
-    startDate: dates[0] ?? validStartDate,
-    endDate: dates.at(-1) ?? (validEndDate || validStartDate),
+    startDate: dates[0] ?? (rawStartDate && !validStartDate ? rawStartDate : validStartDate),
+    endDate: dates.at(-1) ?? (
+      rawEndDate && !validEndDate
+        ? rawEndDate
+        : validEndDate || validStartDate
+    ),
     dates: containsInvalidDate ? sourceDates : dates,
   };
 }
@@ -279,16 +285,21 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   const appendixScenarios = Array.isArray(input.appendixScenarios)
     ? input.appendixScenarios.map((row) => {
         const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
-        const dates = normalizeDateSelection(row.dates);
         const rawStartDate = row.startDate ?? legacyDate;
-        const validStartDate = isValidInputDate(rawStartDate) ? rawStartDate : "";
-        const validEndDate = isValidInputDate(row.endDate ?? "") ? row.endDate ?? "" : "";
-        const startDate = dates[0] ?? validStartDate;
-        const endDate = dates.at(-1) ?? (validEndDate || validStartDate);
+        const normalizedDateFields = normalizeActivityDateFields({
+          ...row,
+          startDate: rawStartDate,
+        });
+        const dates = normalizedDateFields.dates ?? [];
+        const startDate = normalizedDateFields.startDate;
+        const endDate = normalizedDateFields.endDate;
+        const hasExplicitDateSource = Boolean(row.dates?.length || rawStartDate || row.endDate);
         const section = row.section?.trim() ? row.section : previousScenarioSection;
-        const normalizedStartDate = startDate || previousScenarioStartDate;
-        const normalizedEndDate = endDate || previousScenarioEndDate || normalizedStartDate;
-        const continuesPreviousDate = !startDate && !endDate && Boolean(previousScenarioDateGroupId);
+        const normalizedStartDate = hasExplicitDateSource ? startDate : startDate || previousScenarioStartDate;
+        const normalizedEndDate = hasExplicitDateSource
+          ? endDate
+          : endDate || previousScenarioEndDate || normalizedStartDate;
+        const continuesPreviousDate = !hasExplicitDateSource && Boolean(previousScenarioDateGroupId);
         const normalizedDates = dates.length
           ? dates
           : continuesPreviousDate

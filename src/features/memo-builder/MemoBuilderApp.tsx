@@ -73,7 +73,6 @@ import { createId } from "@/utils/ids";
 import {
   activityDateSelectionError,
   formatActivityDateRangeID,
-  formatDateRangeID,
 } from "@/utils/formatDateRangeID";
 import { focusEditorField, revealEditorTarget } from "@/utils/fieldNavigation";
 
@@ -276,8 +275,11 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
     const dateGroupKey = row.dateGroupId ?? row.id;
     if (!validatedDateGroups.has(dateGroupKey)) {
       validatedDateGroups.add(dateGroupKey);
-      if (!hasText(row.startDate) || !hasText(row.endDate)) {
-        add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal`);
+      const dateError = activityDateSelectionError(row.startDate, row.endDate, row.dates);
+      if (dateError === "empty") {
+        add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal wajib diisi`);
+      } else if (dateError === "invalid") {
+        add(`scenario-date-${row.id}`, `Lampiran Skenario ${index + 1}: Tanggal tidak valid`);
       }
     }
     scenarioHeadingPath(row).forEach((heading, headingIndex) => {
@@ -2634,7 +2636,7 @@ function AppendixPanel({
                     <span>Tanggal {groupIndex + 1}</span>
                   </span>
                   <span className="text-xs font-semibold text-[#5b6778]">
-                    {formatDateRangeID(group.startDate, group.endDate, group.dates)} · {group.rows.length} skenario
+                    {formatActivityDateRangeID(group.startDate, group.endDate, group.dates)} · {group.rows.length} skenario
                   </span>
                 </summary>
                 <div className="mt-2 grid gap-3">
@@ -2648,6 +2650,8 @@ function AppendixPanel({
                       startDate={group.startDate}
                       endDate={group.endDate}
                       dates={group.dates}
+                      formatValue={formatActivityDateRangeID}
+                      individualSelection
                       onChange={(value) => updateGroupDates(group, value)}
                     />
                   </FieldLabel>
