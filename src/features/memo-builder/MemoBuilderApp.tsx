@@ -1326,7 +1326,7 @@ function ActivitiesPanel({
                     endDate={row.endDate}
                     dates={row.dates}
                     formatValue={formatActivityDateRangeID}
-                    individualSelection
+                    preserveSelectionOnToday
                     onChange={(value) =>
                       setRows(
                         rows.map((item) =>
@@ -2651,7 +2651,7 @@ function AppendixPanel({
                       endDate={group.endDate}
                       dates={group.dates}
                       formatValue={formatActivityDateRangeID}
-                      individualSelection
+                      preserveSelectionOnToday
                       onChange={(value) => updateGroupDates(group, value)}
                     />
                   </FieldLabel>

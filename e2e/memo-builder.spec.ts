@@ -68,6 +68,24 @@ function richListWithTrailingEmpty(type: "bulletList" | "orderedList", items: st
   };
 }
 
+function richTextWithList(
+  text: string,
+  type: "bulletList" | "orderedList",
+  items: string[],
+) {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text }],
+      },
+      richList(type, items).content[0],
+      { type: "paragraph", content: [] },
+    ],
+  };
+}
+
 function completeDraft() {
   return {
     metadata: {
@@ -1386,6 +1404,108 @@ test("attachment-sized main content moves to the next A4 page instead of clippin
       contents.map((content) => content.scrollHeight - content.clientHeight),
     );
   expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+});
+
+test("Word reflow reserve keeps cant-split development rows on predicted pages", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const developmentRows = [
+    {
+      id: "word-reflow-1",
+      item: richText("Perubahan nama menu Rekening Koran di eService."),
+      description: richText("Terdapat perubahan nama menu 'Rekening Koran' menjadi 'Laporan Mutasi Rekening'."),
+    },
+    {
+      id: "word-reflow-2",
+      item: richText("Penambahan metode login menggunakan Face Recognition pada menu Laporan Mutasi Rekening di eService."),
+      description: richTextWithList(
+        "Metode login menggunakan Face Recognition (FR) dapat dilakukan oleh nasabah apabila memenuhi kondisi berikut:",
+        "orderedList",
+        [
+          "Nasabah gagal login menggunakan KTP-el.",
+          "Nasabah memiliki foto diri atau keseluruhan foto DIN.",
+        ],
+      ),
+    },
+    {
+      id: "word-reflow-3",
+      item: richText("Perubahan mekanisme input email pada menu Laporan Mutasi Rekening di eService."),
+      description: richText("Terdapat layar input email untuk pengiriman hasil mutasi rekening jika opsi yang dipilih cetak + email atau email saja."),
+    },
+    {
+      id: "word-reflow-4",
+      item: richText("Penyesuaian layar input nomor rekening yang ingin dicetak pada menu Laporan Mutasi Rekening di eService."),
+      description: richText("Terdapat penyesuaian field nomor rekening yang dicetak dan penambahan field nomor rekening sumber dana."),
+    },
+    {
+      id: "word-reflow-5",
+      item: richText("Penyesuaian verifikasi tengah transaksi pada menu Laporan Mutasi Rekening di eService."),
+      description: richTextWithList(
+        "Terdapat penyesuaian verifikasi tengah transaksi yang apabila transaksi nasabah dikenakan biaya, maka verifikasi hanya dapat dilakukan dengan cara berikut.",
+        "bulletList",
+        [
+          "Verifikasi PIN dari kartu Debit/ATM BCA yang digunakan sebagai sumber dana.",
+          "Apabila verifikasi PIN gagal dilakukan, maka nasabah akan diminta memasukkan kode transaksi dari aplikasi myBCA mobile/BCA mobile atau kode one-time password (OTP) dari nomor handphone e-Banking yang sudah didaftarkan.",
+        ],
+      ),
+    },
+    {
+      id: "word-reflow-6",
+      item: richText("Penyesuaian proses serah terima dokumen pada menu Laporan Mutasi Rekening di eService."),
+      description: richTextWithList(
+        "Terdapat penyesuaian proses serah terima dokumen dengan melakukan verifikasi nasabah untuk memastikan bahwa penerima dokumen adalah nasabah yang melakukan transaksi. Adapun caranya sebagai berikut.",
+        "bulletList",
+        [
+          "Verifikasi PIN dari kartu Debit/ATM BCA yang digunakan pada saat proses verifikasi nasabah di tengah transaksi.",
+          "Apabila verifikasi PIN gagal dilakukan, maka nasabah akan diminta untuk memasukkan kode transaksi dari aplikasi myBCA mobile/BCA mobile atau kode one-time password (OTP) dari nomor handphone e-Banking yang sudah didaftarkan.",
+          "Apabila verifikasi dengan kode transaksi/kode OTP gagal dilakukan, maka dapat dilakukan verifikasi data diri nasabah menggunakan MONICA yang dikirim ke CXO dengan persetujuan minimal eselon 6.",
+        ],
+      ),
+    },
+    {
+      id: "word-reflow-7",
+      item: richText("Penambahan tindak lanjut terkait gagal serah terima pada menu Laporan Mutasi Rekening di eService."),
+      description: richText("Terdapat penambahan tindak lanjut terkait gagal serah terima yang dikirim ke MONICA petugas cabang minimal eselon 6."),
+    },
+  ];
+
+  await importDraft(page, {
+    ...completeDraft(),
+    recipients: [
+      completeDraft().recipients[0],
+      { id: "word-recipient-2", gender: "Ibu", name: "Anna Shofa", position: "Kepala Operasi Cabang Kediri" },
+      { id: "word-recipient-3", gender: "Ibu", name: "Eka Wilis Damayanti", position: "Kepala Operasi Cabang Sidoarjo" },
+      { id: "word-recipient-4", gender: "Ibu", name: "Fransisca Angeline W", position: "Kepala KCP Kramat Jaya" },
+      { id: "word-recipient-5", gender: "Ibu", name: "Sisilia Agustina Setio Hudoyo", position: "Kepala KCP Pondok Lestari" },
+    ],
+    developmentRows,
+  });
+
+  const mainPages = page.locator('aside article[data-page-kind="main"]');
+  await expect(mainPages.nth(0)).toContainText("Perubahan mekanisme input email");
+  await expect(mainPages.nth(0)).not.toContainText("Penyesuaian layar input nomor rekening");
+  await expect(mainPages.nth(1)).toContainText("Penyesuaian layar input nomor rekening");
+  await expect(mainPages.nth(1)).toContainText("Penyesuaian proses serah terima dokumen");
+  await expect(mainPages.nth(1)).not.toContainText("Penambahan tindak lanjut terkait gagal serah terima");
+  await expect(mainPages.nth(2)).toContainText("Penambahan tindak lanjut terkait gagal serah terima");
+
+  const pageOverflow = await mainPages
+    .locator("[data-preview-page-content]")
+    .evaluateAll((contents) =>
+      contents.map((content) => content.scrollHeight - content.clientHeight),
+    );
+  expect(Math.max(...pageOverflow)).toBeLessThanOrEqual(1);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const firstTable = documentTableAround(xml, "Perubahan nama menu Rekening Koran");
+  const secondTable = documentTableAround(xml, "Penyesuaian layar input nomor rekening");
+  const thirdTable = documentTableAround(xml, "Penambahan tindak lanjut terkait gagal serah terima");
+  expect(firstTable).toContain("Perubahan mekanisme input email");
+  expect(firstTable).not.toContain("Penyesuaian layar input nomor rekening");
+  expect(secondTable).toContain("Penyesuaian proses serah terima dokumen");
+  expect(secondTable).not.toContain("Penambahan tindak lanjut terkait gagal serah terima");
+  expect(thirdTable).toContain("Penambahan tindak lanjut terkait gagal serah terima");
 });
 
 test("memo source heading includes the dynamic UAT bureau in preview and DOCX", async ({ page }) => {
@@ -2964,7 +3084,7 @@ test("activity Hari ini adds to the existing individual date selection", async (
 
   await page.locator('[data-field-id="activity-date-activity-test"] button').click();
   const popup = page.locator("[data-date-range-popup]");
-  await expect(popup).toContainText("Klik tanggal untuk menambah atau menghapus pilihan");
+  await expect(popup).toContainText("Klik satu tanggal · tahan dan geser untuk rentang");
   await popup.getByRole("button", { name: "Hari ini", exact: true }).click();
   await popup.getByRole("button", { name: "Done", exact: true }).click();
 
@@ -2981,7 +3101,7 @@ test("activity Hari ini adds to the existing individual date selection", async (
   const scenarioDateField = page.locator('[data-field-id="scenario-date-scenario-test"]');
   await scenarioDateField.getByRole("button").click();
   const scenarioPopup = page.locator("[data-date-range-popup]");
-  await expect(scenarioPopup).toContainText("Klik tanggal untuk menambah atau menghapus pilihan");
+  await expect(scenarioPopup).toContainText("Klik satu tanggal · tahan dan geser untuk rentang");
   await scenarioPopup.getByRole("button", { name: "Hari ini", exact: true }).click();
   await scenarioPopup.getByRole("button", { name: "Done", exact: true }).click();
   await expect(scenarioDateField.getByRole("button")).toContainText(`1 Januari 2020 dan ${todayText}`);
@@ -3019,7 +3139,7 @@ test("activity calendar clicks do not fill gaps between individually selected da
 
   const scenarioDateField = page.locator('[data-field-id="scenario-date-scenario-test"]');
   await scenarioDateField.getByRole("button").click();
-  await expect(popup).toContainText("Klik tanggal untuk menambah atau menghapus pilihan");
+  await expect(popup).toContainText("Klik satu tanggal · tahan dan geser untuk rentang");
   await popup.locator('[data-date-value="2026-08-12"]').click();
   await popup.getByRole("button", { name: "Done", exact: true }).click();
   await expect(scenarioDateField.getByRole("button")).toContainText("10 dan 12 Agustus 2026");
@@ -3076,7 +3196,7 @@ test("invalid ISO calendar dates are removed during draft import", async ({ page
   await expect(page.locator('[data-field-id="schedule"] button')).toContainText("Pilih tanggal");
 });
 
-test("calendar drag adds an inclusive range without replacing selected dates", async ({ page }) => {
+test("every memo calendar supports additive single dates and inclusive reverse drag", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {
     ...completeDraft(),
@@ -3085,17 +3205,42 @@ test("calendar drag adds an inclusive range without replacing selected dates", a
       endDate: "2026-07-01",
       dates: ["2026-07-01"],
     },
+    activities: completeDraft().activities.map((row) => ({
+      ...row,
+      startDate: "2026-07-01",
+      endDate: "2026-07-01",
+      dates: ["2026-07-01"],
+    })),
+    appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
+      ...row,
+      startDate: "2026-07-01",
+      endDate: "2026-07-01",
+      dates: ["2026-07-01"],
+    })),
   });
 
-  await page.locator('[data-field-id="schedule"] button').click();
-  const popup = page.locator("[data-date-range-popup]");
-  const julySeven = popup.locator('[data-date-value="2026-07-07"]');
-  const julyThree = popup.locator('[data-date-value="2026-07-03"]');
-  await julySeven.dragTo(julyThree);
-  await popup.locator('[data-date-value="2026-07-10"]').click();
-  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  for (const fieldSelector of [
+    '[data-field-id="schedule"]',
+    '[data-field-id="activity-date-activity-test"]',
+    '[data-field-id="scenario-date-scenario-test"]',
+  ]) {
+    await page.locator(fieldSelector).getByRole("button").click();
+    const popup = page.locator("[data-date-range-popup]");
+    await expect(popup).toContainText("Klik satu tanggal · tahan dan geser untuk rentang");
+    await popup.locator('[data-date-value="2026-07-07"]').dragTo(
+      popup.locator('[data-date-value="2026-07-03"]'),
+    );
+    await popup.locator('[data-date-value="2026-07-10"]').click();
+    await popup.getByRole("button", { name: "Done", exact: true }).click();
+  }
 
   await expect(page.locator("[data-schedule-date]")).toHaveText("1, 3 \u2013 7, 10 Juli 2026");
+  await expect(page.locator('[data-field-id="activity-date-activity-test"] button')).toContainText(
+    "1, 3-7, dan 10 Juli 2026",
+  );
+  await expect(page.locator('[data-field-id="scenario-date-scenario-test"] button')).toContainText(
+    "1, 3-7, dan 10 Juli 2026",
+  );
 });
 
 test("table rich text removes trailing empty paragraphs after lists", async ({ page }) => {

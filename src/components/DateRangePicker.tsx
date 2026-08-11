@@ -30,7 +30,7 @@ type DateRangePickerProps = {
   onChange: (value: DateRangeValue) => void;
   compact?: boolean;
   formatValue?: (startValue: string, endValue: string, selectedDates?: readonly string[]) => string;
-  individualSelection?: boolean;
+  preserveSelectionOnToday?: boolean;
 };
 
 type DatePickerMode = "day" | "month" | "year";
@@ -96,7 +96,7 @@ export function DateRangePicker({
   onChange,
   compact,
   formatValue = formatDateRangeID,
-  individualSelection = false,
+  preserveSelectionOnToday = false,
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<DatePickerMode>("day");
@@ -124,10 +124,10 @@ export function DateRangePicker({
   const displayValue = selectedDates.length ? formatValue(startDate, endDate, selectedDates) : "";
   const dragDates = useMemo(
     () =>
-      !individualSelection && dragSelection?.hasMoved
+      dragSelection?.hasMoved
         ? datesFromRange(dragSelection.startDate, dragSelection.endDate)
         : [],
-    [dragSelection, individualSelection],
+    [dragSelection],
   );
   const dragDateSet = useMemo(() => new Set(dragDates), [dragDates]);
   const visualDates = useMemo(
@@ -255,7 +255,6 @@ export function DateRangePicker({
   }
 
   function beginDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
-    if (individualSelection) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
     const target = event.target;
@@ -277,7 +276,6 @@ export function DateRangePicker({
   }
 
   function updateDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
-    if (individualSelection) return;
     const current = dragSelectionRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
@@ -294,7 +292,6 @@ export function DateRangePicker({
   }
 
   function finishDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
-    if (individualSelection) return;
     const current = dragSelectionRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
@@ -329,7 +326,6 @@ export function DateRangePicker({
   }
 
   function cancelDragSelection(event: ReactPointerEvent<HTMLDivElement>) {
-    if (individualSelection) return;
     const current = dragSelectionRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
@@ -359,7 +355,7 @@ export function DateRangePicker({
       setViewYear(date.getFullYear());
       setViewMonth(date.getMonth());
     }
-    if (individualSelection) {
+    if (preserveSelectionOnToday) {
       commitDates([...selectedDates, value]);
       return;
     }
@@ -431,9 +427,7 @@ export function DateRangePicker({
                     ? `Lepas untuk menambahkan ${dragLabel}`
                     : dragSelection
                       ? "Geser ke tanggal akhir untuk membuat rentang"
-                      : individualSelection
-                        ? "Klik tanggal untuk menambah atau menghapus pilihan"
-                        : "Klik satu tanggal · tahan dan geser untuk rentang"}
+                      : "Klik satu tanggal · tahan dan geser untuk rentang"}
                 </p>
                 {!dragSelection && displayValue ? (
                   <p className="mt-0.5 truncate text-[10px] leading-4 text-[#60758a]" title={displayValue}>
@@ -445,10 +439,10 @@ export function DateRangePicker({
                 ref={dateGridRef}
                 data-date-grid
                 data-dragging={dragSelection ? "true" : "false"}
-                onPointerDown={individualSelection ? undefined : beginDragSelection}
-                onPointerMove={individualSelection ? undefined : updateDragSelection}
-                onPointerUp={individualSelection ? undefined : finishDragSelection}
-                onPointerCancel={individualSelection ? undefined : cancelDragSelection}
+                onPointerDown={beginDragSelection}
+                onPointerMove={updateDragSelection}
+                onPointerUp={finishDragSelection}
+                onPointerCancel={cancelDragSelection}
                 onDragStart={(event) => event.preventDefault()}
                 className="grid touch-none select-none grid-cols-7 gap-y-1 text-center text-xs"
                 aria-describedby={hintId}
@@ -484,9 +478,7 @@ export function DateRangePicker({
                       onClick={(event) => handleDayClick(event, day)}
                       aria-pressed={selected}
                       title={formatValue(value, value, [value])}
-                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-sm outline-none transition-colors duration-75 focus-visible:ring-2 focus-visible:ring-[#0067b1] focus-visible:ring-offset-2 ${
-                        individualSelection ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
-                      } ${
+                      className={`mx-auto flex h-8 w-8 cursor-grab items-center justify-center rounded-lg text-sm outline-none transition-colors duration-75 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[#0067b1] focus-visible:ring-offset-2 ${
                         previewed && !rangeMiddle
                           ? "bg-[#005a9f] font-bold text-white shadow-[0_2px_7px_rgba(0,90,159,0.28)]"
                           : rangeMiddle
