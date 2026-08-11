@@ -318,7 +318,7 @@ function activityMonthGroups(values: readonly string[]): ActivityMonthGroup[] {
   });
 }
 
-function activityGroupDayText(group: ActivityMonthGroup) {
+function activityGroupDayText(group: ActivityMonthGroup, includeConjunction = true) {
   const parts = group.segments.map((segment) => {
     const start = parseDateValue(segment.start);
     const end = parseDateValue(segment.end);
@@ -327,6 +327,7 @@ function activityGroupDayText(group: ActivityMonthGroup) {
     return `${dayFormatter.format(start)}-${dayFormatter.format(end)}`;
   }).filter(Boolean);
   if (parts.length <= 1) return parts[0] ?? "";
+  if (!includeConjunction) return parts.join(", ");
   if (parts.length === 2) return `${parts[0]} dan ${parts[1]}`;
   return `${parts.slice(0, -1).join(", ")}, dan ${parts.at(-1)}`;
 }
@@ -339,18 +340,22 @@ export function formatActivityDateRangeID(
   const groups = activityMonthGroups(activityDateValues(startValue, endValue, selectedDates));
   if (!groups.length) return "-";
 
+  const lastGroupHasMultipleSegments = (groups.at(-1)?.segments.length ?? 0) > 1;
   const groupTexts = groups.map((group, index) => {
     const representative = new Date(0);
     representative.setHours(0, 0, 0, 0);
     representative.setFullYear(group.year, group.month, 1);
     const nextGroup = groups[index + 1];
     const showYear = !nextGroup || nextGroup.year !== group.year;
-    return `${activityGroupDayText(group)} ${monthFormatter.format(representative)}${
+    const isLastGroup = index === groups.length - 1;
+    const includeConjunction = groups.length === 1 || (isLastGroup && lastGroupHasMultipleSegments);
+    return `${activityGroupDayText(group, includeConjunction)} ${monthFormatter.format(representative)}${
       showYear ? ` ${group.year}` : ""
     }`;
   });
 
   if (groupTexts.length === 1) return groupTexts[0];
+  if (lastGroupHasMultipleSegments) return groupTexts.join(", ");
   if (groupTexts.length === 2) {
     const partCount = groups.reduce((total, group) => total + group.segments.length, 0);
     return `${groupTexts[0]}${partCount >= 3 ? ", dan " : " dan "}${groupTexts[1]}`;
