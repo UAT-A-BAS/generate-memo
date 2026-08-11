@@ -4,11 +4,6 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
   year: "numeric",
 });
 
-const monthYearFormatter = new Intl.DateTimeFormat("id-ID", {
-  month: "long",
-  year: "numeric",
-});
-
 const monthFormatter = new Intl.DateTimeFormat("id-ID", {
   month: "long",
 });
@@ -128,7 +123,7 @@ export function datesFromRange(startValue: string, endValue: string) {
 }
 
 export function formatDateID(value: string) {
-  const date = toDate(value);
+  const date = parseDateValue(value);
   return date ? dateFormatter.format(date) : "-";
 }
 
@@ -155,108 +150,12 @@ function compactDateSegments(values: readonly string[]) {
   return segments;
 }
 
-function segmentDayText(segment: { start: string; end: string }) {
-  const start = toDate(segment.start);
-  const end = toDate(segment.end);
-  if (!start || !end) return "";
-  if (segment.start === segment.end) return dayFormatter.format(start);
-  return `${dayFormatter.format(start)} – ${dayFormatter.format(end)}`;
-}
-
-function formatDateSegmentID(segment: { start: string; end: string }) {
-  const start = toDate(segment.start);
-  const end = toDate(segment.end);
-  if (!start || !end) return "-";
-
-  if (segment.start === segment.end) {
-    return dateFormatter.format(start);
-  }
-
-  const sameMonth =
-    start.getMonth() === end.getMonth() &&
-    start.getFullYear() === end.getFullYear();
-
-  if (sameMonth) {
-    return `${dayFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
-  }
-
-  if (start.getFullYear() === end.getFullYear()) {
-    return `${dayFormatter.format(start)} ${monthFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
-  }
-
-  return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
-}
-
-function formatDateSegmentWithoutYear(segment: { start: string; end: string }) {
-  const start = toDate(segment.start);
-  const end = toDate(segment.end);
-  if (!start || !end) return "-";
-
-  if (segment.start === segment.end) {
-    return `${dayFormatter.format(start)} ${monthFormatter.format(start)}`;
-  }
-
-  if (start.getMonth() === end.getMonth()) {
-    return `${dayFormatter.format(start)} – ${dayFormatter.format(end)} ${monthFormatter.format(end)}`;
-  }
-
-  return `${dayFormatter.format(start)} ${monthFormatter.format(start)} – ${dayFormatter.format(end)} ${monthFormatter.format(end)}`;
-}
-
 export function formatDateSelectionID(values: readonly string[]) {
-  const segments = compactDateSegments(values);
-  if (!segments.length) return "-";
-
-  const first = toDate(segments[0].start);
-  const last = toDate(segments.at(-1)?.end ?? "");
-  const sameMonth =
-    first &&
-    last &&
-    first.getMonth() === last.getMonth() &&
-    first.getFullYear() === last.getFullYear();
-
-  if (sameMonth) {
-    return `${segments.map(segmentDayText).join(", ")} ${monthYearFormatter.format(last)}`;
-  }
-
-  if (first && last && first.getFullYear() === last.getFullYear()) {
-    return `${segments.map(formatDateSegmentWithoutYear).join(", ")} ${last.getFullYear()}`;
-  }
-
-  return segments.map(formatDateSegmentID).join(", ");
+  return formatActivityDateRangeID("", "", values);
 }
 
 export function formatDateRangeID(startValue: string, endValue: string, selectedDates?: readonly string[]) {
-  const normalizedSelection = normalizeDateSelection(selectedDates);
-  if (normalizedSelection.length) {
-    return formatDateSelectionID(normalizedSelection);
-  }
-
-  const start = toDate(startValue);
-  const end = toDate(endValue);
-
-  if (!start && !end) return "-";
-  if (start && !end) return formatDateID(startValue);
-  if (!start && end) return formatDateID(endValue);
-  if (!start || !end) return "-";
-
-  if (start.toDateString() === end.toDateString()) {
-    return dateFormatter.format(start);
-  }
-
-  const sameMonth =
-    start.getMonth() === end.getMonth() &&
-    start.getFullYear() === end.getFullYear();
-
-  if (sameMonth) {
-    return `${dayFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
-  }
-
-  if (start.getFullYear() === end.getFullYear()) {
-    return `${dayFormatter.format(start)} ${monthFormatter.format(start)} – ${dayFormatter.format(end)} ${monthYearFormatter.format(end)}`;
-  }
-
-  return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
+  return formatActivityDateRangeID(startValue, endValue, selectedDates);
 }
 
 type ActivityMonthGroup = {

@@ -2927,13 +2927,13 @@ test("schedule keeps the complete date range together in preview and DOCX", asyn
     .locator("aside section")
     .filter({ has: page.getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true }) });
   const date = scheduleSection.locator("[data-schedule-date]");
-  await expect(date).toHaveText("12 – 19 Juni 2026");
+  await expect(date).toHaveText("12-19 Juni 2026");
   await expect(date).toHaveClass(/whitespace-nowrap/);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  expect(xml).toContain("12 – 19 Juni 2026");
+  expect(xml).toContain("12-19 Juni 2026");
 });
 
 test("schedule combines a shared year across different months in preview and DOCX", async ({ page }) => {
@@ -2943,54 +2943,60 @@ test("schedule combines a shared year across different months in preview and DOC
     pilotSchedule: { startDate: "2026-07-23", endDate: "2026-08-04" },
   });
 
-  const expected = "23 Juli \u2013 4 Agustus 2026";
+  const expected = "23-31 Juli dan 1-4 Agustus 2026";
   await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
   expect(xml).toContain(expected.replaceAll(" ", "\u00A0"));
-  expect(xml).not.toContain("23\u00A0Juli\u00A02026\u00A0\u2013\u00A04\u00A0Agustus\u00A02026");
+  expect(xml).not.toContain("23\u00A0Juli\u00A0dan\u00A04\u00A0Agustus\u00A02026");
 });
 
-test("memo calendars keep their scope-specific skipped-date formats in preview and DOCX", async ({ page }) => {
+test("all memo calendars share grouped-date rules in preview and DOCX", async ({ page }) => {
   await page.goto("http://localhost:3002");
-  const selectedDates = ["2026-07-03", "2026-07-04", "2026-07-07"];
-  const expected = "3 \u2013 4, 7 Juli 2026";
-  const sharedTableExpected = "3-4 dan 7 Juli 2026";
+  const selectedDates = [
+    "2026-08-05",
+    "2026-08-06",
+    "2026-08-07",
+    "2026-08-15",
+    "2026-08-20",
+    "2026-08-28",
+    "2026-09-04",
+  ];
+  const expected = "5-7, 15, 20, 28 Agustus, dan 4 September 2026";
   await importDraft(page, {
     ...completeDraft(),
     pilotSchedule: {
-      startDate: "2026-07-03",
-      endDate: "2026-07-07",
+      startDate: selectedDates[0],
+      endDate: selectedDates.at(-1),
       dates: selectedDates,
     },
     activities: completeDraft().activities.map((row) => ({
       ...row,
-      startDate: "2026-07-03",
-      endDate: "2026-07-07",
+      startDate: selectedDates[0],
+      endDate: selectedDates.at(-1),
       dates: selectedDates,
     })),
     appendixScenarios: completeDraft().appendixScenarios.map((row) => ({
       ...row,
-      startDate: "2026-07-03",
-      endDate: "2026-07-07",
+      startDate: selectedDates[0],
+      endDate: selectedDates.at(-1),
       dates: selectedDates,
     })),
   });
 
   await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
-  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: sharedTableExpected })).toBeVisible();
-  await expect(page.locator('aside article[data-page-kind="appendix"]').getByText(sharedTableExpected, { exact: true })).toBeVisible();
+  await expect(page.locator('aside [data-preview-field-id^="activity-date-"]').filter({ hasText: expected })).toBeVisible();
+  await expect(page.locator('aside article[data-page-kind="appendix"]').getByText(expected, { exact: true })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const expectedDocx = "3\u00A0\u2013\u00A04,\u00A07\u00A0Juli\u00A02026";
-  expect(xml).toContain(expectedDocx);
+  expect(xml).toContain(expected.replaceAll(" ", "\u00A0"));
   const plainXmlText = xml.replace(/<[^>]+>/g, "").replaceAll("\u00A0", " ");
-  expect(plainXmlText.split(sharedTableExpected).length - 1).toBeGreaterThanOrEqual(2);
-  expect(xml).not.toContain("3\u00A0\u2013\u00A07\u00A0Juli\u00A02026");
+  expect(plainXmlText.split(expected).length - 1).toBeGreaterThanOrEqual(3);
+  expect(xml).not.toContain("dan\u00A028\u00A0Agustus,\u00A0dan");
 });
 
 test("activity and appendix dates share individual grouping, punctuation, month, and year rules", async ({ page }) => {
@@ -3238,7 +3244,7 @@ test("calendar day clicks keep previous selected dates and compress adjacent day
   await popup.getByRole("button", { name: "7", exact: true }).first().click();
   await popup.getByRole("button", { name: "Done", exact: true }).click();
 
-  await expect(page.locator("[data-schedule-date]")).toHaveText("3 \u2013 4, 7 Juli 2026");
+  await expect(page.locator("[data-schedule-date]")).toHaveText("3-4 dan 7 Juli 2026");
 });
 
 test("Hari ini uses the browser local date before 07.00 Bangkok", async ({ page }) => {
@@ -3305,7 +3311,7 @@ test("every memo calendar supports additive single dates and inclusive reverse d
     await popup.getByRole("button", { name: "Done", exact: true }).click();
   }
 
-  await expect(page.locator("[data-schedule-date]")).toHaveText("1, 3 \u2013 7, 10 Juli 2026");
+  await expect(page.locator("[data-schedule-date]")).toHaveText("1, 3-7, dan 10 Juli 2026");
   await expect(page.locator('[data-field-id="activity-date-activity-test"] button')).toContainText(
     "1, 3-7, dan 10 Juli 2026",
   );
