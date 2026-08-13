@@ -1709,27 +1709,23 @@ test("labels split development and activity tables as continuations in preview a
   expect(plainXmlText).toContain("Aktivitas Cabang dan Unit Kerja, Sambungan");
   expect((plainXmlText.match(/Berikut adalah fitur pengembangan pada/g) ?? [])).toHaveLength(1);
   expect((plainXmlText.match(/Berikut ini adalah aktivitas yang perlu dilakukan/g) ?? [])).toHaveLength(1);
-  expect((xml.match(/<w:tblW w:type="dxa" w:w="9266"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
-  expect((xml.match(/<w:gridCol w:w="1800"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
-  expect((xml.match(/<w:gridCol w:w="300"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(/<w:tblpPr\b/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect((xml.match(/<w:tblInd w:type="dxa" w:w="2100"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect(xml).toMatch(
     /<w:b\/>[\s\S]{0,300}<w:t[^>]*>Lingkup Pengembangan<\/w:t><\/w:r><w:r>[\s\S]{0,300}<w:t[^>]*>, Sambungan<\/w:t>/,
   );
-  for (const [title, headers, bodyMarker, expectedGrid, borderRange] of [
+  for (const [title, headers, bodyMarker, expectedGrid] of [
     [
       "Lingkup Pengembangan",
       ["No.", "Pengembangan", "Keterangan"],
       "Pengembangan lanjutan",
-      [1800, 300, 570, 1695, 4815, 86],
-      [2, 5],
+      [570, 1695, 4815],
     ],
     [
       "Aktivitas Cabang dan Unit Kerja",
       ["No.", "Aktivitas", "PIC", "Waktu"],
       "Aktivitas lanjutan",
-      [1800, 300, 570, 3405, 1485, 1620, 86],
-      [2, 6],
+      [570, 3405, 1485, 1620],
     ],
   ] as const) {
     let continuationTitleIndex = -1;
@@ -1742,47 +1738,47 @@ test("labels split development and activity tables as continuations in preview a
     }
 
     expect(continuationTitleIndex).toBeGreaterThan(-1);
-    const tableStart = xml.lastIndexOf("<w:tbl>", continuationTitleIndex);
-    const tableEnd = xml.indexOf("</w:tbl>", continuationTitleIndex) + "</w:tbl>".length;
-    const continuationTable = xml.slice(tableStart, tableEnd);
-    expect(continuationTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
-    expect(continuationTable).toContain(bodyMarker);
-    expect(continuationTable).toContain('<w:tblW w:type="dxa" w:w="9266"/>');
-    expect(continuationTable).not.toContain("<w:tblInd");
+    const titleTableStart = xml.lastIndexOf("<w:tbl>", continuationTitleIndex);
+    const titleTableEnd = xml.indexOf("</w:tbl>", continuationTitleIndex) + "</w:tbl>".length;
+    const titleTable = xml.slice(titleTableStart, titleTableEnd);
+    expect(titleTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
+    expect(titleTable).toContain('<w:tblW w:type="dxa" w:w="1800"/>');
+    expect(titleTable).toMatch(/<w:tblpPr\b[^>]*w:rightFromText="300"[^>]*w:tblpX="0"[^>]*w:tblpYSpec="top"/);
+    expect(titleTable).not.toContain(bodyMarker);
+    expect(titleTable).not.toContain("<w:tblHeader/>");
+    expect(titleTable).not.toContain("<w:trHeight");
     expect(
-      [...continuationTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) =>
+      [...titleTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) =>
         Number(match[1]),
       ),
-    ).toEqual(expectedGrid);
+    ).toEqual([1800]);
 
-    const { rows: physicalRows } = parsePhysicalBorderTable(continuationTable);
-    const [borderColumnStart, borderColumnEnd] = borderRange;
-    const layoutCells = physicalRows
-      .flat()
-      .filter(
-        (cell) => cell.end <= borderColumnStart || cell.start >= borderColumnEnd,
-      );
-    expect(layoutCells.length).toBeGreaterThan(0);
-    for (const cell of layoutCells) expect(cell.edges.size).toBe(0);
+    const headerMarker = headers[headers.length - 1];
+    const headerIndex = xml.indexOf(`>${headerMarker}</w:t>`, titleTableEnd);
+    expect(headerIndex).toBeGreaterThan(titleTableEnd);
+    const dataTableStart = xml.lastIndexOf("<w:tbl>", headerIndex);
+    const dataTableEnd = xml.indexOf("</w:tbl>", headerIndex) + "</w:tbl>".length;
+    const dataTable = xml.slice(dataTableStart, dataTableEnd);
+    expect(dataTableStart).toBeGreaterThanOrEqual(titleTableEnd);
+    expect(dataTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
+    expect(dataTable).toContain(bodyMarker);
+    expect(dataTable).toContain('<w:tblW w:type="dxa" w:w="7080"/>');
+    expect(dataTable).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
+    expect(dataTable).not.toContain(", Sambungan</w:t>");
     expect(
-      physicalRows
-        .flat()
-        .filter(
-          (cell) => cell.start < borderColumnEnd && cell.end > borderColumnStart,
-        )
-        .some((cell) => cell.edges.size > 0),
-    ).toBe(true);
+      [...dataTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) => Number(match[1])),
+    ).toEqual(expectedGrid);
+    expectStableTableLevelGrid(dataTable);
 
-    const titleRowStart = xml.lastIndexOf("<w:tr", continuationTitleIndex);
-    const titleRowEnd = xml.indexOf("</w:tr>", continuationTitleIndex) + "</w:tr>".length;
-    const titleRow = xml.slice(titleRowStart, titleRowEnd);
-    expect(titleRow).toContain("<w:tblHeader/>");
-    expect(titleRow).toContain(", Sambungan</w:t>");
-    expect(titleRow).toContain('<w:vMerge w:val="restart"/>');
-    expect(titleRow).not.toContain("<w:trHeight");
-    expect(continuationTable).toContain('<w:vMerge w:val="continue"/>');
+    const headerRowStart = xml.lastIndexOf("<w:tr", headerIndex);
+    const headerRowEnd = xml.indexOf("</w:tr>", headerIndex) + "</w:tr>".length;
+    const headerRow = xml.slice(headerRowStart, headerRowEnd);
+    expect(headerRow).toContain("<w:tblHeader/>");
+    expect(headerRow).not.toContain(", Sambungan</w:t>");
+    expect(headerRow).not.toContain("<w:vMerge");
+    expect(headerRow).not.toContain("<w:trHeight");
     for (const header of headers) {
-      expect(titleRow).toContain(`>${header}</w:t>`);
+      expect(headerRow).toContain(`>${header}</w:t>`);
     }
   }
 });

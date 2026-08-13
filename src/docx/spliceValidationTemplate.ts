@@ -334,6 +334,8 @@ const CONTINUATION_DATA_TABLE_SPECS: DataTableSpec[] = [
     titleMarker: ">Lingkup Pengembangan</w:t>",
     width: 9266,
     grid: [1800, 300, 570, 1695, 4815, 86],
+    spanLeadingColumnsWhenUnnumbered: true,
+    unnumberedSpanCellIndex: 2,
     borderColumnStart: 2,
     borderColumnEnd: 5,
   },
@@ -342,6 +344,8 @@ const CONTINUATION_DATA_TABLE_SPECS: DataTableSpec[] = [
     titleMarker: ">Aktivitas Cabang dan Unit Kerja</w:t>",
     width: 9266,
     grid: [1800, 300, 570, 3405, 1485, 1620, 86],
+    spanLeadingColumnsWhenUnnumbered: true,
+    unnumberedSpanCellIndex: 2,
     borderColumnStart: 2,
     borderColumnEnd: 6,
   },
@@ -351,12 +355,14 @@ const SIMPLE_DATA_TABLE_SPECS: DataTableSpec[] = [
   {
     marker: ">Keterangan</w:t>",
     width: 7080,
+    indent: 2100,
     grid: [570, 1695, 4815],
     spanLeadingColumnsWhenUnnumbered: true,
   },
   {
     marker: ">Waktu</w:t>",
     width: 7080,
+    indent: 2100,
     grid: [570, 3405, 1485, 1620],
     spanLeadingColumnsWhenUnnumbered: true,
   },
@@ -422,7 +428,8 @@ function stableDataTableProperties(tablePrXml: string, spec: DataTableSpec) {
   let result = tablePrXml
     .replace(/<w:tblCellSpacing\b[^>]*\/>/g, "")
     .replace(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/g, "")
-    .replace(/<w:shd\b[^>]*\/>/g, "");
+    .replace(/<w:shd\b[^>]*\/>/g, "")
+    .replace(/<w:tblInd\b[^>]*\/>/g, "");
 
   result = upsertTableProperty(
     result,
@@ -432,7 +439,6 @@ function stableDataTableProperties(tablePrXml: string, spec: DataTableSpec) {
   );
 
   if (spec.indent !== undefined) {
-    result = result.replace(/<w:tblInd\b[^>]*\/>/g, "");
     result = insertBeforeFirstProperty(
       result,
       `<w:tblInd w:type="dxa" w:w="${spec.indent}"/>`,
@@ -680,17 +686,7 @@ function normalizeTableGrid(tableXml: string) {
       Boolean(spec.titleMarker && tableXml.includes(spec.titleMarker)),
   );
   if (continuationSpec) {
-    const currentGrid = [...tableXml.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)]
-      .map((match) => Number(match[1]));
-    const currentWidth = currentGrid.reduce((sum, width) => sum + width, 0);
-    const fittedSpec = currentGrid.length >= 5 && currentWidth === continuationSpec.width
-      ? {
-          ...continuationSpec,
-          grid: currentGrid,
-          borderColumnEnd: currentGrid.length - 1,
-        }
-      : continuationSpec;
-    return stableSimpleDataTable(tableXml, fittedSpec);
+    return stableSimpleDataTable(tableXml, continuationSpec);
   }
 
   const simpleSpec = SIMPLE_DATA_TABLE_SPECS.find((spec) => tableXml.includes(spec.marker));

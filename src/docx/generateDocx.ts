@@ -10,8 +10,11 @@ import {
   PageNumber,
   PageOrientation,
   Paragraph,
+  OverlapType,
+  RelativeVerticalPosition,
   SectionType,
   Table,
+  TableAnchorType,
   TableCell,
   TableLayoutType,
   TableRow,
@@ -480,53 +483,37 @@ function bodyTable(
   });
 }
 
-function continuationLayoutCell(
-  children: FileChild[],
-  width: number,
-  rowSpan?: number,
-) {
-  return new TableCell({
-    rowSpan,
-    verticalAlign: VerticalAlign.TOP,
-    margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    width: { size: width, type: WidthType.DXA },
-    borders: noBorder,
-    children,
+function continuationTitleTable(title: string) {
+  return new Table({
+    width: { size: BODY_TITLE_WIDTH, type: WidthType.DXA },
+    columnWidths: [BODY_TITLE_WIDTH],
+    layout: TableLayoutType.FIXED,
+    borders: noTableBorder,
+    float: {
+      horizontalAnchor: TableAnchorType.MARGIN,
+      absoluteHorizontalPosition: 0,
+      verticalAnchor: TableAnchorType.TEXT,
+      relativeVerticalPosition: RelativeVerticalPosition.TOP,
+      topFromText: 0,
+      bottomFromText: 0,
+      leftFromText: 0,
+      rightFromText: BODY_COLUMN_GAP,
+      overlap: OverlapType.NEVER,
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            verticalAlign: VerticalAlign.TOP,
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+            width: { size: BODY_TITLE_WIDTH, type: WidthType.DXA },
+            borders: noBorder,
+            children: [sectionTitleParagraph(title)],
+          }),
+        ],
+      }),
+    ],
   });
-}
-
-function continuationHeaderCells(
-  dataCells: TableCell[],
-  title: string,
-  rowSpan: number,
-) {
-  return [
-    continuationLayoutCell(
-      [sectionTitleParagraph(title)],
-      BODY_TITLE_WIDTH,
-      rowSpan,
-    ),
-    continuationLayoutCell(
-      [paragraph("", { size: 2 })],
-      BODY_COLUMN_GAP,
-      rowSpan,
-    ),
-    ...dataCells,
-    continuationLayoutCell(
-      [paragraph("", { size: 2 })],
-      MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
-      rowSpan,
-    ),
-  ];
-}
-
-function continuationTableColumnWidths(columnWidths: number[]) {
-  return [
-    BODY_TITLE_WIDTH,
-    BODY_COLUMN_GAP,
-    ...columnWidths,
-    MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
-  ];
 }
 
 function mergedCell(
@@ -782,7 +769,6 @@ function developmentTable(
   rows: Extract<PreviewBlock, { type: "development-row" }>[],
   numbered: boolean,
   itemTexts: string[],
-  continuationTitle?: string,
 ) {
   const columnWidths = fittedDevelopmentColumnWidths(itemTexts, numbered);
   const columnWidthsTwips = developmentColumnWidthsTwips(itemTexts, numbered);
@@ -791,21 +777,7 @@ function developmentTable(
   const tableRows = [
     bodyRow({
       tableHeader: true,
-      children: continuationTitle ? continuationHeaderCells([
-        ...(numbered
-          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], columnWidths[0], true)]
-          : []),
-        bodyCell(
-          [paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          columnWidths[itemColumn],
-          true,
-        ),
-        bodyCell(
-          [paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          columnWidths[descriptionColumn],
-          true,
-        ),
-      ], continuationTitle, rows.length + 1) : [
+      children: [
         ...(numbered
           ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], columnWidths[0], true)]
           : []),
@@ -876,16 +848,9 @@ function developmentTable(
   ];
 
   return new Table({
-    width: {
-      size: continuationTitle ? MAIN_PAGE_CONTENT_WIDTH : MAIN_BODY_TABLE_WIDTH,
-      type: WidthType.DXA,
-    },
-    indent: continuationTitle
-      ? undefined
-      : { size: BODY_COLUMN_INDENT, type: WidthType.DXA },
-    columnWidths: continuationTitle
-      ? continuationTableColumnWidths(columnWidthsTwips)
-      : columnWidthsTwips,
+    width: { size: MAIN_BODY_TABLE_WIDTH, type: WidthType.DXA },
+    indent: { size: BODY_COLUMN_INDENT, type: WidthType.DXA },
+    columnWidths: columnWidthsTwips,
     layout: TableLayoutType.FIXED,
     borders: dataTableBorders,
     rows: tableRows,
@@ -895,7 +860,6 @@ function developmentTable(
 function activityTable(
   rows: Extract<PreviewBlock, { type: "activity-row" }>[],
   numbered: boolean,
-  continuationTitle?: string,
 ) {
   const columnWidths = numbered
     ? Array.from(ACTIVITY_NUMBERED_COLUMN_WIDTHS)
@@ -903,26 +867,7 @@ function activityTable(
   const tableRows = [
     bodyRow({
       tableHeader: true,
-      children: continuationTitle ? continuationHeaderCells([
-        ...(numbered
-          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
-          : []),
-        bodyCell(
-          [paragraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1] : ACTIVITY_COLUMN_WIDTHS[0],
-          true,
-        ),
-        bodyCell(
-          [paragraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2] : ACTIVITY_COLUMN_WIDTHS[1],
-          true,
-        ),
-        bodyCell(
-          [paragraph("Waktu", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
-          true,
-        ),
-      ], continuationTitle, rows.length + 1) : [
+      children: [
         ...(numbered
           ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
           : []),
@@ -1010,18 +955,7 @@ function activityTable(
     ),
   ];
 
-  return continuationTitle
-    ? table(
-        tableRows,
-        MAIN_PAGE_CONTENT_WIDTH,
-        continuationTableColumnWidths(
-          columnWidths.map((columnWidth) =>
-            Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
-          ),
-        ),
-        dataTableBorders,
-      )
-    : bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
+  return bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -1470,12 +1404,11 @@ function pageChildren(
         developmentRows,
         draft.developmentRows.length > 1,
         draft.developmentRows.map((row) => richTextToPlainText(row.item)),
-        continuation ? title : undefined,
       );
       children.push(
         ...leadingSectionSpacer(sectionRule),
         ...(continuation
-          ? [rowsTable]
+          ? [continuationTitleTable(title), rowsTable]
           : [
               previewSection(
                 title,
@@ -1506,12 +1439,11 @@ function pageChildren(
       const rowsTable = activityTable(
         activityRows,
         draft.activities.length > 1,
-        continuation ? title : undefined,
       );
       children.push(
         ...leadingSectionSpacer(sectionRule),
         ...(continuation
-          ? [rowsTable]
+          ? [continuationTitleTable(title), rowsTable]
           : [
               previewSection(
                 title,
