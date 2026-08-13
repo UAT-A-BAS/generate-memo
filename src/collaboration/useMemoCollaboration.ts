@@ -13,6 +13,12 @@ import type { MemoDraft } from "@/types/memo";
 import { normalizeMemoDraft } from "@/templates/bcaMemoTemplate";
 import { saveCollaboratorIdentity } from "@/collaboration/collaboratorIdentity";
 import {
+  isPowerAppsRoomId,
+  powerAppsPortalRoomLink,
+  powerAppsRoomId,
+  type PowerAppsLaunchContext,
+} from "@/collaboration/powerAppsPortal";
+import {
   DEFAULT_COLLAB_WORKER_URL,
   resolveCollaborationWorkerBaseUrl,
 } from "@/collaboration/workerUrl";
@@ -257,6 +263,7 @@ function sharedDraftStateFromMap(map: Y.Map<unknown>) {
 
 export function collaborationLink(roomId: string) {
   if (typeof window === "undefined") return "";
+  if (isPowerAppsRoomId(roomId)) return powerAppsPortalRoomLink(roomId);
   const url = new URL(window.location.href);
   url.searchParams.set(ROOM_PARAM, roomId);
   return url.toString();
@@ -266,6 +273,7 @@ export function useMemoCollaboration(
   draft: MemoDraft,
   replaceDraft: (draft: MemoDraft, status?: "idle" | "loaded" | "saved" | "imported" | "error") => void,
   collaboratorName: string,
+  powerAppsContext: PowerAppsLaunchContext | null = null,
 ) {
   const [state, setState] = useState<CollaborationState>({
     active: false,
@@ -278,6 +286,7 @@ export function useMemoCollaboration(
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const sharedUpdateTimerRef = useRef<number | null>(null);
+  const saveRetryTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const hiddenTimerRef = useRef<number | null>(null);
   const applyingRemoteRef = useRef(false);
@@ -298,6 +307,7 @@ export function useMemoCollaboration(
   const idlePausedRef = useRef(false);
   const suppressReconnectRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
+  const saveRetryAttemptRef = useRef(0);
   const latestIdentityNameRef = useRef(collaboratorName);
 
   useLayoutEffect(() => {
@@ -341,13 +351,22 @@ export function useMemoCollaboration(
     }));
   }, []);
 
+  const clearSaveRetry = useCallback(() => {
+    if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current);
+    saveRetryTimerRef.current = null;
+    saveRetryAttemptRef.current = 0;
+  }, []);
+
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
     if (sharedUpdateTimerRef.current) window.clearTimeout(sharedUpdateTimerRef.current);
     if (syncAckTimerRef.current) window.clearTimeout(syncAckTimerRef.current);
+    if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current);
     reconnectTimerRef.current = null;
     sharedUpdateTimerRef.current = null;
     syncAckTimerRef.current = null;
+    saveRetryTimerRef.current = null;
+    saveRetryAttemptRef.current = 0;
     pendingSaveIdRef.current = "";
     pendingPresenceRef.current = null;
   }, []);
@@ -397,12 +416,20 @@ export function useMemoCollaboration(
     identityName: string,
   ) => {
     const cleanRoom = roomId.trim();
-    const cleanName = identityName.trim();
+    const cleanName = (powerAppsContext?.name ?? identityName).trim();
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(cleanRoom) || !cleanName) {
       setState((current) => ({
         ...current,
         status: "offline",
         lastError: "ID room tidak valid.",
+      }));
+      return;
+    }
+    if (isPowerAppsRoomId(cleanRoom) && !powerAppsContext) {
+      setState((current) => ({
+        ...current,
+        status: "offline",
+        lastError: "Room Microsoft 365 harus dibuka melalui portal Power Apps.",
       }));
       return;
     }
@@ -416,7 +443,13 @@ export function useMemoCollaboration(
 
     const doc = new Y.Doc();
     const map = doc.getMap(MAP_NAME);
-    const user = saveCollaboratorIdentity(cleanName);
+    const user = powerAppsContext
+      ? {
+          id: powerAppsContext.userId,
+          name: powerAppsContext.name,
+          color: powerAppsContext.color,
+        }
+      : saveCollaboratorIdentity(cleanName);
     let pendingSeed = seedDraft ? normalizeMemoDraft(draftRef.current) : null;
     let pendingSeedMustWin = Boolean(seedDraft);
     let firstConnection = true;
@@ -456,7 +489,7 @@ export function useMemoCollaboration(
     };
 
     const clearSyncAck = (saveId?: string) => {
-      if (saveId && pendingSaveIdRef.current && saveId !== pendingSaveIdRef.current) return false;
+      if (saveId && saveId !== pendingSaveIdRef.current) return false;
       if (syncAckTimerRef.current) window.clearTimeout(syncAckTimerRef.current);
       syncAckTimerRef.current = null;
       pendingSaveIdRef.current = "";
@@ -520,6 +553,7 @@ export function useMemoCollaboration(
     };
 
     const applySharedDraft = (nextDraft: MemoDraft, updatedAt = Date.now(), updatedBy = "remote") => {
+      clearSaveRetry();
       applyingRemoteRef.current = true;
       try {
         if (jsonEqual(nextDraft, draftRef.current)) {
@@ -617,6 +651,28 @@ export function useMemoCollaboration(
       }
     };
 
+    const scheduleSaveRetry = () => {
+      if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current);
+      const timers = idleTimers();
+      const delay = Math.min(
+        timers.autosaveMs * (2 ** Math.min(saveRetryAttemptRef.current, 3)),
+        timers.reconnectMaxMs,
+      );
+      saveRetryAttemptRef.current += 1;
+      saveRetryTimerRef.current = window.setTimeout(() => {
+        saveRetryTimerRef.current = null;
+        if (
+          !activeRoomRef.current ||
+          !initialSyncCompleteRef.current ||
+          idlePausedRef.current
+        ) return;
+        flushSharedDraftRef.current?.({
+          persistHttp: socketRef.current?.readyState !== WebSocket.OPEN,
+          sendSocket: true,
+        });
+      }, delay);
+    };
+
     const connectSocket = () => {
       clearTimers();
       initialSyncCompleteRef.current = false;
@@ -659,20 +715,20 @@ export function useMemoCollaboration(
                 localUpdatedAtRef.current = serverUpdatedAt;
               }
               if (clearSyncAck(saveId || undefined)) {
+                clearSaveRetry();
                 updateStatus("saved", formatSyncTime());
               }
             }
           }
           if (message.type === "save-error") {
-            clearSyncAck(
+            const errorMatchesPending = clearSyncAck(
               typeof message.saveId === "string" ? message.saveId : undefined,
             );
+            if (!errorMatchesPending) return;
             pendingStateUpdateRef.current = true;
-            updateStatus(
-              "offline",
-              undefined,
-              "Draft ditolak server karena format atau ukurannya tidak valid.",
-            );
+            localBaselineRef.current = "";
+            updateStatus("syncing");
+            scheduleSaveRetry();
           }
           if (message.type === "presence") {
             const users = message.users ?? [];
@@ -793,17 +849,22 @@ export function useMemoCollaboration(
       collaborators: [{ ...user, isLocal: true }],
     });
     connectSocket();
-  }, [disconnect, replaceDraft, clearTimers, updateStatus]);
+  }, [disconnect, replaceDraft, clearTimers, clearSaveRetry, updateStatus, powerAppsContext]);
 
   useEffect(() => {
     const roomId = roomFromUrl();
     const timer = window.setTimeout(() => {
-      if (roomId && collaboratorName.trim() && !activeRoomRef.current) {
+      if (
+        roomId &&
+        collaboratorName.trim() &&
+        !activeRoomRef.current &&
+        (!isPowerAppsRoomId(roomId) || powerAppsContext)
+      ) {
         connect(roomId, null, false, collaboratorName);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [collaboratorName, connect]);
+  }, [collaboratorName, connect, powerAppsContext]);
 
   useEffect(() => () => disconnect(false), [disconnect]);
 
@@ -817,6 +878,7 @@ export function useMemoCollaboration(
     const nextSnapshot = draftSyncKey(draft);
     if (nextSnapshot === localBaselineRef.current) return;
 
+    clearSaveRetry();
     if (sharedUpdateTimerRef.current) window.clearTimeout(sharedUpdateTimerRef.current);
     sharedUpdateTimerRef.current = window.setTimeout(() => {
       flushSharedDraftRef.current?.({
@@ -824,7 +886,7 @@ export function useMemoCollaboration(
         sendSocket: true,
       });
     }, idleTimers().autosaveMs);
-  }, [draft, state.active, updateStatus]);
+  }, [clearSaveRetry, draft, state.active, updateStatus]);
 
   useEffect(() => {
     function updateOnlineStatus() {
@@ -995,10 +1057,12 @@ export function useMemoCollaboration(
 
   const start = useCallback((identityName = collaboratorName) => {
     if (!identityName.trim()) return "";
-    const roomId = randomRoomId();
+    const roomId = powerAppsContext
+      ? powerAppsRoomId(randomRoomId())
+      : randomRoomId();
     connect(roomId, draftRef.current, true, identityName);
     return roomId;
-  }, [collaboratorName, connect]);
+  }, [collaboratorName, connect, powerAppsContext]);
 
   const join = useCallback((roomId: string, identityName = collaboratorName) => {
     connect(roomId, null, true, identityName);
@@ -1022,7 +1086,9 @@ export function useMemoCollaboration(
     return link;
   }, [state.roomId]);
 
-  const modeLabel = state.active ? "Live" : "Personal Draft";
+  const modeLabel = state.active
+    ? powerAppsContext ? "Microsoft 365 Live" : "Live"
+    : powerAppsContext ? "Microsoft 365 Draft" : "Personal Draft";
   const syncLabel = useMemo(() => {
     if (!state.active) return "Offline";
     if (state.status === "connected") return "Live";
@@ -1036,6 +1102,10 @@ export function useMemoCollaboration(
     modeLabel,
     syncLabel,
     statusLabel: syncLabel,
+    identityLabel: powerAppsContext
+      ? `Microsoft: ${powerAppsContext.name}`
+      : collaboratorName.trim() ? `Nama: ${collaboratorName.trim()}` : "",
+    accessKind: powerAppsContext ? "powerapps" as const : "legacy" as const,
     shareLink: state.roomId ? collaborationLink(state.roomId) : "",
     start,
     join,

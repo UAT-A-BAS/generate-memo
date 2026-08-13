@@ -187,6 +187,11 @@ main[data-suite-ui] :where(.memo-page, .memo-page *, .ProseMirror, .preview-rich
   white-space: pre-line;
 }
 
+.memo-preview-table :where(p, span, strong, a, li) {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
 .validation-jump-highlight,
 .field-jump-highlight {
   border-radius: 8px;

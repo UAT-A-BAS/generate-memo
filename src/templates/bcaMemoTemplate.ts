@@ -11,6 +11,7 @@ import type {
   ScenarioRow,
   SignerRow,
 } from "@/types/memo";
+import type { RichTextDoc, RichTextMark, RichTextNode } from "@/types/richText";
 import { emptyRichText } from "@/types/richText";
 import { generatePerihal } from "@/utils/generatePerihal";
 import { createId } from "@/utils/ids";
@@ -21,6 +22,127 @@ import {
   normalizeDateSelection,
 } from "@/utils/formatDateRangeID";
 import { scenarioHeadingPath, withScenarioHeadingPath } from "@/utils/scenarioHierarchy";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function stableId(value: unknown, prefix: string, index: number) {
+  const id = stringValue(value).trim();
+  return id || `${prefix}-${index + 1}`;
+}
+
+function uniqueStableId(
+  value: unknown,
+  prefix: string,
+  index: number,
+  usedIds: Set<string>,
+) {
+  const baseId = stableId(value, prefix, index);
+  let id = baseId;
+  let suffix = 2;
+  while (usedIds.has(id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  try {
+    const cloned = JSON.parse(JSON.stringify(value)) as unknown;
+    return isRecord(cloned) ? cloned : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeRichTextMark(value: unknown): RichTextMark | null {
+  if (!isRecord(value) || typeof value.type !== "string" || !value.type) return null;
+  const attrs = jsonRecord(value.attrs);
+  return {
+    type: value.type,
+    ...(attrs ? { attrs } : {}),
+  };
+}
+
+function normalizeRichTextNode(value: unknown): RichTextNode | null {
+  if (!isRecord(value) || typeof value.type !== "string" || !value.type) return null;
+
+  const attrs = jsonRecord(value.attrs);
+  const marks = Array.isArray(value.marks)
+    ? value.marks
+      .map(normalizeRichTextMark)
+      .filter((mark): mark is RichTextMark => Boolean(mark))
+    : undefined;
+  const content = Array.isArray(value.content)
+    ? value.content
+      .map(normalizeRichTextNode)
+      .filter((node): node is RichTextNode => Boolean(node))
+    : undefined;
+
+  return {
+    type: value.type,
+    ...(typeof value.text === "string" ? { text: value.text } : {}),
+    ...(attrs ? { attrs } : {}),
+    ...(marks ? { marks } : {}),
+    ...(content ? { content } : {}),
+  };
+}
+
+function normalizeRichText(value: unknown): RichTextDoc {
+  if (!isRecord(value) || value.type !== "doc" || !Array.isArray(value.content)) {
+    return emptyRichText();
+  }
+  const content = value.content
+    .map(normalizeRichTextNode)
+    .filter((node): node is RichTextNode => Boolean(node));
+  return content.length ? { type: "doc", content } : emptyRichText();
+}
+
+function normalizeRecipient(value: unknown, index: number, prefix: string): Recipient {
+  const row = isRecord(value) ? value : {};
+  return {
+    id: stableId(row.id, prefix, index),
+    gender: stringValue(row.gender) as Recipient["gender"],
+    name: stringValue(row.name),
+    position: stringValue(row.position),
+    bureau: stringValue(row.bureau),
+  };
+}
+
+function normalizeDevelopmentRow(value: unknown, index: number): DevelopmentRow {
+  const row = isRecord(value) ? value : {};
+  return {
+    id: stableId(row.id, "development", index),
+    item: normalizeRichText(row.item),
+    description: normalizeRichText(row.description),
+  };
+}
+
+function normalizeContact(value: unknown, index: number): ContactRow {
+  const row = isRecord(value) ? value : {};
+  return {
+    id: stableId(row.id, "contact", index),
+    name: stringValue(row.name),
+    email: stringValue(row.email),
+  };
+}
+
+function normalizeSigner(value: unknown, index: number): SignerRow {
+  const row = isRecord(value) ? value : {};
+  return {
+    id: stableId(row.id, "signer", index),
+    name: stringValue(row.name),
+    title: stringValue(row.title),
+  };
+}
 
 export function createRecipient(seed: Partial<Recipient> = {}): Recipient {
   return {
@@ -142,10 +264,8 @@ function normalizeReviewReplies(input: unknown): ReviewCommentReply[] {
   const usedIds = new Set<string>();
   return input
     .filter((item): item is Partial<ReviewCommentReply> => Boolean(item && typeof item === "object"))
-    .map((item) => {
-      let id = typeof item.id === "string" && item.id.trim() ? item.id : createId("reply");
-      while (usedIds.has(id)) id = createId("reply");
-      usedIds.add(id);
+    .map((item, index) => {
+      const id = uniqueStableId(item.id, "reply", index, usedIds);
 
       return {
         id,
@@ -162,10 +282,8 @@ function normalizeReviewComments(input: unknown): ReviewComment[] {
   const usedIds = new Set<string>();
   return input
     .filter((item): item is Partial<ReviewComment> => Boolean(item && typeof item === "object"))
-    .map((item) => {
-      let id = typeof item.id === "string" && item.id.trim() ? item.id : createId("comment");
-      while (usedIds.has(id)) id = createId("comment");
-      usedIds.add(id);
+    .map((item, index) => {
+      const id = uniqueStableId(item.id, "comment", index, usedIds);
 
       const createdAt = typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString();
       const updatedAt = typeof item.updatedAt === "string" ? item.updatedAt : createdAt;
@@ -179,6 +297,7 @@ function normalizeReviewComments(input: unknown): ReviewComment[] {
           : "Area terkait",
         path: Array.isArray(item.path)
           ? item.path.filter((index): index is number => Number.isInteger(index))
+            .slice(0, 32)
           : [],
         text: typeof item.text === "string" ? item.text : "",
         author: typeof item.author === "string" ? item.author : "",
@@ -206,10 +325,8 @@ function normalizeReviewAuditLog(input: unknown): ReviewAuditLogEntry[] {
 
   return input
     .filter((item): item is Partial<ReviewAuditLogEntry> => Boolean(item && typeof item === "object"))
-    .map((item) => {
-      let id = typeof item.id === "string" && item.id.trim() ? item.id : createId("audit");
-      while (usedIds.has(id)) id = createId("audit");
-      usedIds.add(id);
+    .map((item, index) => {
+      const id = uniqueStableId(item.id, "audit", index, usedIds);
 
       return {
         id,
@@ -264,16 +381,52 @@ function normalizeActivityDateFields<T extends { startDate?: string; endDate?: s
   };
 }
 
-export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
+export function normalizeMemoDraft(input: MemoDraftInput | null | undefined): MemoDraft {
   const base = createInitialMemoDraft();
+  const source = isRecord(input) ? input as MemoDraftInput : {};
+  const metadataInput = isRecord(source.metadata)
+    ? source.metadata as Partial<MemoMetadata>
+    : {};
   const metadata = {
-    ...base.metadata,
-    ...(input.metadata ?? {}),
+    noMemo: stringValue(metadataInput.noMemo, base.metadata.noMemo),
+    releaseDate: stringValue(metadataInput.releaseDate, base.metadata.releaseDate),
+    memoType: stringValue(metadataInput.memoType, base.metadata.memoType) as MemoMetadata["memoType"],
+    projectName: stringValue(metadataInput.projectName, base.metadata.projectName),
+    bureau: stringValue(metadataInput.bureau, base.metadata.bureau) as MemoMetadata["bureau"],
+    perihal: stringValue(metadataInput.perihal, base.metadata.perihal),
+    autoPerihal: typeof metadataInput.autoPerihal === "boolean"
+      ? metadataInput.autoPerihal
+      : base.metadata.autoPerihal,
+    accessLinkEnabled: typeof metadataInput.accessLinkEnabled === "boolean"
+      ? metadataInput.accessLinkEnabled
+      : base.metadata.accessLinkEnabled,
+    accessLink: stringValue(metadataInput.accessLink, base.metadata.accessLink),
   };
-  const pilotSchedule = normalizeDateFields(input.pilotSchedule ?? base.pilotSchedule);
+  const rawPilotSchedule: Record<string, unknown> = isRecord(source.pilotSchedule)
+    ? source.pilotSchedule
+    : {};
+  const pilotSchedule = normalizeDateFields({
+    startDate: stringValue(rawPilotSchedule.startDate),
+    endDate: stringValue(rawPilotSchedule.endDate),
+    dates: Array.isArray(rawPilotSchedule.dates)
+      ? rawPilotSchedule.dates.filter((date): date is string => typeof date === "string")
+      : [],
+  });
 
-  const activities = Array.isArray(input.activities)
-    ? input.activities.map((row) => normalizeActivityDateFields(row))
+  const activities = Array.isArray(source.activities)
+    ? source.activities.map((value, index) => {
+        const row: Record<string, unknown> = isRecord(value) ? value : {};
+        return normalizeActivityDateFields({
+          id: stableId(row.id, "activity", index),
+          startDate: stringValue(row.startDate),
+          endDate: stringValue(row.endDate),
+          dates: Array.isArray(row.dates)
+            ? row.dates.filter((date): date is string => typeof date === "string")
+            : [],
+          activity: normalizeRichText(row.activity),
+          owner: stringValue(row.owner),
+        });
+      })
     : base.activities;
   let previousScenarioStartDate = "";
   let previousScenarioEndDate = "";
@@ -282,10 +435,39 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
   let previousScenarioDateGroupId = "";
   let previousScenarioSectionGroupId = "";
   let previousScenarioHeadingPath: ScenarioRow["headingPath"] = undefined;
-  const appendixScenarios = Array.isArray(input.appendixScenarios)
-    ? input.appendixScenarios.map((row) => {
-        const legacyDate = (row as ScenarioRow & { date?: string }).date ?? "";
-        const rawStartDate = row.startDate ?? legacyDate;
+  const appendixScenarios = Array.isArray(source.appendixScenarios)
+    ? source.appendixScenarios.map((value, index) => {
+        const rawRow: Record<string, unknown> = isRecord(value) ? value : {};
+        const row: ScenarioRow = {
+          id: stableId(rawRow.id, "scenario", index),
+          dateGroupId: typeof rawRow.dateGroupId === "string" ? rawRow.dateGroupId : undefined,
+          sectionGroupId: typeof rawRow.sectionGroupId === "string"
+            ? rawRow.sectionGroupId
+            : undefined,
+          headingPath: Array.isArray(rawRow.headingPath)
+            ? rawRow.headingPath
+              .filter(isRecord)
+              .map((heading, headingIndex) => ({
+                id: stableId(heading.id, `scenario-heading-${index + 1}`, headingIndex),
+                title: stringValue(heading.title),
+              }))
+            : undefined,
+          startDate: stringValue(rawRow.startDate),
+          endDate: stringValue(rawRow.endDate),
+          dates: Array.isArray(rawRow.dates)
+            ? rawRow.dates.filter((date): date is string => typeof date === "string")
+            : [],
+          section: stringValue(rawRow.section),
+          scenario: normalizeRichText(rawRow.scenario),
+          expectedResult: normalizeRichText(rawRow.expectedResult),
+          pic: stringValue(rawRow.pic),
+          notes: normalizeRichText(rawRow.notes),
+          ...(typeof rawRow.isSectionHeader === "boolean"
+            ? { isSectionHeader: rawRow.isSectionHeader }
+            : {}),
+        };
+        const legacyDate = stringValue(rawRow.date);
+        const rawStartDate = row.startDate || legacyDate;
         const normalizedDateFields = normalizeActivityDateFields({
           ...row,
           startDate: rawStartDate,
@@ -307,7 +489,9 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
             : [];
         const dateGroupId =
           row.dateGroupId ??
-          (continuesPreviousDate ? previousScenarioDateGroupId : createId("scenario-date"));
+          (continuesPreviousDate
+            ? previousScenarioDateGroupId
+            : `scenario-date-${index + 1}`);
         const continuesPreviousSection =
           !row.section?.trim() &&
           dateGroupId === previousScenarioDateGroupId &&
@@ -316,7 +500,7 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
           row.sectionGroupId ??
           (continuesPreviousSection
             ? previousScenarioSectionGroupId
-            : createId("scenario-section"));
+            : `scenario-section-${index + 1}`);
 
         if (normalizedStartDate) previousScenarioStartDate = normalizedStartDate;
         if (normalizedEndDate) previousScenarioEndDate = normalizedEndDate;
@@ -346,35 +530,44 @@ export function normalizeMemoDraft(input: MemoDraftInput): MemoDraft {
     : base.appendixScenarios;
 
   return {
-    ...base,
-    ...input,
+    id: typeof source.id === "string" ? source.id : "draft",
     version: 1,
-    id: input.id ?? createId("draft"),
     metadata: {
       ...metadata,
       perihal: metadata.autoPerihal ? generatePerihal(metadata) : metadata.perihal,
     },
-    recipients: Array.isArray(input.recipients) ? input.recipients : base.recipients,
-    introduction: input.introduction ?? base.introduction,
-    referenceEnabled: input.referenceEnabled ?? base.referenceEnabled,
-    reference: input.reference ?? base.reference,
-    developmentRows: Array.isArray(input.developmentRows)
-      ? input.developmentRows
+    recipients: Array.isArray(source.recipients)
+      ? source.recipients.map((row, index) => normalizeRecipient(row, index, "recipient"))
+      : base.recipients,
+    introduction: normalizeRichText(source.introduction),
+    referenceEnabled: typeof source.referenceEnabled === "boolean"
+      ? source.referenceEnabled
+      : base.referenceEnabled,
+    reference: normalizeRichText(source.reference),
+    developmentRows: Array.isArray(source.developmentRows)
+      ? source.developmentRows.map(normalizeDevelopmentRow)
       : base.developmentRows,
     pilotSchedule,
     activities,
     attachmentsEnabled:
-      typeof input.attachmentsEnabled === "boolean"
-        ? input.attachmentsEnabled
-        : Boolean(input.attachments),
-    attachments: typeof input.attachments === "string" ? input.attachments : base.attachments,
-    contacts: Array.isArray(input.contacts) ? input.contacts : base.contacts,
-    signers: Array.isArray(input.signers) ? input.signers : base.signers,
-    ccRecipients: input.ccRecipients ?? base.ccRecipients,
-    initialsBureau: input.initialsBureau ?? base.initialsBureau,
+      typeof source.attachmentsEnabled === "boolean"
+        ? source.attachmentsEnabled
+        : Boolean(source.attachments),
+    attachments: stringValue(source.attachments, base.attachments),
+    contacts: Array.isArray(source.contacts)
+      ? source.contacts.map(normalizeContact)
+      : base.contacts,
+    signers: Array.isArray(source.signers)
+      ? source.signers.map(normalizeSigner)
+      : base.signers,
+    ccRecipients: Array.isArray(source.ccRecipients)
+      ? source.ccRecipients.map((row, index) => normalizeRecipient(row, index, "cc"))
+      : base.ccRecipients,
+    initials: stringValue(source.initials, base.initials),
+    initialsBureau: stringValue(source.initialsBureau, base.initialsBureau) as MemoDraft["initialsBureau"],
     appendixScenarios,
-    reviewComments: normalizeReviewComments(input.reviewComments),
-    reviewAuditLog: normalizeReviewAuditLog(input.reviewAuditLog),
-    updatedAt: input.updatedAt ?? new Date().toISOString(),
+    reviewComments: normalizeReviewComments(source.reviewComments),
+    reviewAuditLog: normalizeReviewAuditLog(source.reviewAuditLog),
+    updatedAt: stringValue(source.updatedAt, new Date().toISOString()),
   };
 }

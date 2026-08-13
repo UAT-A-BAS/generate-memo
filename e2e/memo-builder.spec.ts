@@ -1578,6 +1578,65 @@ test("uses exact continuation wording and only the floating generate button", as
   await expect(page.locator("button").filter({ hasText: "Generate Docx" })).toHaveCount(1);
 });
 
+test("auto-fits development columns so Pemindahbukuan stays intact in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [
+      {
+        id: "development-pemindahbukuan",
+        item: richText("Penambahan tampilan menu Pemindahbukuan Pocket Valas"),
+        description: richText("Penambahan tampilan menu Pemindahbukuan Pocket Valas."),
+      },
+      {
+        id: "development-second",
+        item: richText("Redesign VA"),
+        description: richText("Penambahan menu transaksi."),
+      },
+    ],
+  });
+
+  const itemCell = page.locator(
+    'aside td[data-preview-field-id="development-item-development-pemindahbukuan"]',
+  ).first();
+  const previewGeometry = await itemCell.evaluate((cell, word) => {
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    let textNode: Text | null = null;
+    while (walker.nextNode()) {
+      const candidate = walker.currentNode as Text;
+      if (candidate.data.includes(word)) {
+        textNode = candidate;
+        break;
+      }
+    }
+    if (!textNode) throw new Error(`${word} was not rendered`);
+    const start = textNode.data.indexOf(word);
+    const range = document.createRange();
+    range.setStart(textNode, start);
+    range.setEnd(textNode, start + word.length);
+    const table = cell.closest("table");
+    if (!table) throw new Error("Development table was not rendered");
+    return {
+      wordLines: range.getClientRects().length,
+      cellWidth: cell.getBoundingClientRect().width,
+      tableWidth: table.getBoundingClientRect().width,
+    };
+  }, "Pemindahbukuan");
+
+  expect(previewGeometry.wordLines).toBe(1);
+  expect(previewGeometry.cellWidth).toBeGreaterThan(previewGeometry.tableWidth * 0.24 + 1);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const developmentTable = documentTableAround(xml, ">Keterangan</w:t>");
+  expect(
+    [...developmentTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) =>
+      Number(match[1]),
+    ),
+  ).toEqual([570, 1766, 4744]);
+});
+
 test("labels split development and activity tables as continuations in preview and DOCX", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const longDescription =
@@ -1719,6 +1778,9 @@ test("labels split development and activity tables as continuations in preview a
     const titleRow = xml.slice(titleRowStart, titleRowEnd);
     expect(titleRow).toContain("<w:tblHeader/>");
     expect(titleRow).toContain(", Sambungan</w:t>");
+    expect(titleRow).toContain('<w:vMerge w:val="restart"/>');
+    expect(titleRow).not.toContain("<w:trHeight");
+    expect(continuationTable).toContain('<w:vMerge w:val="continue"/>');
     for (const header of headers) {
       expect(titleRow).toContain(`>${header}</w:t>`);
     }
@@ -2340,8 +2402,8 @@ test("DOCX data tables stay inside the A4 content grid using direct indented gri
   expect(developmentTable).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
   expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(3);
   expect(developmentTable).toContain('<w:gridCol w:w="570"/>');
-  expect(developmentTable).toContain('<w:gridCol w:w="1695"/>');
-  expect(developmentTable).toContain('<w:gridCol w:w="4815"/>');
+  expect(developmentTable).toContain('<w:gridCol w:w="1412"/>');
+  expect(developmentTable).toContain('<w:gridCol w:w="5098"/>');
   expect(developmentTable.match(/<w:gridSpan w:val="2"\/>/g) ?? []).toHaveLength(2);
 
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
@@ -2563,6 +2625,7 @@ test("collaboration panel starts a shareable worker room", async ({ page }) => {
   await page.goto("http://localhost:3002");
 
   await expect(page.getByRole("button", { name: "Start Collab" })).toBeVisible();
+  await expect(page.getByText(/^Microsoft:/)).toHaveCount(0);
   await expect(page.getByText("Personal Draft")).toBeVisible();
   await expect(page.getByText("Offline")).toBeVisible();
   await expect(page.getByText("Users: 1")).toBeVisible();
@@ -2584,6 +2647,46 @@ test("collaboration panel starts a shareable worker room", async ({ page }) => {
   expect(popupBox?.width).toBeGreaterThanOrEqual(600);
   await page.getByRole("button", { name: "Add Comment" }).click();
   await expect(page.getByRole("heading", { name: "Isi nama kolaborator" })).toHaveCount(0);
+});
+
+test("Power Apps launch uses the Microsoft name and creates a portal-only room link", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(
+    "http://localhost:3002/?source=powerapps&pa_name=Alex%20Microsoft&pa_oid=9d18c2ab-539b-4e26-8d96-38c5f51b07aa",
+  );
+
+  await expect(page.getByText("Microsoft: Alex Microsoft", { exact: true })).toBeVisible();
+  await expect(page.getByText("Microsoft 365 Draft", { exact: true })).toBeVisible();
+  await expect.poll(() => new URL(page.url()).searchParams.has("source")).toBe(false);
+  await expect.poll(() => new URL(page.url()).searchParams.has("pa_name")).toBe(false);
+  await expect.poll(() => new URL(page.url()).searchParams.has("pa_oid")).toBe(false);
+  await page.getByRole("button", { name: "Start Collab" }).click();
+  await expect(page.getByRole("dialog", { name: "Isi nama kolaborator" })).toHaveCount(0);
+  await expect(page).toHaveURL(/room=m365_[0-9a-f]{16}/);
+
+  await page.getByRole("button", { name: "Copy Link" }).click();
+  const copiedLink = await page.evaluate(() => navigator.clipboard.readText());
+  const copiedUrl = new URL(copiedLink);
+  expect(copiedUrl.hostname).toBe("apps.powerapps.com");
+  expect(copiedUrl.searchParams.get("room")).toMatch(/^m365_[0-9a-f]{16}$/);
+  expect(copiedUrl.searchParams.has("pa_name")).toBe(false);
+  expect(copiedUrl.searchParams.has("pa_oid")).toBe(false);
+});
+
+test("a Microsoft room opened directly routes back through Power Apps", async ({ page }) => {
+  const roomId = "m365_0123456789abcdef";
+  await page.goto(`http://localhost:3002/?room=${roomId}`);
+
+  await expect(page.getByRole("heading", { name: "Buka room ini melalui Power Apps" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Isi nama kolaborator" })).toHaveCount(0);
+  const portalLink = page.getByRole("link", { name: "Buka Memo Generator" });
+  await expect(portalLink).toHaveAttribute("href", /apps\.powerapps\.com\/play\//);
+  await expect(portalLink).toHaveAttribute("href", new RegExp(`room=${roomId}`));
+  await expect(page.getByText("Tautan langsung tanpa room Microsoft tetap menggunakan mode bebas")).toBeVisible();
+  await expect(page.getByText(/Cloudflare/i)).toHaveCount(0);
 });
 
 test("collaboration syncs metadata fields between pages", async ({ browser }) => {

@@ -69,6 +69,12 @@ import {
   getStoredCollaboratorIdentity,
   saveCollaboratorIdentity,
 } from "@/collaboration/collaboratorIdentity";
+import {
+  isPowerAppsRoomId,
+  powerAppsLaunchContextFromUrl,
+  powerAppsPortalRoomLink,
+  type PowerAppsLaunchContext,
+} from "@/collaboration/powerAppsPortal";
 import { createId } from "@/utils/ids";
 import {
   activityDateSelectionError,
@@ -480,6 +486,9 @@ function CollaborationPanel({
       ) : null}
       <SyncPill label={collaboration.modeLabel} tone={collaboration.active ? "live" : "neutral"} />
       <SyncPill label={collaboration.syncLabel} tone={syncTone} />
+      {collaboration.identityLabel ? (
+        <SyncPill label={collaboration.identityLabel} tone="neutral" />
+      ) : null}
       <SyncPill label={`Users: ${Math.max(1, collaboration.collaborators.length)}`} tone="neutral" />
       <SyncPill label={`Last synced: ${collaboration.lastSyncedAt ?? "-"}`} tone="neutral" />
       {collaboration.lastError ? (
@@ -2915,6 +2924,8 @@ export function MemoBuilderApp() {
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const [identityDialog, setIdentityDialog] = useState<IdentityDialogState | null>(null);
   const [identityInput, setIdentityInput] = useState("");
+  const [powerAppsContext, setPowerAppsContext] = useState<PowerAppsLaunchContext | null>(null);
+  const [requestedRoomId, setRequestedRoomId] = useState("");
   const [editorPanePercent, setEditorPanePercent] = useState(40);
   const draft = useMemoDraftStore((state) => state.draft);
   const hasLoaded = useMemoDraftStore((state) => state.hasLoaded);
@@ -2931,7 +2942,12 @@ export function MemoBuilderApp() {
   const hasActiveEditChanges = useMemoDraftStore(
     (state) => state.hasActiveEditChanges,
   );
-  const collaboration = useMemoCollaboration(draft, replaceDraft, collaboratorName);
+  const collaboration = useMemoCollaboration(
+    draft,
+    replaceDraft,
+    collaboratorName,
+    powerAppsContext,
+  );
 
   const pages = useMemo(() => paginateMemoDraft(draft), [draft]);
 
@@ -2941,6 +2957,19 @@ export function MemoBuilderApp() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      const currentUrl = new URL(window.location.href);
+      const launchContext = powerAppsLaunchContextFromUrl(currentUrl);
+      setRequestedRoomId(currentUrl.searchParams.get("room") ?? "");
+      setPowerAppsContext(launchContext);
+      if (launchContext) {
+        currentUrl.searchParams.delete("source");
+        currentUrl.searchParams.delete("pa_name");
+        currentUrl.searchParams.delete("pa_oid");
+        window.history.replaceState(window.history.state, "", currentUrl.toString());
+        setCollaboratorName(launchContext.name);
+        setIdentityLoaded(true);
+        return;
+      }
       const identity = getStoredCollaboratorIdentity();
       setCollaboratorName(identity?.name ?? "");
       setIdentityLoaded(true);
@@ -2952,7 +2981,7 @@ export function MemoBuilderApp() {
     if (!identityLoaded || collaboratorName.trim() || identityDialog) return;
     const timer = window.setTimeout(() => {
       const roomId = new URL(window.location.href).searchParams.get("room");
-      if (roomId) {
+      if (roomId && !isPowerAppsRoomId(roomId)) {
         setIdentityInput("");
         setIdentityDialog({ action: "join-collab" });
       }
@@ -3439,6 +3468,8 @@ export function MemoBuilderApp() {
   }
 
   const unresolvedReviewCount = (draft.reviewComments ?? []).filter((comment) => !comment.resolved).length;
+  const powerAppsAccessRequired =
+    identityLoaded && isPowerAppsRoomId(requestedRoomId) && !powerAppsContext;
 
   if (!hasLoaded) {
     return (
@@ -3446,6 +3477,34 @@ export function MemoBuilderApp() {
         <div className="rounded-[22px] border border-[#c9d3df] bg-white px-5 py-4 text-sm font-medium text-[#5b6778] shadow-[0_18px_40px_rgba(31,45,61,0.08)]">
           Memuat draft lokal...
         </div>
+      </main>
+    );
+  }
+
+  if (powerAppsAccessRequired) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-slate-100 px-4" data-suite-ui>
+        <section className="w-full max-w-xl rounded-2xl border border-[#c9d3df] bg-white p-7 shadow-[0_20px_55px_rgba(31,45,61,0.12)]">
+          <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[#0A67B1]">
+            Microsoft 365 collaboration
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-[#0f2d4a]">
+            Buka room ini melalui Power Apps
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Room berawalan <strong>m365_</strong> memakai nama akun Microsoft dari portal.
+            Buka portal terlebih dahulu agar nama kolaborator diisi otomatis.
+          </p>
+          <a
+            href={powerAppsPortalRoomLink(requestedRoomId)}
+            className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#0A67B1] px-5 text-sm font-bold text-white transition hover:bg-[#084f88]"
+          >
+            Buka Memo Generator
+          </a>
+          <p className="mt-5 text-xs leading-5 text-slate-500">
+            Tautan langsung tanpa room Microsoft tetap menggunakan mode bebas dan nama manual seperti sebelumnya.
+          </p>
+        </section>
       </main>
     );
   }

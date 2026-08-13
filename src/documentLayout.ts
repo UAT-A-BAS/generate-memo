@@ -1,6 +1,6 @@
 export const BODY_COLUMN_INDENT = 2100;
 export const BODY_COLUMN_RIGHT_INDENT = 0;
-export const VISIBLE_TABLE_RIGHT_INSET = 80;
+export const VISIBLE_TABLE_RIGHT_INSET = 86;
 export const BODY_TITLE_WIDTH = 1800;
 export const BODY_COLUMN_GAP = BODY_COLUMN_INDENT - BODY_TITLE_WIDTH;
 export const CONTINUATION_RULE_INDENT = BODY_COLUMN_INDENT;
@@ -47,3 +47,94 @@ export const DEVELOPMENT_COLUMN_WIDTHS = [8, 24, 68] as const;
 export const DEVELOPMENT_SINGLE_COLUMN_WIDTHS = [28, 72] as const;
 export const ACTIVITY_COLUMN_WIDTHS = [56, 22, 22] as const;
 export const ACTIVITY_NUMBERED_COLUMN_WIDTHS = [8, 48, 21, 23] as const;
+
+const TABLE_BODY_FONT_SIZE_POINTS = 11;
+const TABLE_CELL_HORIZONTAL_MARGIN_POINTS = 9;
+const TABLE_WORD_FIT_SAFETY_POINTS = 2;
+const MAX_DEVELOPMENT_ITEM_WIDTH = 38;
+const MAX_SINGLE_DEVELOPMENT_ITEM_WIDTH = 42;
+
+function estimatedTimesNewRomanWidthEm(word: string) {
+  return Array.from(word.slice(0, 28)).reduce((width, character) => {
+    if (/[WM]/.test(character)) return width + 0.92;
+    if (/[mw]/.test(character)) return width + 0.78;
+    if (character === "P") return width + 0.61;
+    if (/[A-Z]/.test(character)) return width + 0.67;
+    if (/[ilIjtfr.,'`:;|!]/.test(character)) return width + 0.28;
+    if (/[rs]/.test(character)) return width + 0.36;
+    if (/[aceovxyz]/.test(character)) return width + 0.44;
+    return width + 0.5;
+  }, 0);
+}
+
+function longestWordWidthEm(values: string[]) {
+  return values.reduce((longest, value) => {
+    const words = value.match(/\S+/g) ?? [];
+    return Math.max(
+      longest,
+      ...words.map(estimatedTimesNewRomanWidthEm),
+    );
+  }, estimatedTimesNewRomanWidthEm("Pengembangan"));
+}
+
+/**
+ * Keeps normal words intact by borrowing only the width needed from the
+ * description column. The estimate uses the same 11 pt Times New Roman and
+ * cell margins as the DOCX table, so preview and export share one geometry.
+ */
+export function fittedDevelopmentColumnWidths(
+  itemTexts: string[],
+  numbered: boolean,
+) {
+  const base: number[] = numbered
+    ? [...DEVELOPMENT_COLUMN_WIDTHS]
+    : [...DEVELOPMENT_SINGLE_COLUMN_WIDTHS];
+  const itemIndex = numbered ? 1 : 0;
+  const descriptionIndex = itemIndex + 1;
+  const requiredPoints =
+    longestWordWidthEm(itemTexts) * TABLE_BODY_FONT_SIZE_POINTS +
+    TABLE_CELL_HORIZONTAL_MARGIN_POINTS +
+    TABLE_WORD_FIT_SAFETY_POINTS;
+  const requiredPercent = Math.ceil(
+    (requiredPoints * 20 * 100) / MAIN_BODY_TABLE_WIDTH,
+  );
+  const maximumItemWidth = numbered
+    ? MAX_DEVELOPMENT_ITEM_WIDTH
+    : MAX_SINGLE_DEVELOPMENT_ITEM_WIDTH;
+  const fittedItemWidth = Math.min(
+    maximumItemWidth,
+    Math.max(base[itemIndex], requiredPercent),
+  );
+  const borrowedWidth = fittedItemWidth - base[itemIndex];
+
+  base[itemIndex] = fittedItemWidth;
+  base[descriptionIndex] -= borrowedWidth;
+  return base;
+}
+
+export function developmentColumnWidthsTwips(
+  itemTexts: string[],
+  numbered: boolean,
+) {
+  const percentages = fittedDevelopmentColumnWidths(itemTexts, numbered);
+  if (numbered) {
+    const baseWidths = [570, 1695, 4815];
+    const borrowedWidth = Math.round(
+      (MAIN_BODY_TABLE_WIDTH *
+        (percentages[1] - DEVELOPMENT_COLUMN_WIDTHS[1])) /
+        100,
+    );
+    return [
+      baseWidths[0],
+      baseWidths[1] + borrowedWidth,
+      baseWidths[2] - borrowedWidth,
+    ];
+  }
+
+  const widths = percentages.map((width) =>
+    Math.round((MAIN_BODY_TABLE_WIDTH * width) / 100),
+  );
+  widths[widths.length - 1] +=
+    MAIN_BODY_TABLE_WIDTH - widths.reduce((sum, width) => sum + width, 0);
+  return widths;
+}

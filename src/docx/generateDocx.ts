@@ -40,8 +40,8 @@ import {
   BODY_COLUMN_INDENT,
   BODY_COLUMN_RIGHT_INDENT,
   BODY_TITLE_WIDTH,
-  DEVELOPMENT_COLUMN_WIDTHS,
-  DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
+  developmentColumnWidthsTwips,
+  fittedDevelopmentColumnWidths,
   MAIN_PAGE_MARGINS,
   MAIN_BODY_CONTENT_WIDTH,
   MAIN_BODY_TABLE_WIDTH,
@@ -480,8 +480,13 @@ function bodyTable(
   });
 }
 
-function continuationLayoutCell(children: FileChild[], width: number) {
+function continuationLayoutCell(
+  children: FileChild[],
+  width: number,
+  rowSpan?: number,
+) {
   return new TableCell({
+    rowSpan,
     verticalAlign: VerticalAlign.TOP,
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
     width: { size: width, type: WidthType.DXA },
@@ -490,40 +495,36 @@ function continuationLayoutCell(children: FileChild[], width: number) {
   });
 }
 
-function continuationRowCells(
+function continuationHeaderCells(
   dataCells: TableCell[],
-  title?: string,
+  title: string,
+  rowSpan: number,
 ) {
   return [
     continuationLayoutCell(
-      title ? [sectionTitleParagraph(title)] : [paragraph("", { size: 2 })],
+      [sectionTitleParagraph(title)],
       BODY_TITLE_WIDTH,
+      rowSpan,
     ),
-    continuationLayoutCell([paragraph("", { size: 2 })], BODY_COLUMN_GAP),
+    continuationLayoutCell(
+      [paragraph("", { size: 2 })],
+      BODY_COLUMN_GAP,
+      rowSpan,
+    ),
     ...dataCells,
     continuationLayoutCell(
       [paragraph("", { size: 2 })],
       MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
+      rowSpan,
     ),
   ];
-}
-
-function continuationAwareRowCells(
-  dataCells: TableCell[],
-  continuationTitle?: string,
-  includeTitle = false,
-) {
-  if (!continuationTitle) return dataCells;
-  return continuationRowCells(dataCells, includeTitle ? continuationTitle : undefined);
 }
 
 function continuationTableColumnWidths(columnWidths: number[]) {
   return [
     BODY_TITLE_WIDTH,
     BODY_COLUMN_GAP,
-    ...columnWidths.map((columnWidth) =>
-      Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
-    ),
+    ...columnWidths,
     MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
   ];
 }
@@ -780,29 +781,45 @@ function ccRecipientParagraphs(recipients: Recipient[], totalRecipients = recipi
 function developmentTable(
   rows: Extract<PreviewBlock, { type: "development-row" }>[],
   numbered: boolean,
+  itemTexts: string[],
   continuationTitle?: string,
 ) {
-  const columnWidths = numbered
-    ? Array.from(DEVELOPMENT_COLUMN_WIDTHS)
-    : Array.from(DEVELOPMENT_SINGLE_COLUMN_WIDTHS);
+  const columnWidths = fittedDevelopmentColumnWidths(itemTexts, numbered);
+  const columnWidthsTwips = developmentColumnWidthsTwips(itemTexts, numbered);
+  const itemColumn = numbered ? 1 : 0;
+  const descriptionColumn = itemColumn + 1;
   const tableRows = [
     bodyRow({
       tableHeader: true,
-      children: continuationAwareRowCells([
+      children: continuationTitle ? continuationHeaderCells([
         ...(numbered
-          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], DEVELOPMENT_COLUMN_WIDTHS[0], true)]
+          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], columnWidths[0], true)]
           : []),
         bodyCell(
           [paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          numbered ? DEVELOPMENT_COLUMN_WIDTHS[1] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
+          columnWidths[itemColumn],
           true,
         ),
         bodyCell(
           [paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
-          numbered ? DEVELOPMENT_COLUMN_WIDTHS[2] : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
+          columnWidths[descriptionColumn],
           true,
         ),
-      ], continuationTitle, true),
+      ], continuationTitle, rows.length + 1) : [
+        ...(numbered
+          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], columnWidths[0], true)]
+          : []),
+        bodyCell(
+          [paragraph("Pengembangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          columnWidths[itemColumn],
+          true,
+        ),
+        bodyCell(
+          [paragraph("Keterangan", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          columnWidths[descriptionColumn],
+          true,
+        ),
+      ],
     }),
     ...rows.map(
       (block, index) => {
@@ -819,11 +836,11 @@ function developmentTable(
         return (
         bodyRow({
           cantSplit: true,
-          children: continuationAwareRowCells([
+          children: [
             ...(numbered
               ? [bodyCell(
                   [paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })],
-                  DEVELOPMENT_COLUMN_WIDTHS[0],
+                  columnWidths[0],
                   false,
                   VerticalAlign.TOP,
                 )]
@@ -835,9 +852,7 @@ function developmentTable(
                     richTextToDocxParagraphs(block.row.item, {
                       size: 22,
                     }),
-                    numbered
-                      ? DEVELOPMENT_COLUMN_WIDTHS[1]
-                      : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[0],
+                    columnWidths[itemColumn],
                     itemMerge,
                     VerticalAlign.TOP,
                   ),
@@ -849,28 +864,32 @@ function developmentTable(
                     richTextToDocxParagraphs(block.row.description, {
                       size: 22,
                     }),
-                    numbered
-                      ? DEVELOPMENT_COLUMN_WIDTHS[2]
-                      : DEVELOPMENT_SINGLE_COLUMN_WIDTHS[1],
+                    columnWidths[descriptionColumn],
                     descriptionMerge,
                   ),
                 ]),
-          ], continuationTitle),
+          ],
         })
         );
       },
     ),
   ];
 
-  if (continuationTitle) {
-    return table(
-      tableRows,
-      MAIN_PAGE_CONTENT_WIDTH,
-      continuationTableColumnWidths(columnWidths),
-    );
-  }
-
-  return bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
+  return new Table({
+    width: {
+      size: continuationTitle ? MAIN_PAGE_CONTENT_WIDTH : MAIN_BODY_TABLE_WIDTH,
+      type: WidthType.DXA,
+    },
+    indent: continuationTitle
+      ? undefined
+      : { size: BODY_COLUMN_INDENT, type: WidthType.DXA },
+    columnWidths: continuationTitle
+      ? continuationTableColumnWidths(columnWidthsTwips)
+      : columnWidthsTwips,
+    layout: TableLayoutType.FIXED,
+    borders: dataTableBorders,
+    rows: tableRows,
+  });
 }
 
 function activityTable(
@@ -884,7 +903,7 @@ function activityTable(
   const tableRows = [
     bodyRow({
       tableHeader: true,
-      children: continuationAwareRowCells([
+      children: continuationTitle ? continuationHeaderCells([
         ...(numbered
           ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
           : []),
@@ -903,7 +922,26 @@ function activityTable(
           numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
           true,
         ),
-      ], continuationTitle, true),
+      ], continuationTitle, rows.length + 1) : [
+        ...(numbered
+          ? [bodyCell([paragraph("No.", { bold: true, size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0], true)]
+          : []),
+        bodyCell(
+          [paragraph("Aktivitas", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[1] : ACTIVITY_COLUMN_WIDTHS[0],
+          true,
+        ),
+        bodyCell(
+          [paragraph("PIC", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[2] : ACTIVITY_COLUMN_WIDTHS[1],
+          true,
+        ),
+        bodyCell(
+          [paragraph("Waktu", { bold: true, size: 22, align: AlignmentType.CENTER })],
+          numbered ? ACTIVITY_NUMBERED_COLUMN_WIDTHS[3] : ACTIVITY_COLUMN_WIDTHS[2],
+          true,
+        ),
+      ],
     }),
     ...rows.map(
       (block, index) => {
@@ -921,7 +959,7 @@ function activityTable(
         return (
         bodyRow({
           cantSplit: true,
-          children: continuationAwareRowCells([
+          children: [
             ...(numbered
               ? [bodyCell([paragraph(String(block.index + 1), { size: 22, align: AlignmentType.CENTER })], ACTIVITY_NUMBERED_COLUMN_WIDTHS[0])]
               : []),
@@ -965,22 +1003,25 @@ function activityTable(
                     dateMerge,
                   ),
                 ]),
-          ], continuationTitle),
+          ],
         })
         );
       },
     ),
   ];
 
-  if (continuationTitle) {
-    return table(
-      tableRows,
-      MAIN_PAGE_CONTENT_WIDTH,
-      continuationTableColumnWidths(columnWidths),
-    );
-  }
-
-  return bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
+  return continuationTitle
+    ? table(
+        tableRows,
+        MAIN_PAGE_CONTENT_WIDTH,
+        continuationTableColumnWidths(
+          columnWidths.map((columnWidth) =>
+            Math.round((MAIN_BODY_TABLE_WIDTH * columnWidth) / 100),
+          ),
+        ),
+        dataTableBorders,
+      )
+    : bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
 }
 
 function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
@@ -1428,6 +1469,7 @@ function pageChildren(
       const rowsTable = developmentTable(
         developmentRows,
         draft.developmentRows.length > 1,
+        draft.developmentRows.map((row) => richTextToPlainText(row.item)),
         continuation ? title : undefined,
       );
       children.push(
@@ -1566,7 +1608,7 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
 
   const doc = new Document({
     title: draft.metadata.perihal,
-    creator: "Memo Builder",
+    creator: "Memo Generator",
     description: "Generated memo document",
     styles: {
       default: {

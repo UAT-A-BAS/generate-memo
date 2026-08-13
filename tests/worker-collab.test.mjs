@@ -84,8 +84,15 @@ test("rejects malformed and oversized draft collections", () => {
   malformed.activities = [null];
   assert.equal(validateMemoDraftPayload(malformed).ok, false);
 
+  const largeButValid = validDraft();
+  largeButValid.activities = Array.from({ length: 501 }, (_, index) => ({
+    ...validDraft().activities[0],
+    id: `activity-${index}`,
+  }));
+  assert.equal(validateMemoDraftPayload(largeButValid).ok, true);
+
   const oversized = validDraft();
-  oversized.activities = Array.from({ length: 501 }, (_, index) => ({
+  oversized.activities = Array.from({ length: 5_001 }, (_, index) => ({
     ...validDraft().activities[0],
     id: `activity-${index}`,
   }));

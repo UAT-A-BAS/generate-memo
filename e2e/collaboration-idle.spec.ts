@@ -4,26 +4,40 @@ import {
   DEFAULT_COLLAB_WORKER_URL,
   resolveCollaborationWorkerBaseUrl,
 } from "../src/collaboration/workerUrl";
+import { validateMemoDraftPayload } from "../workers/collab/draftValidation.mjs";
 
 declare global {
   interface Window {
     __memoWs: {
       closes: string[];
-      instances: Array<{ url: string; readyState: number }>;
+      instances: Array<{
+        url: string;
+        readyState: number;
+        serverMessage: (value: unknown) => void;
+      }>;
       sends: Array<{ kind: string; value: string }>;
     };
   }
 }
 
-async function installFakeCollaborationSocket(page: Page, serverUpdateBase64 = "") {
-  await page.addInitScript((initialServerUpdate) => {
+type FakeSocketOptions = {
+  autosaveMs?: number;
+  idleMs?: number;
+};
+
+async function installFakeCollaborationSocket(
+  page: Page,
+  serverUpdateBase64 = "",
+  options: FakeSocketOptions = {},
+) {
+  await page.addInitScript(({ initialServerUpdate, timerOverrides }) => {
     const NativeWebSocket = window.WebSocket;
     Object.defineProperty(window, "__MEMO_COLLAB_IDLE_TIMERS__", {
       configurable: true,
       value: {
-        idleMs: 200,
+        idleMs: timerOverrides.idleMs ?? 200,
         hiddenGraceMs: 100,
-        autosaveMs: 50,
+        autosaveMs: timerOverrides.autosaveMs ?? 50,
         reconnectBaseMs: 80,
         reconnectMaxMs: 200,
         idleCloseDelayMs: 0,
@@ -34,7 +48,11 @@ async function installFakeCollaborationSocket(page: Page, serverUpdateBase64 = "
       configurable: true,
       value: {
         closes: [] as string[],
-        instances: [] as Array<{ url: string; readyState: number }>,
+        instances: [] as Array<{
+          url: string;
+          readyState: number;
+          serverMessage: (value: unknown) => void;
+        }>,
         sends: [] as Array<{ kind: string; value: string }>,
       },
     });
@@ -77,6 +95,12 @@ async function installFakeCollaborationSocket(page: Page, serverUpdateBase64 = "
         });
       }
 
+      serverMessage(value: unknown) {
+        this.dispatchEvent(new MessageEvent("message", {
+          data: JSON.stringify(value),
+        }));
+      }
+
       close() {
         if (this.readyState === FakeWebSocket.CLOSED) return;
         this.readyState = FakeWebSocket.CLOSED;
@@ -99,7 +123,10 @@ async function installFakeCollaborationSocket(page: Page, serverUpdateBase64 = "
       configurable: true,
       value: RoutedWebSocket,
     });
-  }, serverUpdateBase64);
+  }, {
+    initialServerUpdate: serverUpdateBase64,
+    timerOverrides: options,
+  });
 }
 
 async function startCollaboration(page: Page) {
@@ -115,6 +142,19 @@ async function startCollaboration(page: Page) {
     window.__memoWs.closes = [];
   });
   return page.evaluate(() => window.__memoWs.instances.length);
+}
+
+type SentDraftSave = {
+  type: "draft-save";
+  saveId: string;
+  draft: unknown;
+};
+
+async function sentDraftSaves(page: Page): Promise<SentDraftSave[]> {
+  return page.evaluate(() => window.__memoWs.sends
+    .filter((message) => message.kind === "text")
+    .map((message) => JSON.parse(message.value) as { type?: string })
+    .filter((message): message is SentDraftSave => message.type === "draft-save"));
 }
 
 test("production pages never connect to a loopback collaboration worker", () => {
@@ -149,6 +189,106 @@ test("starting collaboration seeds the fields already filled by the owner", asyn
     })
     .find((message) => message.type === "draft-save")
     ?.draft?.metadata?.projectName)).toBe("Draft Seed Kolaborasi");
+});
+
+test("collaboration normalizes malformed imported fields before autosave", async ({ page }) => {
+  await installFakeCollaborationSocket(page, "", { idleMs: 2_000 });
+  await page.goto("http://localhost:3002");
+  await page.locator("[data-draft-import-input]").setInputFiles({
+    name: "malformed-collaboration-draft.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      id: 42,
+      metadata: {
+        projectName: 42,
+        autoPerihal: "yes",
+        accessLinkEnabled: "yes",
+      },
+      introduction: null,
+      referenceEnabled: "yes",
+      reference: null,
+      developmentRows: [{ id: 42, item: null, description: null }],
+      activities: [{
+        id: 42,
+        startDate: 42,
+        endDate: null,
+        dates: [null, "2026-08-13"],
+        activity: null,
+        owner: 42,
+      }],
+      contacts: [{ id: 42, name: 42, email: null }],
+      signers: [{ id: 42, name: 42, title: null }],
+      ccRecipients: [{ id: 42, gender: 42, position: null }],
+      initials: 42,
+      initialsBureau: 42,
+      appendixScenarios: [{
+        id: 42,
+        startDate: 42,
+        endDate: null,
+        scenario: null,
+        expectedResult: null,
+        notes: null,
+        pic: 42,
+      }],
+    })),
+  });
+
+  await page.getByRole("button", { name: "Start Collab" }).click();
+  const identityDialog = page.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await identityDialog.getByLabel("Nama *").fill("Normalizer Tester");
+  await identityDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect.poll(async () => (await sentDraftSaves(page)).length).toBeGreaterThan(0);
+
+  const latest = (await sentDraftSaves(page)).at(-1);
+  expect(latest).toBeTruthy();
+  expect(validateMemoDraftPayload(latest?.draft).ok).toBe(true);
+});
+
+test("a rejected autosave retries silently and returns to Saved", async ({ page }) => {
+  await installFakeCollaborationSocket(page, "", {
+    autosaveMs: 40,
+    idleMs: 2_000,
+  });
+  await startCollaboration(page);
+  await expect.poll(async () => (await sentDraftSaves(page)).length).toBeGreaterThan(0);
+
+  const firstSaves = await sentDraftSaves(page);
+  const rejectedSave = firstSaves.at(-1);
+  expect(rejectedSave?.saveId).toBeTruthy();
+  await page.evaluate(({ saveId }) => {
+    window.__memoWs.instances.at(-1)?.serverMessage({
+      type: "save-error",
+      saveId,
+      error: "draft_invalid",
+    });
+  }, { saveId: rejectedSave?.saveId });
+
+  await expect(page.locator("[data-collaboration-error]")).toHaveCount(0);
+  await expect(page.getByText("Syncing", { exact: true })).toBeVisible();
+  await expect.poll(async () => (await sentDraftSaves(page)).length)
+    .toBeGreaterThan(firstSaves.length);
+
+  const retrySave = (await sentDraftSaves(page)).at(-1);
+  expect(retrySave?.saveId).not.toBe(rejectedSave?.saveId);
+  await page.evaluate(({ staleSaveId, retrySaveId }) => {
+    const socket = window.__memoWs.instances.at(-1);
+    socket?.serverMessage({
+      type: "save-error",
+      saveId: staleSaveId,
+      error: "draft_invalid",
+    });
+    socket?.serverMessage({
+      type: "saved",
+      saveId: retrySaveId,
+      updatedAt: Date.now(),
+    });
+  }, {
+    staleSaveId: rejectedSave?.saveId,
+    retrySaveId: retrySave?.saveId,
+  });
+
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-collaboration-error]")).toHaveCount(0);
 });
 
 test("refreshing a collaboration room restores its snapshot as saved", async ({ page }) => {

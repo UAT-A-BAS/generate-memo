@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "appId": null,
+  "appDisplayName": "Memo Generator",
+  "region": "prod",
+  "appType": "CodeApp",
+  "environmentId": "Default-59daf140-4aee-4b77-80f4-4ea8bec86c2e",
+  "description": "Penyusun, preview, kolaborasi, impor skenario, dan ekspor DOCX memo BCA.",
+  "buildPath": "./out",
+  "buildEntryPoint": "index.html",
+  "localAppUrl": "http://localhost:3000",
+  "logoPath": "./public/favicon.png",
+  "connectionReferences": {},
+  "databaseReferences": {}
+}

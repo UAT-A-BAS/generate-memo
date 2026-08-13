@@ -8,6 +8,9 @@
     "dev:collab": "npx wrangler@4.101.0 dev --config wrangler.collab.toml",
     "deploy:collab": "npx wrangler@4.101.0 deploy --config wrangler.collab.toml",
     "build": "next build",
+    "build:powerapps": "next build",
+    "deploy:powerapps": "npm run build:powerapps && power-apps push --non-interactive",
+    "list:powerapps": "power-apps list-codeapps --non-interactive",
     "start": "next start",
     "serve:e2e": "npm run build && node tests/serve-static.mjs",
     "lint": "eslint",
@@ -33,6 +36,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@microsoft/power-apps-cli": "0.15.3",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

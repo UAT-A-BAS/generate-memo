@@ -13,9 +13,8 @@ import {
   ACTIVITY_NUMBERED_COLUMN_WIDTHS,
   APPENDIX_COLUMN_WIDTHS,
   APPENDIX_HEADER_FILL,
-  DEVELOPMENT_COLUMN_WIDTHS,
-  DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
   TABLE_HEADER_FILL,
+  fittedDevelopmentColumnWidths,
 } from "@/documentLayout";
 import { HeaderFooterRenderer } from "./HeaderFooterRenderer";
 import { PageContainer } from "./PageContainer";
@@ -23,8 +22,6 @@ import { PageContainer } from "./PageContainer";
 const VALIDATION_BLUE = "#1F497D";
 const APPENDIX_COLUMN_WIDTH_PERCENTAGES = APPENDIX_COLUMN_WIDTHS.map((width) => `${width}%`);
 const APPENDIX_HEADER_BACKGROUND = `#${APPENDIX_HEADER_FILL}`;
-const DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES = DEVELOPMENT_COLUMN_WIDTHS.map((width) => `${width}%`);
-const DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES = DEVELOPMENT_SINGLE_COLUMN_WIDTHS.map((width) => `${width}%`);
 const ACTIVITY_COLUMN_WIDTH_PERCENTAGES = ACTIVITY_COLUMN_WIDTHS.map((width) => `${width}%`);
 const ACTIVITY_NUMBERED_COLUMN_WIDTH_PERCENTAGES = ACTIVITY_NUMBERED_COLUMN_WIDTHS.map((width) => `${width}%`);
 const TABLE_HEADER_BACKGROUND = `#${TABLE_HEADER_FILL}`;
@@ -215,7 +212,7 @@ function MemoTable({
   compact?: boolean;
 }) {
   return (
-    <table className={`memo-preview-table w-full table-fixed border-collapse text-[14.67px] ${compact ? "leading-[1.08]" : "mb-2 leading-[1.15]"}`}>
+    <table className={`memo-preview-table w-full table-auto border-collapse text-[14.67px] ${compact ? "leading-[1.08]" : "mb-2 leading-[1.15]"}`}>
       {columnWidths ? (
         <colgroup>
           {columnWidths.map((width, index) => (
@@ -547,6 +544,10 @@ function renderGroupedBlocks(
       const { rows, nextIndex } = consumeRows(blocks, index, "development-row");
       const developmentRows = rows as Extract<PreviewBlock, { type: "development-row" }>[];
       const numbered = draft.developmentRows.length > 1;
+      const columnWidths = fittedDevelopmentColumnWidths(
+        draft.developmentRows.map((row) => richTextToPlainText(row.item)),
+        numbered,
+      ).map((width) => `${width}%`);
       const continuation = isTableSectionContinuation(developmentRows[0]);
       rendered.push(
           <PreviewSection
@@ -560,7 +561,7 @@ function renderGroupedBlocks(
           ) : null}
           <MemoTable
             headers={numbered ? ["No.", "Pengembangan", "Keterangan"] : ["Pengembangan", "Keterangan"]}
-            columnWidths={numbered ? DEVELOPMENT_COLUMN_WIDTH_PERCENTAGES : DEVELOPMENT_SINGLE_COLUMN_WIDTH_PERCENTAGES}
+            columnWidths={columnWidths}
           >
             {developmentRows.map((item, rowIndex) => {
               const itemMerge = consecutiveMergeState(

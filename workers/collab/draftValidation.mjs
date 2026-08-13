@@ -3,21 +3,21 @@ export const MAX_WS_BINARY_BYTES = 256_000;
 export const MAX_SNAPSHOTS = 20;
 export const MAX_CLOCK_SKEW_MS = 30_000;
 
-const MAX_STRING_LENGTH = 100_000;
+const MAX_STRING_LENGTH = MAX_HTTP_BODY_BYTES;
 const MAX_ARRAY_LENGTH = 5_000;
 const MAX_OBJECT_KEYS = 100;
-const MAX_DEPTH = 16;
+const MAX_DEPTH = 64;
 
 const ARRAY_LIMITS = {
-  recipients: 100,
-  developmentRows: 250,
-  activities: 500,
-  contacts: 100,
-  signers: 50,
-  ccRecipients: 100,
-  appendixScenarios: 1_000,
-  reviewComments: 1_000,
-  reviewAuditLog: 5_000,
+  recipients: MAX_ARRAY_LENGTH,
+  developmentRows: MAX_ARRAY_LENGTH,
+  activities: MAX_ARRAY_LENGTH,
+  contacts: MAX_ARRAY_LENGTH,
+  signers: MAX_ARRAY_LENGTH,
+  ccRecipients: MAX_ARRAY_LENGTH,
+  appendixScenarios: MAX_ARRAY_LENGTH,
+  reviewComments: MAX_ARRAY_LENGTH,
+  reviewAuditLog: MAX_ARRAY_LENGTH,
 };
 
 function isRecord(value) {
@@ -49,7 +49,7 @@ function validateJsonValue(value, depth = 0) {
 }
 
 function validateRichTextNode(node, budget, depth = 0) {
-  if (!isRecord(node) || depth > 12 || !isString(node.type, 64)) return false;
+  if (!isRecord(node) || depth > MAX_DEPTH || !isString(node.type, 64)) return false;
   budget.count += 1;
   if (budget.count > 20_000) return false;
   if (node.text !== undefined && !isString(node.text)) return false;
@@ -93,7 +93,7 @@ function validateObjectArray(value, limit, validator) {
 function validateOptionalDates(record) {
   return record.dates === undefined ||
     (Array.isArray(record.dates) &&
-      record.dates.length <= 366 &&
+      record.dates.length <= MAX_ARRAY_LENGTH &&
       record.dates.every((value) => isString(value, 10)));
 }
 
