@@ -686,7 +686,17 @@ function normalizeTableGrid(tableXml: string) {
       Boolean(spec.titleMarker && tableXml.includes(spec.titleMarker)),
   );
   if (continuationSpec) {
-    return stableSimpleDataTable(tableXml, continuationSpec);
+    const currentGrid = [...tableXml.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)]
+      .map((match) => Number(match[1]));
+    const currentWidth = currentGrid.reduce((sum, width) => sum + width, 0);
+    const fittedSpec = currentGrid.length >= 5 && currentWidth === continuationSpec.width
+      ? {
+          ...continuationSpec,
+          grid: currentGrid,
+          borderColumnEnd: currentGrid.length - 1,
+        }
+      : continuationSpec;
+    return stableSimpleDataTable(tableXml, fittedSpec);
   }
 
   const simpleSpec = SIMPLE_DATA_TABLE_SPECS.find((spec) => tableXml.includes(spec.marker));
