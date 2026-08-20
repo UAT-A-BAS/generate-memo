@@ -3031,7 +3031,7 @@ test("schedule keeps the complete date range together in preview and DOCX", asyn
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  expect(xml).toContain("12-19 Juni 2026");
+  expect(xml).toContain("12\u201119\u00A0Juni\u00A02026");
 });
 
 test("schedule combines a shared year across different months in preview and DOCX", async ({ page }) => {
@@ -3047,7 +3047,9 @@ test("schedule combines a shared year across different months in preview and DOC
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  expect(xml).toContain(expected.replaceAll(" ", "\u00A0"));
+  const docxExpected = expected.replaceAll("-", "\u2011").replaceAll(" ", "\u00A0");
+  expect(xml).toContain(docxExpected);
+  expect(xml).not.toContain(expected.replaceAll(" ", "\u00A0"));
   expect(xml).not.toContain("23\u00A0Juli\u00A0dan\u00A04\u00A0Agustus\u00A02026");
 });
 

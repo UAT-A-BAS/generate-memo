@@ -277,7 +277,9 @@ export function activityDateSelectionError(
 }
 
 export function formatDateRangeNonBreakingID(startValue: string, endValue: string, selectedDates?: readonly string[]) {
-  return formatDateRangeID(startValue, endValue, selectedDates).replaceAll(" ", "\u00A0");
+  return formatDateRangeID(startValue, endValue, selectedDates)
+    .replaceAll("-", "\u2011")
+    .replaceAll(" ", "\u00A0");
 }
 
 export function todayInputValue() {
