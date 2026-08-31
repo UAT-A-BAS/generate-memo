@@ -450,6 +450,7 @@ export function normalizeMemoDraft(input: MemoDraftInput | null | undefined): Me
               .map((heading, headingIndex) => ({
                 id: stableId(heading.id, `scenario-heading-${index + 1}`, headingIndex),
                 title: stringValue(heading.title),
+                code: typeof heading.code === "string" ? heading.code : undefined,
               }))
             : undefined,
           startDate: stringValue(rawRow.startDate),

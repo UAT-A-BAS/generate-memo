@@ -309,6 +309,95 @@ async function xlsxScenarioWorkbook() {
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+async function xlsxBreakAndSectionWorkbook() {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+  zip.file("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <bookViews><workbookView activeTab="0"/></bookViews>
+  <sheets><sheet name="Skenario" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`);
+  zip.file("xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`);
+  // Shared strings use a <br/> run for Alt+Enter (like the legacy MOM template)
+  zip.file("xl/sharedStrings.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="8" uniqueCount="8">
+  <si><t>No</t></si>
+  <si><t>Aktivitas</t></si>
+  <si><t>Hasil/Expected</t></si>
+  <si><t>PIC</t></si>
+  <si><r><t>D. Verifikasi A</t></r></si>
+  <si><t>1</t></si>
+  <si><r><t>Langkah satu alias</t></r><r><br/></r><r><t>Langkah dua</t></r></si>
+  <si><t>Pic Contoh</t></si>
+</sst>`);
+  const cell = (ref: string, si: string) =>
+    `<c r="${ref}" t="s"><v>${si}</v></c>`;
+  zip.file("xl/worksheets/sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">${cell("A1", "0")}${cell("B1", "1")}${cell("C1", "2")}${cell("D1", "3")}</row>
+    <row r="2">${cell("A2", "4")}</row>
+    <row r="3">${cell("A3", "5")}${cell("B3", "6")}${cell("C3", "6")}${cell("D3", "7")}</row>
+  </sheetData>
+</worksheet>`);
+
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
+async function xlsxUndatedWorkbook() {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+  zip.file("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <bookViews><workbookView activeTab="0"/></bookViews>
+  <sheets><sheet name="Skenario" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`);
+  zip.file("xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`);
+  const escapeXml = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  const cell = (ref: string, value: string) =>
+    `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+  zip.file("xl/worksheets/sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">${cell("A1", "No")}${cell("B1", "Aktivitas")}${cell("C1", "Hasil/Expected")}${cell("D1", "PIC")}</row>
+    <row r="2">${cell("A2", "1")}${cell("B2", "Skenario tanpa tanggal")}${cell("C2", "Hasil tanpa tanggal")}${cell("D2", "")}</row>
+  </sheetData>
+</worksheet>`);
+
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
 function pdfBorderStressDraft() {
   const base = completeDraft();
   const scenario = base.appendixScenarios[0];
@@ -745,6 +834,40 @@ test("XLSX scenario import recognizes a standalone merged date row", async ({ pa
   await expect(page.locator("[data-scenario-row]")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("9-12 Juni 2026");
   await expect(page.locator("aside")).toContainText("Skenario sheet lain");
+});
+
+test("XLSX import keeps Alt+Enter soft breaks and preserves the incoming section letter", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "break.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await xlsxBreakAndSectionWorkbook(),
+  });
+
+  const dialog = page.getByRole("dialog", { name: "Preview import skenario" });
+  await dialog.getByRole("button", { name: "Import 1 skenario" }).click();
+
+  await expect(page.locator("[data-scenario-row]")).toHaveCount(1);
+  await expect(page.getByText("Bagian D", { exact: true }).first()).toBeVisible();
+  const shiftedResult = page.locator("aside .preview-rich-text").filter({ hasText: "Langkah satu alias" }).first();
+  await expect(shiftedResult.locator("br")).toHaveCount(1);
+});
+
+test("undated XLSX import appends under the memo's last existing date without creating a new date", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+  const before = await page.locator("[data-scenario-date-group]").count();
+
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "undated.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await xlsxUndatedWorkbook(),
+  });
+
+  const dialog = page.getByRole("dialog", { name: "Preview import skenario" });
+  await dialog.getByRole("button", { name: "Import 1 skenario" }).click();
+  await expect(page.locator("[data-scenario-date-group]")).toHaveCount(before);
+  await expect(page.locator("#appendix-scenario-groups")).toContainText("Skenario tanpa tanggal");
 });
 
 test("optional scenario hierarchy exposes minimalist contextual add actions", async ({ page }) => {

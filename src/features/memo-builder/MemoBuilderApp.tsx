@@ -1632,7 +1632,7 @@ function scenarioSectionGroups(rows: ScenarioRow[]) {
     indexByKey.set(key, sections.length);
     sections.push({
       id: key,
-      marker: alphaIndex(sections.length),
+      marker: firstHeading?.code ?? alphaIndex(sections.length),
       title: firstHeading?.title ?? row.section,
       rows: [row],
     });
@@ -1652,6 +1652,42 @@ function scenarioRowsAreCompletelyEmpty(rows: ScenarioRow[]) {
     !hasText(row.pic) &&
     !hasRichText(row.notes)
   );
+}
+
+function lastDatedGroupAnchor(rows: ScenarioRow[]) {
+  let anchor: ScenarioRow | null = null;
+  for (const row of rows) {
+    const hasDate =
+      hasText(row.startDate) ||
+      hasText(row.endDate) ||
+      (row.dates ?? []).some(hasText);
+    if (hasDate) anchor = row;
+  }
+  return anchor;
+}
+
+function importedRowsAreUndated(rows: ScenarioRow[]) {
+  return rows.every((row) =>
+    !hasText(row.startDate) &&
+    !hasText(row.endDate) &&
+    !(row.dates ?? []).some(hasText),
+  );
+}
+
+function bindUndatedImportToExistingDate(
+  existingRows: ScenarioRow[],
+  importedRows: ScenarioRow[],
+) {
+  if (!importedRowsAreUndated(importedRows)) return importedRows;
+  const anchor = lastDatedGroupAnchor(existingRows);
+  if (!anchor) return importedRows;
+  return importedRows.map((row) => ({
+    ...row,
+    dateGroupId: anchor.dateGroupId ?? anchor.id,
+    startDate: anchor.startDate,
+    endDate: anchor.endDate,
+    dates: anchor.dates,
+  }));
 }
 
 type DeleteSelectionKind = "date" | "section" | "heading" | "scenario";
@@ -1698,8 +1734,9 @@ function AppendixPanel({
         return;
       }
       const importedRows = importMomScenarioRows(JSON.parse(await file.text()));
+      const boundRows = bindUndatedImportToExistingDate(rows, importedRows);
       setRows(
-        scenarioRowsAreCompletelyEmpty(rows) ? importedRows : [...rows, ...importedRows],
+        scenarioRowsAreCompletelyEmpty(rows) ? boundRows : [...rows, ...boundRows],
         true,
       );
       setScenarioImportError("");
@@ -1713,8 +1750,9 @@ function AppendixPanel({
   }
 
   function applyWorkbookImport(sheet: ScenarioWorkbookSheet) {
+    const boundRows = bindUndatedImportToExistingDate(rows, sheet.rows);
     setRows(
-      scenarioRowsAreCompletelyEmpty(rows) ? sheet.rows : [...rows, ...sheet.rows],
+      scenarioRowsAreCompletelyEmpty(rows) ? boundRows : [...rows, ...boundRows],
       true,
     );
     setExpandedDetails({});

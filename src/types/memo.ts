@@ -32,6 +32,7 @@ export type ActivityRow = {
 export type ScenarioHeading = {
   id: string;
   title: string;
+  code?: string;
 };
 
 export type ScenarioRow = {

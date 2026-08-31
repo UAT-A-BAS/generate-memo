@@ -5,6 +5,7 @@ export const MAX_SCENARIO_HEADING_DEPTH = 3;
 export type ScenarioHierarchyNode = {
   id: string;
   title: string;
+  code?: string;
   depth: number;
   label: string;
   path: ScenarioHeading[];
@@ -35,6 +36,7 @@ function cleanHeading(value: unknown): ScenarioHeading | null {
   return {
     id: heading.id,
     title: typeof heading.title === "string" ? heading.title : "",
+    code: typeof heading.code === "string" ? heading.code : undefined,
   };
 }
 
@@ -47,7 +49,7 @@ export function scenarioHeadingPath(row: ScenarioRow): ScenarioHeading[] {
   }
 
   if (row.sectionGroupId || row.section) {
-    return [{ id: row.sectionGroupId ?? row.id, title: row.section ?? "" }];
+    return [{ id: row.sectionGroupId ?? row.id, title: row.section ?? "", code: undefined }];
   }
 
   return [];
@@ -68,9 +70,11 @@ export function withScenarioHeadingPath(
 
 function applyLabels(nodes: ScenarioHierarchyNode[], parentLabel = "") {
   nodes.forEach((node, index) => {
-    node.label = parentLabel
-      ? `${parentLabel}.${index + 1}`
-      : alphaIndex(index);
+    node.label = node.code ?? (
+      parentLabel
+        ? `${parentLabel}.${index + 1}`
+        : alphaIndex(index)
+    );
     applyLabels(node.children, node.label);
   });
 }
@@ -93,6 +97,7 @@ export function buildScenarioHierarchy(rows: ScenarioRow[]): ScenarioHierarchy {
         node = {
           id: heading.id,
           title: heading.title,
+          code: heading.code,
           depth: index + 1,
           label: "",
           path: path.slice(0, index + 1),
@@ -100,8 +105,9 @@ export function buildScenarioHierarchy(rows: ScenarioRow[]): ScenarioHierarchy {
           children: [],
         };
         siblings.push(node);
-      } else if (heading.title !== node.title) {
-        node.title = heading.title;
+      } else {
+        if (heading.title !== node.title) node.title = heading.title;
+        if (heading.code && heading.code !== node.code) node.code = heading.code;
         node.path = path.slice(0, index + 1);
       }
       siblings = node.children;

@@ -233,8 +233,28 @@ async function sharedStrings(zip: JSZip) {
   const file = zip.file("xl/sharedStrings.xml");
   if (!file) return [];
   return elements(xml(await file.async("string")), "si").map((item) =>
-    cellValue(elements(item, "t").map((textNode) => textNode.textContent ?? "").join("")),
+    cellValue(sharedStringText(item)),
   );
+}
+
+/**
+ * Extract the display text of a shared string or inline string, preserving
+ * Excel's Alt+Enter line breaks that are stored either as a literal newline in
+ * a `<t>` node or as a `<br/>` run. `<br/>` is turned into "\n" so downstream
+ * rich text conversion keeps the soft line break.
+ */
+function sharedStringText(item: Element): string {
+  const parts: string[] = [];
+  const walk = (node: Element) => {
+    Array.from(node.children).forEach((child) => {
+      const localName = child.localName;
+      if (localName === "t") parts.push(child.textContent ?? "");
+      else if (localName === "br") parts.push("\n");
+      else walk(child);
+    });
+  };
+  walk(item);
+  return parts.join("");
 }
 
 async function dateStyleIndexes(zip: JSZip) {
@@ -273,7 +293,7 @@ function worksheetRows(
     const raw = elements(cell, "v")[0]?.textContent ?? "";
     let value: CellValue;
     if (type === "s") value = strings[Number(raw)] ?? cellValue("");
-    else if (type === "inlineStr") value = cellValue(elements(cell, "is")[0]?.textContent ?? "");
+    else if (type === "inlineStr") value = cellValue(sharedStringText(elements(cell, "is")[0] ?? xml("<is/>")));
     else if (type === "str") value = cellValue(raw);
     else if (dateStyles.has(Number(cell.getAttribute("s") ?? -1)) && raw) value = cellValue(excelSerialDate(Number(raw)));
     else value = cellValue(raw);
@@ -324,10 +344,14 @@ function findColumns(rows: Map<number, SheetRow>) {
 }
 
 function headingDefinition(value: string) {
-  const match = /^([A-Z])(?:\.(\d+))?(?:\.(\d+))?\.?\s*(.+)$/i.exec(value.trim());
-  if (!match || !match[4]?.trim()) return null;
-  const codes = [match[1].toUpperCase(), match[2], match[3]].filter(Boolean) as string[];
-  return { codes, title: match[4].trim() };
+  const source = value.replace(/\r\n?/g, "\n").trim();
+  if (!source) return null;
+  const match = /^([A-Z](?:\.\d+)*)\.?\s*[.\-–]?\s*([\s\S]+)$/i.exec(source);
+  if (!match) return null;
+  const codes = match[1].split(".").filter(Boolean);
+  const title = match[2].replace(/\s+/g, " ").trim();
+  if (!codes.length || !title) return null;
+  return { codes, title };
 }
 
 function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbookSheet {
@@ -395,6 +419,7 @@ function parseSheet(name: string, rows: Map<number, SheetRow>): ScenarioWorkbook
         return {
           id: headingIds.get(key) as string,
           title: headingTitles.get(code) ?? code,
+          code,
         };
       });
 
