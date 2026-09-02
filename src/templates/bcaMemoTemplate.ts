@@ -251,6 +251,7 @@ export function createInitialMemoDraft(): MemoDraft {
     ccRecipients: [createRecipient({ gender: "" })],
     initials: "",
     initialsBureau: "A",
+    scenarioLetterResetPerDate: true,
     appendixScenarios: [createScenarioRow()],
     reviewComments: [],
     reviewAuditLog: [],
@@ -466,6 +467,9 @@ export function normalizeMemoDraft(input: MemoDraftInput | null | undefined): Me
           ...(typeof rawRow.isSectionHeader === "boolean"
             ? { isSectionHeader: rawRow.isSectionHeader }
             : {}),
+          ...(typeof rawRow.sectionTitleEditable === "boolean"
+            ? { sectionTitleEditable: rawRow.sectionTitleEditable }
+            : {}),
         };
         const legacyDate = stringValue(rawRow.date);
         const rawStartDate = row.startDate || legacyDate;
@@ -566,6 +570,10 @@ export function normalizeMemoDraft(input: MemoDraftInput | null | undefined): Me
       : base.ccRecipients,
     initials: stringValue(source.initials, base.initials),
     initialsBureau: stringValue(source.initialsBureau, base.initialsBureau) as MemoDraft["initialsBureau"],
+    scenarioLetterResetPerDate:
+      typeof source.scenarioLetterResetPerDate === "boolean"
+        ? source.scenarioLetterResetPerDate
+        : base.scenarioLetterResetPerDate,
     appendixScenarios,
     reviewComments: normalizeReviewComments(source.reviewComments),
     reviewAuditLog: normalizeReviewAuditLog(source.reviewAuditLog),

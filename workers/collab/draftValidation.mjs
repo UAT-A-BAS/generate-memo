@@ -130,6 +130,7 @@ function validateScenario(row) {
     validateOptionalDates(row) &&
     headingPathValid &&
     (row.isSectionHeader === undefined || typeof row.isSectionHeader === "boolean") &&
+    (row.sectionTitleEditable === undefined || typeof row.sectionTitleEditable === "boolean") &&
     validateRichText(row.scenario) &&
     validateRichText(row.expectedResult) &&
     validateRichText(row.notes);
@@ -181,6 +182,7 @@ export function validateMemoDraftPayload(draft) {
   }
   if (typeof draft.referenceEnabled !== "boolean" ||
     typeof draft.attachmentsEnabled !== "boolean" ||
+    typeof draft.scenarioLetterResetPerDate !== "boolean" ||
     !isString(draft.attachments) ||
     !isString(draft.initials) ||
     !isString(draft.initialsBureau) ||

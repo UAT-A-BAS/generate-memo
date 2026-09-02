@@ -1582,6 +1582,7 @@ const SCENARIO_LIST_PREFIX = "scenario-section:";
 type ScenarioSectionGroup = {
   id: string;
   marker: string;
+  hasExplicitCode?: boolean;
   title: string;
   rows: ScenarioRow[];
 };
@@ -1616,29 +1617,55 @@ function scenarioDateGroups(rows: ScenarioRow[]) {
   return groups;
 }
 
-function scenarioSectionGroups(rows: ScenarioRow[]) {
+function scenarioSectionGroups(rows: ScenarioRow[], resetPerDate = true) {
   const sections: ScenarioSectionGroup[] = [];
   const indexByKey = new Map<string, number>();
+  const groups = scenarioDateGroups(rows);
+  let runningIndex = 0;
 
-  rows.forEach((row) => {
-    const firstHeading = scenarioHeadingPath(row)[0];
-    if (!firstHeading) return;
-    const key = firstHeading?.id ?? row.sectionGroupId ?? row.id;
-    const existingIndex = indexByKey.get(key);
-    if (existingIndex !== undefined) {
-      sections[existingIndex].rows.push(row);
-      return;
-    }
-    indexByKey.set(key, sections.length);
-    sections.push({
-      id: key,
-      marker: firstHeading?.code ?? alphaIndex(sections.length),
-      title: firstHeading?.title ?? row.section,
-      rows: [row],
+  groups.forEach((group) => {
+    const groupSections: ScenarioSectionGroup[] = [];
+    group.rows.forEach((row) => {
+      const firstHeading = scenarioHeadingPath(row)[0];
+      if (!firstHeading) return;
+      const key = firstHeading?.id ?? row.sectionGroupId ?? row.id;
+      const existingIndex = indexByKey.get(key);
+      if (existingIndex !== undefined) {
+        sections[existingIndex].rows.push(row);
+        groupSections.push(sections[existingIndex]);
+        return;
+      }
+      const autoIndex = resetPerDate ? groupSections.length : runningIndex;
+      const section: ScenarioSectionGroup = {
+        id: key,
+        marker: firstHeading?.code ?? alphaIndex(autoIndex),
+        hasExplicitCode: Boolean(firstHeading?.code),
+        title: firstHeading?.title ?? row.section,
+        rows: [row],
+      };
+      indexByKey.set(key, sections.length);
+      sections.push(section);
+      groupSections.push(section);
+      runningIndex = autoIndex + 1;
     });
   });
 
   return sections;
+}
+
+function stripSectionCodes(rows: ScenarioRow[]) {
+  return rows.map((row) => {
+    const path = scenarioHeadingPath(row);
+    if (!path.length) return row;
+    return withScenarioHeadingPath(
+      row,
+      path.map((heading) => ({ id: heading.id, title: heading.title })),
+    );
+  });
+}
+
+function clearManualSectionCodes(rows: ScenarioRow[]) {
+  return stripSectionCodes(rows);
 }
 
 function scenarioRowsAreCompletelyEmpty(rows: ScenarioRow[]) {
@@ -1652,6 +1679,10 @@ function scenarioRowsAreCompletelyEmpty(rows: ScenarioRow[]) {
     !hasText(row.pic) &&
     !hasRichText(row.notes)
   );
+}
+
+function rowHasEditableSectionTitle(section: ScenarioSectionGroup) {
+  return section.rows.some((row) => row.sectionTitleEditable === true);
 }
 
 function lastDatedGroupAnchor(rows: ScenarioRow[]) {
@@ -1702,10 +1733,14 @@ function AppendixPanel({
   rows,
   updateDraft,
   validationIssues,
+  letterResetPerDate,
+  onLetterResetPerDateChange,
 }: {
   rows: ScenarioRow[];
   updateDraft: DraftUpdater;
   validationIssues: ValidationIssue[];
+  letterResetPerDate: boolean;
+  onLetterResetPerDateChange: (value: boolean) => void;
 }) {
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   const [mountedScenarioEditors, setMountedScenarioEditors] = useState<Record<string, boolean>>({});
@@ -2010,13 +2045,13 @@ function AppendixPanel({
 
     const movedIds = new Set(sourceSection.rows.map((row) => row.id));
     const remaining = rows.filter((row) => !movedIds.has(row.id));
-    const movedRows = sourceSection.rows.map((row) => ({
+    const movedRows = stripSectionCodes(sourceSection.rows.map((row) => ({
       ...row,
       dateGroupId: targetGroup.id,
       startDate: targetGroup.startDate,
       endDate: targetGroup.endDate,
       dates: targetGroup.dates,
-    }));
+    })));
     const targetSectionId = event.over.data.current?.listId === targetGroup.id
       ? String(event.over.id)
       : "";
@@ -2087,7 +2122,7 @@ function AppendixPanel({
     }
 
     const remaining = rows.filter((row) => row.id !== activeId);
-    const movedRow: ScenarioRow = {
+    const movedRow: ScenarioRow = stripSectionCodes([{
       ...sourceRow,
       dateGroupId: targetGroup.id,
       sectionGroupId: targetSection.id,
@@ -2095,7 +2130,7 @@ function AppendixPanel({
       endDate: targetGroup.endDate,
       dates: targetGroup.dates,
       section: targetSection.title,
-    };
+    }])[0];
     const targetIndex = targetRow
       ? remaining.findIndex((row) => row.id === targetRow.id)
       : remaining.reduce(
@@ -2125,7 +2160,7 @@ function AppendixPanel({
     nextSections: ScenarioSectionGroup[],
   ) {
     const groupRowIds = new Set(group.rows.map((row) => row.id));
-    const reorderedRows = nextSections.flatMap((section) => section.rows);
+    const reorderedRows = stripSectionCodes(nextSections.flatMap((section) => section.rows));
     let inserted = false;
     const nextRows = rows.flatMap((row) => {
       if (!groupRowIds.has(row.id)) return [row];
@@ -2221,9 +2256,36 @@ function AppendixPanel({
       if (!path.some((heading) => heading.id === section.id)) return row;
       return withScenarioHeadingPath(
         row,
-        path.map((heading) => heading.id === section.id ? { ...heading, title } : heading),
+        path.map((heading) =>
+          heading.id === section.id
+            ? { ...heading, title, code: heading.code || section.marker }
+            : heading,
+        ),
       );
     }));
+  }
+
+  function updateSectionCode(section: ScenarioSectionGroup, code: string) {
+    const nextCode = code.trim().toUpperCase();
+    setRows(rows.map((row) => {
+      const path = scenarioHeadingPath(row);
+      if (!path.some((heading) => heading.id === section.id)) return row;
+      return withScenarioHeadingPath(
+        row,
+        path.map((heading) =>
+          heading.id === section.id
+            ? { ...heading, code: nextCode || undefined }
+            : heading,
+        ),
+      );
+    }), true);
+  }
+
+  function toggleSectionTitleEditable(section: ScenarioSectionGroup, enabled: boolean) {
+    const ids = new Set(section.rows.map((row) => row.id));
+    setRows(rows.map((row) =>
+      ids.has(row.id) ? { ...row, sectionTitleEditable: enabled ? true : undefined } : row,
+    ), true);
   }
 
   function addScenarioToSection(group: ScenarioDateGroup, section: ScenarioSectionGroup) {
@@ -2567,7 +2629,20 @@ function AppendixPanel({
       <SectionTitle
         title="Lampiran Skenario"
         action={(
-          <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={letterResetPerDate}
+                  onChange={(event) => onLetterResetPerDateChange(event.target.checked)}
+                  data-scenario-letter-reset
+                  className="h-4 w-4 accent-[#1b4d78]"
+                />
+                Reset huruf bagian ke A di setiap rentang tanggal
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
             <input
               ref={scenarioImportInputRef}
               type="file"
@@ -2636,6 +2711,7 @@ function AppendixPanel({
                 Batal
               </IconButton>
             ) : null}
+            </div>
           </div>
         )}
       />
@@ -2721,6 +2797,9 @@ function AppendixPanel({
                     renderItem={(section) => {
                       const titleIsRequired = scenarioSectionGroups(group.rows).length > 1;
                       const disabledReasonId = `scenario-section-disabled-reason-${section.id}`;
+                      const sectionsInDate = scenarioSectionGroups(group.rows);
+                      const isFirstSectionInDate = sectionsInDate[0]?.id === section.id;
+                      const titleEditable = titleIsRequired || rowHasEditableSectionTitle(section);
                       return (
                         <section data-scenario-heading-level="1" className="rounded-xl border border-[#d8e1eb] bg-white p-2">
                           <details
@@ -2750,25 +2829,28 @@ function AppendixPanel({
                               >
                                 <div
                                   className="group/disabled-section relative"
-                                  tabIndex={titleIsRequired ? undefined : 0}
-                                  aria-label={titleIsRequired ? undefined : `Bagian ${section.marker} dinonaktifkan`}
-                                  aria-describedby={titleIsRequired ? undefined : disabledReasonId}
-                                  data-scenario-section-disabled={titleIsRequired ? undefined : "true"}
+                                  tabIndex={titleEditable ? undefined : 0}
+                                  aria-label={titleEditable ? undefined : `Bagian ${section.marker} dinonaktifkan`}
+                                  aria-describedby={titleEditable ? undefined : disabledReasonId}
+                                  data-scenario-section-disabled={titleEditable ? undefined : "true"}
                                 >
-                                  <div className={`grid grid-cols-[42px_1fr] overflow-hidden rounded-lg border ${titleIsRequired ? "border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10" : "cursor-not-allowed border-slate-300 bg-slate-100"}`}>
-                                    <span className="flex items-center justify-center border-r border-slate-300 bg-slate-100 text-sm font-bold text-[#0f2d4a]">
-                                      {section.marker}
-                                    </span>
+                                  <div className={`grid grid-cols-[52px_1fr] overflow-hidden rounded-lg border ${titleEditable ? "border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10" : "cursor-not-allowed border-slate-300 bg-slate-100"}`}>
+                                    <input
+                                      value={section.marker}
+                                      aria-label={`Bagian ${section.title || section.marker} huruf`}
+                                      onChange={(event) => updateSectionCode(section, event.target.value)}
+                                      className="min-h-10 border-0 border-r border-slate-300 bg-slate-50 px-1.5 text-center text-sm font-bold text-[#0f2d4a] outline-none"
+                                    />
                                     <AutoResizeTextarea
                                       value={section.title}
                                       rows={1}
-                                      disabled={!titleIsRequired}
-                                      aria-describedby={titleIsRequired ? undefined : disabledReasonId}
+                                      disabled={!titleEditable}
+                                      aria-describedby={titleEditable ? undefined : disabledReasonId}
                                       onChange={(event) => updateSectionTitle(section, event.target.value)}
                                       className="min-h-10 border-0 px-3 py-[11px] text-[15px] font-medium leading-[18px] outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                                     />
                                   </div>
-                                  {!titleIsRequired ? (
+                                  {!titleEditable ? (
                                     <span
                                       id={disabledReasonId}
                                       role="tooltip"
@@ -2778,6 +2860,20 @@ function AppendixPanel({
                                     </span>
                                   ) : null}
                                 </div>
+                                {!titleIsRequired && isFirstSectionInDate ? (
+                                  <div className="mt-1.5 flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSectionTitleEditable(section, !titleEditable)}
+                                      aria-pressed={titleEditable}
+                                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                                      data-scenario-section-enable
+                                    >
+                                      <Pencil size={14} />
+                                      {titleEditable ? "Kunci nama bagian" : "Aktifkan nama bagian"}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </FieldLabel>
 
                               <div className="mt-3">
@@ -3821,6 +3917,16 @@ export function MemoBuilderApp() {
             rows={draft.appendixScenarios}
             updateDraft={updateDraft}
             validationIssues={validationIssues}
+            letterResetPerDate={draft.scenarioLetterResetPerDate}
+            onLetterResetPerDateChange={(value) =>
+              updateDraft((current) => ({
+                ...current,
+                scenarioLetterResetPerDate: value,
+                appendixScenarios: value
+                  ? clearManualSectionCodes(current.appendixScenarios)
+                  : current.appendixScenarios,
+              }), true)
+            }
           />
         </div>
 

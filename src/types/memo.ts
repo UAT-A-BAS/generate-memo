@@ -49,6 +49,7 @@ export type ScenarioRow = {
   pic: string;
   notes: RichTextDoc;
   isSectionHeader?: boolean;
+  sectionTitleEditable?: boolean;
 };
 
 export type ContactRow = {
@@ -139,6 +140,7 @@ export type MemoDraft = {
   ccRecipients: Recipient[];
   initials: string;
   initialsBureau: Bureau;
+  scenarioLetterResetPerDate: boolean;
   appendixScenarios: ScenarioRow[];
   reviewComments: ReviewComment[];
   reviewAuditLog: ReviewAuditLogEntry[];

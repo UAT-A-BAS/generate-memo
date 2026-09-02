@@ -549,10 +549,26 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   rowsByDate.forEach((rows, dateId) => {
     const labels = new Map<string, { label: string; title: string; depth: number }>();
     const hierarchy = buildScenarioHierarchy(rows);
+    // Normalize sibling labels within a single date group. A short manual code
+    // (e.g. a bare "D") is kept; otherwise labels are recomputed in order so
+    // dragging a section always renumbers within the current date.
+    const visit = (nodes: ScenarioHierarchyNode[], isRoot = false) => {
+      nodes.forEach((node, index) => {
+        const autoLabel = isRoot
+          ? String.fromCharCode(65 + (index % 26))
+          : `${node.path.at(-2)?.code ?? ""}${index + 1}`;
+        node.label = node.code || autoLabel;
+        node.children.forEach((child) => {
+          child.path = [{ id: child.id, title: child.title, code: child.code }, ...(child.path.slice(1) as typeof child.path)];
+        });
+        visit(node.children, false);
+      });
+    };
+    visit(hierarchy.children, true);
     const singleRootLabel = hierarchy.children.length === 1
       ? hierarchy.children[0]?.label
       : undefined;
-    const visit = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
+    const applySingleRoot = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
       const singleRootPrefix = singleRootLabel ? `${singleRootLabel}.` : "";
       const isSingleRoot = node.label === singleRootLabel;
       const label = !singleRootLabel
@@ -567,9 +583,9 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
         title: isSingleRoot ? "" : node.title,
         depth: node.depth,
       });
-      visit(node.children);
+      applySingleRoot(node.children);
     });
-    visit(hierarchy.children);
+    applySingleRoot(hierarchy.children);
     labelsByDate.set(dateId, labels);
   });
 

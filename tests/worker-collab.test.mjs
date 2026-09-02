@@ -49,6 +49,7 @@ function validDraft() {
     ccRecipients: [{ id: "cc-1", gender: "", position: "" }],
     initials: "",
     initialsBureau: "A",
+    scenarioLetterResetPerDate: true,
     appendixScenarios: [{
       id: "scenario-1",
       dateGroupId: "date-1",
