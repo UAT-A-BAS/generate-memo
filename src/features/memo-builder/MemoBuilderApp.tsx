@@ -1751,6 +1751,8 @@ function AppendixPanel({
   const [selectedDeleteTargets, setSelectedDeleteTargets] = useState<Set<string>>(new Set());
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const scenarioImportInputRef = useRef<HTMLInputElement>(null);
+  const [markerDrafts, setMarkerDrafts] = useState<Record<string, string>>({});
+  const markerEditCancelRef = useRef(false);
 
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }), recordHistory);
@@ -1830,7 +1832,7 @@ function AppendixPanel({
       registerDeleteTarget(`scenario:${row.id}`, "scenario", [row], dateKey);
     });
 
-    scenarioSectionGroups(group.rows).forEach((section) => {
+    scenarioSectionGroups(group.rows, letterResetPerDate).forEach((section) => {
       const sectionKey = `section:${group.id}:${section.id}`;
       registerDeleteTarget(sectionKey, "section", section.rows, dateKey);
       const sectionNode = buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id);
@@ -1995,7 +1997,7 @@ function AppendixPanel({
     const next: Record<string, boolean> = {};
     groups.forEach((group) => {
       next[`date:${group.id}`] = open;
-      scenarioSectionGroups(group.rows).forEach((section) => {
+      scenarioSectionGroups(group.rows, letterResetPerDate).forEach((section) => {
         next[`section:${section.id}`] = open;
         section.rows.forEach((row) => {
           next[`scenario:${row.id}`] = open;
@@ -2007,7 +2009,7 @@ function AppendixPanel({
 
   const allDetailsOpen = groups.length > 0 && groups.every((group) =>
     detailOpen(`date:${group.id}`, true) &&
-    scenarioSectionGroups(group.rows).every((section) =>
+    scenarioSectionGroups(group.rows, letterResetPerDate).every((section) =>
       detailOpen(`section:${section.id}`, true) &&
       section.rows.every((row) =>
         detailOpen(`scenario:${row.id}`, true),
@@ -2027,12 +2029,12 @@ function AppendixPanel({
       : String(event.over.data.current?.listId ?? "");
     const targetGroup = groups.find((group) => group.id === targetGroupId);
     const sourceSection = sourceGroup
-      ? scenarioSectionGroups(sourceGroup.rows).find((section) => section.id === event.active.id)
+      ? scenarioSectionGroups(sourceGroup.rows, letterResetPerDate).find((section) => section.id === event.active.id)
       : undefined;
     if (!sourceGroup || !targetGroup || !sourceSection) return;
 
     if (sourceGroup.id === targetGroup.id) {
-      const sections = scenarioSectionGroups(sourceGroup.rows);
+      const sections = scenarioSectionGroups(sourceGroup.rows, letterResetPerDate);
       const from = sections.findIndex((section) => section.id === sourceSection.id);
       const to = sections.findIndex((section) => section.id === event.over?.id);
       if (from < 0 || to < 0 || from === to) return;
@@ -2086,7 +2088,7 @@ function AppendixPanel({
     let targetSection: ScenarioSectionGroup | undefined;
 
     for (const group of groups) {
-      const sections = scenarioSectionGroups(group.rows);
+      const sections = scenarioSectionGroups(group.rows, letterResetPerDate);
       const section = sections.find((candidate) =>
         candidate.id === targetSectionId || candidate.rows.some((row) => row.id === targetRow?.id),
       );
@@ -2102,7 +2104,7 @@ function AppendixPanel({
         group.id === String(event.over?.id) || group.id === overListId,
       );
       targetSection = targetGroup
-        ? scenarioSectionGroups(targetGroup.rows)[0]
+        ? scenarioSectionGroups(targetGroup.rows, letterResetPerDate)[0]
         : undefined;
     }
     if (!targetGroup || !targetSection) return;
@@ -2258,15 +2260,19 @@ function AppendixPanel({
         row,
         path.map((heading) =>
           heading.id === section.id
-            ? { ...heading, title, code: heading.code || section.marker }
+            ? { ...heading, title }
             : heading,
         ),
       );
     }));
   }
 
-  function updateSectionCode(section: ScenarioSectionGroup, code: string) {
-    const nextCode = code.trim().toUpperCase();
+  function commitSectionMarker(section: ScenarioSectionGroup, nextValue: string) {
+    const nextCode = nextValue.trim().toUpperCase();
+    // Only persist an explicit code when it differs from the auto letter. That
+    // way retyping "A" (or clearing the field) keeps auto-arrange, while a
+    // deliberate different letter becomes a manual override.
+    const explicit = nextCode && nextCode !== section.marker ? nextCode : null;
     setRows(rows.map((row) => {
       const path = scenarioHeadingPath(row);
       if (!path.some((heading) => heading.id === section.id)) return row;
@@ -2274,11 +2280,16 @@ function AppendixPanel({
         row,
         path.map((heading) =>
           heading.id === section.id
-            ? { ...heading, code: nextCode || undefined }
+            ? { ...heading, code: explicit ?? undefined }
             : heading,
         ),
       );
     }), true);
+    setMarkerDrafts((current) => {
+      const next = { ...current };
+      delete next[section.id];
+      return next;
+    });
   }
 
   function toggleSectionTitleEditable(section: ScenarioSectionGroup, enabled: boolean) {
@@ -2789,15 +2800,15 @@ function AppendixPanel({
                   ) : null}
 
                   <DragDropList
-                    items={scenarioSectionGroups(group.rows)}
+                    items={scenarioSectionGroups(group.rows, letterResetPerDate)}
                     onReorder={(nextSections) => reorderSections(group, nextSections)}
                     listId={group.id}
                     withContext={false}
                     itemLabel={(section) => `bagian ${section.marker}`}
                     renderItem={(section) => {
-                      const titleIsRequired = scenarioSectionGroups(group.rows).length > 1;
+                      const titleIsRequired = scenarioSectionGroups(group.rows, letterResetPerDate).length > 1;
                       const disabledReasonId = `scenario-section-disabled-reason-${section.id}`;
-                      const sectionsInDate = scenarioSectionGroups(group.rows);
+                      const sectionsInDate = scenarioSectionGroups(group.rows, letterResetPerDate);
                       const isFirstSectionInDate = sectionsInDate[0]?.id === section.id;
                       const titleEditable = titleIsRequired || rowHasEditableSectionTitle(section);
                       return (
@@ -2836,9 +2847,36 @@ function AppendixPanel({
                                 >
                                   <div className={`grid grid-cols-[52px_1fr] overflow-hidden rounded-lg border ${titleEditable ? "border-slate-400 bg-white focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/10" : "cursor-not-allowed border-slate-300 bg-slate-100"}`}>
                                     <input
-                                      value={section.marker}
+                                      value={markerDrafts[section.id] ?? section.marker}
                                       aria-label={`Bagian ${section.title || section.marker} huruf`}
-                                      onChange={(event) => updateSectionCode(section, event.target.value)}
+                                      onChange={(event) =>
+                                        setMarkerDrafts((current) => ({
+                                          ...current,
+                                          [section.id]: event.target.value,
+                                        }))
+                                      }
+                                      onBlur={() => {
+                                        if (markerEditCancelRef.current) {
+                                          markerEditCancelRef.current = false;
+                                          return;
+                                        }
+                                        const draft = markerDrafts[section.id];
+                                        if (draft === undefined) return;
+                                        commitSectionMarker(section, draft);
+                                      }}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                          event.currentTarget.blur();
+                                        } else if (event.key === "Escape") {
+                                          markerEditCancelRef.current = true;
+                                          setMarkerDrafts((current) => {
+                                            const next = { ...current };
+                                            delete next[section.id];
+                                            return next;
+                                          });
+                                          event.currentTarget.blur();
+                                        }
+                                      }}
                                       className="min-h-10 border-0 border-r border-slate-300 bg-slate-50 px-1.5 text-center text-sm font-bold text-[#0f2d4a] outline-none"
                                     />
                                     <AutoResizeTextarea

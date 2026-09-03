@@ -18,7 +18,7 @@ export type ScenarioHierarchy = {
   children: ScenarioHierarchyNode[];
 };
 
-function alphaIndex(index: number) {
+export function alphaIndex(index: number) {
   let value = index + 1;
   let result = "";
   while (value > 0) {

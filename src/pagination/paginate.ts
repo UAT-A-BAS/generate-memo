@@ -15,7 +15,7 @@ import { formatActivityDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { richTextToPlainText } from "@/utils/richText";
-import { buildScenarioHierarchy, scenarioHeadingPath, type ScenarioHierarchyNode } from "@/utils/scenarioHierarchy";
+import { alphaIndex, buildScenarioHierarchy, scenarioHeadingPath, type ScenarioHierarchyNode } from "@/utils/scenarioHierarchy";
 
 export type PreviewOrientation = "portrait" | "landscape";
 export type PreviewKind = "main" | "appendix" | "validation";
@@ -539,6 +539,7 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   const numberByParent = new Map<string, number>();
   const labelsByDate = new Map<string, Map<string, { label: string; title: string; depth: number }>>();
   const rowsByDate = new Map<string, ScenarioRow[]>();
+  let runningRootIndex = 0;
 
   draft.appendixScenarios.forEach((row) => {
     const dateId = row.dateGroupId ?? row.id;
@@ -549,13 +550,17 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   rowsByDate.forEach((rows, dateId) => {
     const labels = new Map<string, { label: string; title: string; depth: number }>();
     const hierarchy = buildScenarioHierarchy(rows);
-    // Normalize sibling labels within a single date group. A short manual code
-    // (e.g. a bare "D") is kept; otherwise labels are recomputed in order so
-    // dragging a section always renumbers within the current date.
+    const rootOffset = draft.scenarioLetterResetPerDate ? 0 : runningRootIndex;
+    // Normalize sibling labels in order. A manual code (e.g. a bare "D") is kept;
+    // otherwise the label is derived from position so dragging a section always
+    // renumbers. Sub-sections keep the parent's code prefix. When reset-per-date
+    // is enabled each date starts at the letter given by rootOffset (0 => "A");
+    // otherwise the letter keeps advancing across dates.
     const visit = (nodes: ScenarioHierarchyNode[], isRoot = false) => {
       nodes.forEach((node, index) => {
+        const effectiveIndex = isRoot ? rootOffset + index : index;
         const autoLabel = isRoot
-          ? String.fromCharCode(65 + (index % 26))
+          ? alphaIndex(effectiveIndex)
           : `${node.path.at(-2)?.code ?? ""}${index + 1}`;
         node.label = node.code || autoLabel;
         node.children.forEach((child) => {
@@ -568,25 +573,32 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     const singleRootLabel = hierarchy.children.length === 1
       ? hierarchy.children[0]?.label
       : undefined;
+    const singleRootEditable = hierarchy.children.length === 1
+      ? hierarchy.children[0]?.rows.some((row) => row.sectionTitleEditable === true)
+      : false;
     const applySingleRoot = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
       const singleRootPrefix = singleRootLabel ? `${singleRootLabel}.` : "";
       const isSingleRoot = node.label === singleRootLabel;
+      const hideSingleRootTitle = isSingleRoot && !singleRootEditable;
       const label = !singleRootLabel
         ? node.label
         : isSingleRoot
-          ? ""
+          ? singleRootEditable
+            ? node.label
+            : ""
           : node.label.startsWith(singleRootPrefix)
             ? node.label.slice(singleRootPrefix.length)
             : node.label;
       labels.set(node.id, {
         label,
-        title: isSingleRoot ? "" : node.title,
+        title: hideSingleRootTitle ? "" : node.title,
         depth: node.depth,
       });
       applySingleRoot(node.children);
     });
     applySingleRoot(hierarchy.children);
     labelsByDate.set(dateId, labels);
+    runningRootIndex += hierarchy.children.length;
   });
 
   const blocks = draft.appendixScenarios.map((row, index) => ({
