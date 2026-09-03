@@ -1618,11 +1618,15 @@ function scenarioDateGroups(rows: ScenarioRow[]) {
   return groups;
 }
 
-function scenarioSectionGroups(rows: ScenarioRow[], resetPerDate = true) {
+function scenarioSectionGroups(
+  rows: ScenarioRow[],
+  resetPerDate = true,
+  globalLabels?: Map<string, string>,
+) {
   const sections: ScenarioSectionGroup[] = [];
   const indexByKey = new Map<string, number>();
   const groups = scenarioDateGroups(rows);
-  const labels = computeScenarioLabels(rows, resetPerDate);
+  const labels = globalLabels ?? computeScenarioLabels(rows, resetPerDate);
   let runningIndex = 0;
 
   groups.forEach((group) => {
@@ -1751,6 +1755,10 @@ function AppendixPanel({
   const scenarioImportInputRef = useRef<HTMLInputElement>(null);
   const [markerDrafts, setMarkerDrafts] = useState<Record<string, string>>({});
   const markerEditCancelRef = useRef(false);
+  const scenarioLabels = useMemo(
+    () => computeScenarioLabels(rows, letterResetPerDate),
+    [rows, letterResetPerDate],
+  );
 
   function setRows(nextRows: ScenarioRow[], recordHistory = false) {
     updateDraft((draft) => ({ ...draft, appendixScenarios: nextRows }), recordHistory);
@@ -1830,7 +1838,7 @@ function AppendixPanel({
       registerDeleteTarget(`scenario:${row.id}`, "scenario", [row], dateKey);
     });
 
-    scenarioSectionGroups(group.rows, letterResetPerDate).forEach((section) => {
+    scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels).forEach((section) => {
       const sectionKey = `section:${group.id}:${section.id}`;
       registerDeleteTarget(sectionKey, "section", section.rows, dateKey);
       const sectionNode = buildScenarioHierarchy(section.rows).children.find((node) => node.id === section.id);
@@ -1995,7 +2003,7 @@ function AppendixPanel({
     const next: Record<string, boolean> = {};
     groups.forEach((group) => {
       next[`date:${group.id}`] = open;
-      scenarioSectionGroups(group.rows, letterResetPerDate).forEach((section) => {
+      scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels).forEach((section) => {
         next[`section:${section.id}`] = open;
         section.rows.forEach((row) => {
           next[`scenario:${row.id}`] = open;
@@ -2007,7 +2015,7 @@ function AppendixPanel({
 
   const allDetailsOpen = groups.length > 0 && groups.every((group) =>
     detailOpen(`date:${group.id}`, true) &&
-    scenarioSectionGroups(group.rows, letterResetPerDate).every((section) =>
+    scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels).every((section) =>
       detailOpen(`section:${section.id}`, true) &&
       section.rows.every((row) =>
         detailOpen(`scenario:${row.id}`, true),
@@ -2027,12 +2035,12 @@ function AppendixPanel({
       : String(event.over.data.current?.listId ?? "");
     const targetGroup = groups.find((group) => group.id === targetGroupId);
     const sourceSection = sourceGroup
-      ? scenarioSectionGroups(sourceGroup.rows, letterResetPerDate).find((section) => section.id === event.active.id)
+      ? scenarioSectionGroups(sourceGroup.rows, letterResetPerDate, scenarioLabels).find((section) => section.id === event.active.id)
       : undefined;
     if (!sourceGroup || !targetGroup || !sourceSection) return;
 
     if (sourceGroup.id === targetGroup.id) {
-      const sections = scenarioSectionGroups(sourceGroup.rows, letterResetPerDate);
+      const sections = scenarioSectionGroups(sourceGroup.rows, letterResetPerDate, scenarioLabels);
       const from = sections.findIndex((section) => section.id === sourceSection.id);
       const to = sections.findIndex((section) => section.id === event.over?.id);
       if (from < 0 || to < 0 || from === to) return;
@@ -2086,7 +2094,7 @@ function AppendixPanel({
     let targetSection: ScenarioSectionGroup | undefined;
 
     for (const group of groups) {
-      const sections = scenarioSectionGroups(group.rows, letterResetPerDate);
+      const sections = scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels);
       const section = sections.find((candidate) =>
         candidate.id === targetSectionId || candidate.rows.some((row) => row.id === targetRow?.id),
       );
@@ -2102,7 +2110,7 @@ function AppendixPanel({
         group.id === String(event.over?.id) || group.id === overListId,
       );
       targetSection = targetGroup
-        ? scenarioSectionGroups(targetGroup.rows, letterResetPerDate)[0]
+        ? scenarioSectionGroups(targetGroup.rows, letterResetPerDate, scenarioLabels)[0]
         : undefined;
     }
     if (!targetGroup || !targetSection) return;
@@ -2801,15 +2809,15 @@ function AppendixPanel({
                   ) : null}
 
                   <DragDropList
-                    items={scenarioSectionGroups(group.rows, letterResetPerDate)}
+                    items={scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels)}
                     onReorder={(nextSections) => reorderSections(group, nextSections)}
                     listId={group.id}
                     withContext={false}
                     itemLabel={(section) => `bagian ${section.marker}`}
                     renderItem={(section) => {
-                      const titleIsRequired = scenarioSectionGroups(group.rows, letterResetPerDate).length > 1;
+                      const titleIsRequired = scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels).length > 1;
                       const disabledReasonId = `scenario-section-disabled-reason-${section.id}`;
-                      const sectionsInDate = scenarioSectionGroups(group.rows, letterResetPerDate);
+                      const sectionsInDate = scenarioSectionGroups(group.rows, letterResetPerDate, scenarioLabels);
                       const isFirstSectionInDate = sectionsInDate[0]?.id === section.id;
                       const titleEditable = titleIsRequired || rowHasEditableSectionTitle(section);
                       return (
