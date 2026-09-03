@@ -564,7 +564,7 @@ function compactCell(
   children: Paragraph[],
   width?: number,
   shaded = false,
-  verticalAlign: TableVerticalAlign = VerticalAlign.TOP,
+  verticalAlign: TableVerticalAlign = VerticalAlign.CENTER,
 ) {
   return new TableCell({
     verticalAlign,
