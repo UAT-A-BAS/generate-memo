@@ -119,6 +119,63 @@ export function buildScenarioHierarchy(rows: ScenarioRow[]): ScenarioHierarchy {
   return root;
 }
 
+export function singleRootIsInactive(hierarchy: ScenarioHierarchy): boolean {
+  if (hierarchy.children.length !== 1) return false;
+  const root = hierarchy.children[0];
+  const editable =
+    root.rows.some((row) => row.sectionTitleEditable === true) ||
+    root.children.length > 0;
+  return !editable;
+}
+
+// Single source of truth for scenario section/subsection letter labels. Both the
+// editor inputs and the preview/DOCX table must read from this so they stay in
+// sync, including the "reset letter per date" option. When reset-per-date is off
+// the letter keeps advancing across dates; a lone inactive section is treated as
+// no section at all so the next date still starts at "A".
+export function computeScenarioLabels(
+  rows: ScenarioRow[],
+  resetPerDate: boolean,
+): Map<string, string> {
+  const labels = new Map<string, string>();
+  const groups = new Map<string, ScenarioRow[]>();
+  const order: string[] = [];
+
+  rows.forEach((row) => {
+    const dateId = row.dateGroupId ?? row.id;
+    if (!groups.has(dateId)) {
+      groups.set(dateId, []);
+      order.push(dateId);
+    }
+    groups.get(dateId)!.push(row);
+  });
+
+  let runningRootOffset = 0;
+  order.forEach((dateId) => {
+    const hierarchy = buildScenarioHierarchy(groups.get(dateId)!);
+    const roots = hierarchy.children;
+    const inactive = singleRootIsInactive(hierarchy);
+    const activeRootCount = inactive ? 0 : roots.length;
+    const rootOffset = resetPerDate ? 0 : runningRootOffset;
+
+    const visit = (nodes: ScenarioHierarchyNode[], parentLabel = "") => {
+      const isRoot = parentLabel === "";
+      nodes.forEach((node, index) => {
+        const autoLabel = isRoot
+          ? alphaIndex(rootOffset + index)
+          : `${parentLabel}.${index + 1}`;
+        const label = node.code || autoLabel;
+        labels.set(node.id, label);
+        visit(node.children, label);
+      });
+    };
+    visit(roots, "");
+    runningRootOffset += activeRootCount;
+  });
+
+  return labels;
+}
+
 export function flattenScenarioHierarchy(hierarchy: ScenarioHierarchy): ScenarioRow[] {
   const flattenNodes = (nodes: ScenarioHierarchyNode[]): ScenarioRow[] =>
     nodes.flatMap((node) => [

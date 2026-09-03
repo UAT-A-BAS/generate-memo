@@ -56,6 +56,7 @@ import { importMomScenarioRows } from "@/utils/importMomScenarios";
 import { importScenarioWorkbook, type ScenarioWorkbookPreview, type ScenarioWorkbookSheet } from "@/utils/importScenarioWorkbook";
 import {
   buildScenarioHierarchy,
+  computeScenarioLabels,
   flattenScenarioHierarchy,
   scenarioHeadingName,
   scenarioHeadingPath,
@@ -1621,6 +1622,7 @@ function scenarioSectionGroups(rows: ScenarioRow[], resetPerDate = true) {
   const sections: ScenarioSectionGroup[] = [];
   const indexByKey = new Map<string, number>();
   const groups = scenarioDateGroups(rows);
+  const labels = computeScenarioLabels(rows, resetPerDate);
   let runningIndex = 0;
 
   groups.forEach((group) => {
@@ -1638,7 +1640,7 @@ function scenarioSectionGroups(rows: ScenarioRow[], resetPerDate = true) {
       const autoIndex = resetPerDate ? groupSections.length : runningIndex;
       const section: ScenarioSectionGroup = {
         id: key,
-        marker: firstHeading?.code ?? alphaIndex(autoIndex),
+        marker: labels.get(firstHeading?.id ?? key) ?? alphaIndex(autoIndex),
         hasExplicitCode: Boolean(firstHeading?.code),
         title: firstHeading?.title ?? row.section,
         rows: [row],
