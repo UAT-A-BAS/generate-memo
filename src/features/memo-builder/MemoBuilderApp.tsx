@@ -1653,7 +1653,7 @@ function scenarioSectionGroups(rows: ScenarioRow[], resetPerDate = true) {
   return sections;
 }
 
-function stripSectionCodes(rows: ScenarioRow[]) {
+function clearManualSectionCodes(rows: ScenarioRow[]) {
   return rows.map((row) => {
     const path = scenarioHeadingPath(row);
     if (!path.length) return row;
@@ -1662,10 +1662,6 @@ function stripSectionCodes(rows: ScenarioRow[]) {
       path.map((heading) => ({ id: heading.id, title: heading.title })),
     );
   });
-}
-
-function clearManualSectionCodes(rows: ScenarioRow[]) {
-  return stripSectionCodes(rows);
 }
 
 function scenarioRowsAreCompletelyEmpty(rows: ScenarioRow[]) {
@@ -2047,7 +2043,7 @@ function AppendixPanel({
 
     const movedIds = new Set(sourceSection.rows.map((row) => row.id));
     const remaining = rows.filter((row) => !movedIds.has(row.id));
-    const movedRows = stripSectionCodes(sourceSection.rows.map((row) => ({
+    const movedRows = clearManualSectionCodes(sourceSection.rows.map((row) => ({
       ...row,
       dateGroupId: targetGroup.id,
       startDate: targetGroup.startDate,
@@ -2124,7 +2120,7 @@ function AppendixPanel({
     }
 
     const remaining = rows.filter((row) => row.id !== activeId);
-    const movedRow: ScenarioRow = stripSectionCodes([{
+    const movedRow: ScenarioRow = clearManualSectionCodes([{
       ...sourceRow,
       dateGroupId: targetGroup.id,
       sectionGroupId: targetSection.id,
@@ -2162,7 +2158,7 @@ function AppendixPanel({
     nextSections: ScenarioSectionGroup[],
   ) {
     const groupRowIds = new Set(group.rows.map((row) => row.id));
-    const reorderedRows = stripSectionCodes(nextSections.flatMap((section) => section.rows));
+    const reorderedRows = clearManualSectionCodes(nextSections.flatMap((section) => section.rows));
     let inserted = false;
     const nextRows = rows.flatMap((row) => {
       if (!groupRowIds.has(row.id)) return [row];
@@ -2646,7 +2642,10 @@ function AppendixPanel({
                 <input
                   type="checkbox"
                   checked={letterResetPerDate}
-                  onChange={(event) => onLetterResetPerDateChange(event.target.checked)}
+                  onChange={(event) => {
+                    onLetterResetPerDateChange(event.target.checked);
+                    setMarkerDrafts({});
+                  }}
                   data-scenario-letter-reset
                   className="h-4 w-4 accent-[#1b4d78]"
                 />

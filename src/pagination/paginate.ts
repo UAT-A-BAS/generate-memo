@@ -553,23 +553,21 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     const rootOffset = draft.scenarioLetterResetPerDate ? 0 : runningRootIndex;
     // Normalize sibling labels in order. A manual code (e.g. a bare "D") is kept;
     // otherwise the label is derived from position so dragging a section always
-    // renumbers. Sub-sections keep the parent's code prefix. When reset-per-date
-    // is enabled each date starts at the letter given by rootOffset (0 => "A");
-    // otherwise the letter keeps advancing across dates.
-    const visit = (nodes: ScenarioHierarchyNode[], isRoot = false) => {
+    // renumbers. Sub-sections keep the full parent label chain (A, A.1, A.1.1)
+    // rather than collapsing to a bare number. When reset-per-date is enabled each
+    // date starts at the letter given by rootOffset (0 => "A"); otherwise the
+    // letter keeps advancing across dates.
+    const visit = (nodes: ScenarioHierarchyNode[], parentLabel = "") => {
+      const isRoot = parentLabel === "";
       nodes.forEach((node, index) => {
-        const effectiveIndex = isRoot ? rootOffset + index : index;
         const autoLabel = isRoot
-          ? alphaIndex(effectiveIndex)
-          : `${node.path.at(-2)?.code ?? ""}${index + 1}`;
+          ? alphaIndex(rootOffset + index)
+          : `${parentLabel}.${index + 1}`;
         node.label = node.code || autoLabel;
-        node.children.forEach((child) => {
-          child.path = [{ id: child.id, title: child.title, code: child.code }, ...(child.path.slice(1) as typeof child.path)];
-        });
-        visit(node.children, false);
+        visit(node.children, node.label);
       });
     };
-    visit(hierarchy.children, true);
+    visit(hierarchy.children, "");
     const singleRootLabel = hierarchy.children.length === 1
       ? hierarchy.children[0]?.label
       : undefined;
@@ -577,20 +575,10 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       ? hierarchy.children[0]?.rows.some((row) => row.sectionTitleEditable === true)
       : false;
     const applySingleRoot = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
-      const singleRootPrefix = singleRootLabel ? `${singleRootLabel}.` : "";
       const isSingleRoot = node.label === singleRootLabel;
       const hideSingleRootTitle = isSingleRoot && !singleRootEditable;
-      const label = !singleRootLabel
-        ? node.label
-        : isSingleRoot
-          ? singleRootEditable
-            ? node.label
-            : ""
-          : node.label.startsWith(singleRootPrefix)
-            ? node.label.slice(singleRootPrefix.length)
-            : node.label;
       labels.set(node.id, {
-        label,
+        label: hideSingleRootTitle ? "" : node.label,
         title: hideSingleRootTitle ? "" : node.title,
         depth: node.depth,
       });
