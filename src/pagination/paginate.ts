@@ -572,7 +572,10 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
       ? hierarchy.children[0]?.label
       : undefined;
     const singleRootEditable = hierarchy.children.length === 1
-      ? hierarchy.children[0]?.rows.some((row) => row.sectionTitleEditable === true)
+      ? (
+          hierarchy.children[0]?.rows.some((row) => row.sectionTitleEditable === true) ||
+          hierarchy.children[0]?.children.length > 0
+        )
       : false;
     const applySingleRoot = (nodes: ScenarioHierarchyNode[]) => nodes.forEach((node) => {
       const isSingleRoot = node.label === singleRootLabel;
@@ -586,7 +589,13 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
     });
     applySingleRoot(hierarchy.children);
     labelsByDate.set(dateId, labels);
-    runningRootIndex += hierarchy.children.length;
+    // Only active sections count toward the cross-date letter. A lone section
+    // whose title is not enabled is treated as no section at all, so the next
+    // date still starts at "A".
+    const activeRootCount = hierarchy.children.length === 1
+      ? (singleRootEditable ? 1 : 0)
+      : hierarchy.children.length;
+    runningRootIndex += activeRootCount;
   });
 
   const blocks = draft.appendixScenarios.map((row, index) => ({

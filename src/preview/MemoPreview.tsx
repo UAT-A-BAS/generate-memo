@@ -739,7 +739,7 @@ function renderGroupedBlocks(
                 {item.meta.headingRows.map((heading) => (
                   <tr key={heading.id} className="font-bold" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
                     <td className="border border-slate-900 px-1 py-0.5 text-center align-middle" style={{ backgroundColor: APPENDIX_HEADER_BACKGROUND }}>
-                      {heading.label}.
+                      {heading.label}
                     </td>
                     <td
                       className="preserve-lines border border-slate-900 px-1 py-0.5 align-middle"

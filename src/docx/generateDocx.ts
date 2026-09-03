@@ -1092,7 +1092,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
         cantSplit: true,
         children: [
           compactCell(
-            [appendixParagraph(`${heading.label}.`, { bold: true, size: 22, align: AlignmentType.CENTER })],
+            [appendixParagraph(`${heading.label}`, { bold: true, size: 22, align: AlignmentType.CENTER })],
             APPENDIX_COLUMN_WIDTHS[0],
             true,
           ),
