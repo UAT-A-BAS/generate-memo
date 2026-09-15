@@ -66,6 +66,7 @@ import {
 import { ScenarioImportDialog } from "./ScenarioImportDialog";
 import { MemoPreview } from "@/preview/MemoPreview";
 import { useMemoCollaboration } from "@/collaboration/useMemoCollaboration";
+import { COLLABORATION_DISABLED } from "@/collaboration/workerUrl";
 import {
   getStoredCollaboratorIdentity,
   saveCollaboratorIdentity,
@@ -3717,10 +3718,12 @@ export function MemoBuilderApp() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2" data-review-ignore>
-            <CollaborationPanel
-              collaboration={collaboration}
-              onStart={requestStartCollaboration}
-            />
+            {COLLABORATION_DISABLED ? null : (
+              <CollaborationPanel
+                collaboration={collaboration}
+                onStart={requestStartCollaboration}
+              />
+            )}
             <AppleToolbarButton onClick={saveDraftData}>
               <FileJson size={16} />
               Save

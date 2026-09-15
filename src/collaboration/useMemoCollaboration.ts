@@ -19,6 +19,7 @@ import {
   type PowerAppsLaunchContext,
 } from "@/collaboration/powerAppsPortal";
 import {
+  COLLABORATION_DISABLED,
   DEFAULT_COLLAB_WORKER_URL,
   resolveCollaborationWorkerBaseUrl,
 } from "@/collaboration/workerUrl";
@@ -415,6 +416,14 @@ export function useMemoCollaboration(
     updateUrl: boolean,
     identityName: string,
   ) => {
+    if (COLLABORATION_DISABLED) {
+      setState((current) => ({
+        ...current,
+        status: "offline",
+        lastError: "Kolaborasi dinonaktifkan pada versi offline.",
+      }));
+      return;
+    }
     const cleanRoom = roomId.trim();
     const cleanName = (powerAppsContext?.name ?? identityName).trim();
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(cleanRoom) || !cleanName) {
