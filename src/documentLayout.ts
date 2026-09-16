@@ -1,8 +1,14 @@
-export const BODY_COLUMN_INDENT = 2100;
+/**
+ * Shared content column for the whole memo: the letterhead values
+ * (POL Application, INTERNAL BCA, Perihal) and every section below start on
+ * this single line, so the preview and the DOCX letterhead can never drift
+ * from the body geometry again.
+ */
+export const BODY_COLUMN_INDENT = 1830;
 export const BODY_COLUMN_RIGHT_INDENT = 0;
 export const VISIBLE_TABLE_RIGHT_INSET = 80;
 const MAIN_BODY_TABLE_RIGHT_INSET = 86;
-export const BODY_TITLE_WIDTH = 1800;
+export const BODY_TITLE_WIDTH = 1530;
 export const BODY_COLUMN_GAP = BODY_COLUMN_INDENT - BODY_TITLE_WIDTH;
 export const CONTINUATION_RULE_INDENT = BODY_COLUMN_INDENT;
 export const WORD_LINE_MULTIPLE_108 = 259;
@@ -48,6 +54,20 @@ export const DEVELOPMENT_COLUMN_WIDTHS = [8, 24, 68] as const;
 export const DEVELOPMENT_SINGLE_COLUMN_WIDTHS = [28, 72] as const;
 export const ACTIVITY_COLUMN_WIDTHS = [56, 22, 22] as const;
 export const ACTIVITY_NUMBERED_COLUMN_WIDTHS = [8, 48, 21, 23] as const;
+
+/**
+ * Base grid for a numbered body table. Derived from the live table width so
+ * the column sum always matches the table width, including when the body
+ * column indent changes.
+ */
+export function bodyTableBaseColumnWidths(percentages: readonly number[]) {
+  const widths = percentages.map((percentage) =>
+    Math.round((MAIN_BODY_TABLE_WIDTH * percentage) / 100),
+  );
+  widths[widths.length - 1] +=
+    MAIN_BODY_TABLE_WIDTH - widths.reduce((sum, width) => sum + width, 0);
+  return widths;
+}
 
 const TABLE_BODY_FONT_SIZE_POINTS = 11;
 const TABLE_CELL_HORIZONTAL_MARGIN_POINTS = 9;
@@ -119,7 +139,7 @@ export function developmentColumnWidthsTwips(
 ) {
   const percentages = fittedDevelopmentColumnWidths(itemTexts, numbered);
   if (numbered) {
-    const baseWidths = [570, 1695, 4815];
+    const baseWidths = bodyTableBaseColumnWidths(DEVELOPMENT_COLUMN_WIDTHS);
     const borrowedWidth = Math.round(
       (MAIN_BODY_TABLE_WIDTH *
         (percentages[1] - DEVELOPMENT_COLUMN_WIDTHS[1])) /

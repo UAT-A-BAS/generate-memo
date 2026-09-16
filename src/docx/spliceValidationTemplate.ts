@@ -1,4 +1,15 @@
 import JSZip from "jszip";
+import {
+  ACTIVITY_NUMBERED_COLUMN_WIDTHS,
+  BODY_COLUMN_GAP,
+  BODY_COLUMN_INDENT,
+  BODY_TITLE_WIDTH,
+  bodyTableBaseColumnWidths,
+  DEVELOPMENT_COLUMN_WIDTHS,
+  MAIN_BODY_CONTENT_WIDTH,
+  MAIN_BODY_TABLE_WIDTH,
+  MAIN_PAGE_CONTENT_WIDTH,
+} from "@/documentLayout";
 
 const CONTENT_TYPES: Record<string, string> = {
   footer: "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml",
@@ -328,12 +339,27 @@ type DataTableSpec = {
   borderColumnEnd?: number;
 };
 
+/**
+ * Grids mirror the live body geometry from `documentLayout` so the spliced
+ * validation pages keep the same content column as the memo letterhead.
+ */
+const BODY_TABLE_RIGHT_GAP = MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH;
+const DEVELOPMENT_BASE_GRID = bodyTableBaseColumnWidths(DEVELOPMENT_COLUMN_WIDTHS);
+const ACTIVITY_NUMBERED_BASE_GRID = bodyTableBaseColumnWidths(
+  ACTIVITY_NUMBERED_COLUMN_WIDTHS,
+);
+
 const CONTINUATION_DATA_TABLE_SPECS: DataTableSpec[] = [
   {
     marker: ">Keterangan</w:t>",
     titleMarker: ">Lingkup Pengembangan</w:t>",
-    width: 9266,
-    grid: [1800, 300, 570, 1695, 4815, 86],
+    width: MAIN_PAGE_CONTENT_WIDTH,
+    grid: [
+      BODY_TITLE_WIDTH,
+      BODY_COLUMN_GAP,
+      ...DEVELOPMENT_BASE_GRID,
+      BODY_TABLE_RIGHT_GAP,
+    ],
     spanLeadingColumnsWhenUnnumbered: true,
     unnumberedSpanCellIndex: 2,
     borderColumnStart: 2,
@@ -342,8 +368,13 @@ const CONTINUATION_DATA_TABLE_SPECS: DataTableSpec[] = [
   {
     marker: ">Waktu</w:t>",
     titleMarker: ">Aktivitas Cabang dan Unit Kerja</w:t>",
-    width: 9266,
-    grid: [1800, 300, 570, 3405, 1485, 1620, 86],
+    width: MAIN_PAGE_CONTENT_WIDTH,
+    grid: [
+      BODY_TITLE_WIDTH,
+      BODY_COLUMN_GAP,
+      ...ACTIVITY_NUMBERED_BASE_GRID,
+      BODY_TABLE_RIGHT_GAP,
+    ],
     spanLeadingColumnsWhenUnnumbered: true,
     unnumberedSpanCellIndex: 2,
     borderColumnStart: 2,
@@ -354,16 +385,16 @@ const CONTINUATION_DATA_TABLE_SPECS: DataTableSpec[] = [
 const SIMPLE_DATA_TABLE_SPECS: DataTableSpec[] = [
   {
     marker: ">Keterangan</w:t>",
-    width: 7080,
-    indent: 2100,
-    grid: [570, 1695, 4815],
+    width: MAIN_BODY_TABLE_WIDTH,
+    indent: BODY_COLUMN_INDENT,
+    grid: DEVELOPMENT_BASE_GRID,
     spanLeadingColumnsWhenUnnumbered: true,
   },
   {
     marker: ">Waktu</w:t>",
-    width: 7080,
-    indent: 2100,
-    grid: [570, 3405, 1485, 1620],
+    width: MAIN_BODY_TABLE_WIDTH,
+    indent: BODY_COLUMN_INDENT,
+    grid: ACTIVITY_NUMBERED_BASE_GRID,
     spanLeadingColumnsWhenUnnumbered: true,
   },
 ];

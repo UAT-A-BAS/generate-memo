@@ -1,6 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import JSZip from "jszip";
+import {
+  ACTIVITY_NUMBERED_COLUMN_WIDTHS,
+  BODY_COLUMN_GAP,
+  BODY_COLUMN_INDENT,
+  BODY_TITLE_WIDTH,
+  bodyTableBaseColumnWidths,
+  developmentColumnWidthsTwips,
+  DEVELOPMENT_COLUMN_WIDTHS,
+  DEVELOPMENT_SINGLE_COLUMN_WIDTHS,
+  fittedDevelopmentColumnWidths,
+  MAIN_BODY_CONTENT_WIDTH,
+  MAIN_BODY_TABLE_WIDTH,
+  MAIN_PAGE_CONTENT_WIDTH,
+} from "../src/documentLayout";
 import { validateMemoDraftPayload } from "../workers/collab/draftValidation.mjs";
 
 function richText(text: string) {
@@ -1110,7 +1124,9 @@ test("DOCX list rows use the same fixed bullet column as preview", async ({ page
     "Nama PIC",
   ]) {
     const paragraphXml = paragraphContaining(text);
-    const expectedPosition = text === "Kepala Operasi Cabang Pluit" ? 311 : 300;
+    // Heading paragraphs now start at their own column (no 11-twip nudge), so
+    // the hanging list offset is also the full text offset.
+    const expectedPosition = 300;
     expect(paragraphXml).toContain(
       `<w:tab w:val="left" w:pos="${expectedPosition}"/>`,
     );
@@ -1121,15 +1137,18 @@ test("DOCX list rows use the same fixed bullet column as preview", async ({ page
   }
 
   const ccParagraph = paragraphContaining("Kepala KCU Pluit");
-  expect(ccParagraph).toContain('<w:tab w:val="left" w:pos="2400"/>');
-  expect(ccParagraph).toContain('<w:ind w:left="2400" w:right="0" w:hanging="300"/>');
+  const ccPosition = BODY_COLUMN_INDENT + 300;
+  expect(ccParagraph).toContain(`<w:tab w:val="left" w:pos="${ccPosition}"/>`);
+  expect(ccParagraph).toContain(
+    `<w:ind w:left="${ccPosition}" w:right="0" w:hanging="300"/>`,
+  );
   expect(ccParagraph).toContain("<w:tab/>");
 
   expect(paragraphContaining("U.p. Yth. Ibu Agustina")).toContain(
-    '<w:ind w:left="311"/>',
+    '<w:ind w:left="300"/>',
   );
   expect(paragraphContaining("U.p. Yth. Bapak Verry Iskandar")).toContain(
-    '<w:ind w:left="2400" w:right="0"/>',
+    `<w:ind w:left="${ccPosition}" w:right="0"/>`,
   );
 });
 
@@ -1747,7 +1766,17 @@ test("auto-fits development columns so Pemindahbukuan stays intact in preview an
   }, "Pemindahbukuan");
 
   expect(previewGeometry.wordLines).toBe(1);
-  expect(previewGeometry.cellWidth).toBeGreaterThan(previewGeometry.tableWidth * 0.24 + 1);
+  // The whole point of the auto-fit is that the longest word survives on one
+  // line, so assert the fitted share (never below the 24% base) rather than a
+  // hard-coded pixel ratio of the old table width.
+  const [, fittedItemPercent] = fittedDevelopmentColumnWidths(
+    ["Penambahan tampilan menu Pemindahbukuan Pocket Valas", "Redesign VA"],
+    true,
+  );
+  expect(fittedItemPercent).toBeGreaterThanOrEqual(DEVELOPMENT_COLUMN_WIDTHS[1]);
+  expect(previewGeometry.cellWidth).toBeGreaterThan(
+    (previewGeometry.tableWidth * fittedItemPercent) / 100 - 1,
+  );
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
@@ -1757,7 +1786,12 @@ test("auto-fits development columns so Pemindahbukuan stays intact in preview an
     [...developmentTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) =>
       Number(match[1]),
     ),
-  ).toEqual([570, 1766, 4744]);
+  ).toEqual(
+    developmentColumnWidthsTwips(
+      ["Penambahan tampilan menu Pemindahbukuan Pocket Valas", "Redesign VA"],
+      true,
+    ),
+  );
 });
 
 test("labels split development and activity tables as continuations in preview and DOCX", async ({ page }) => {
@@ -1832,8 +1866,10 @@ test("labels split development and activity tables as continuations in preview a
   expect(plainXmlText).toContain("Aktivitas Cabang dan Unit Kerja, Sambungan");
   expect((plainXmlText.match(/Berikut adalah fitur pengembangan pada/g) ?? [])).toHaveLength(1);
   expect((plainXmlText.match(/Berikut ini adalah aktivitas yang perlu dilakukan/g) ?? [])).toHaveLength(1);
-  expect((xml.match(/<w:tblW w:type="dxa" w:w="9266"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
-  expect((xml.match(/<w:tblInd w:type="dxa" w:w="2100"\/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  expect((xml.match(new RegExp(`<w:tblW w:type="dxa" w:w="${MAIN_PAGE_CONTENT_WIDTH}"/>`, "g")) ?? []).length)
+    .toBeGreaterThanOrEqual(2);
+  expect((xml.match(new RegExp(`<w:tblInd w:type="dxa" w:w="${BODY_COLUMN_INDENT}"/>`, "g")) ?? []).length)
+    .toBeGreaterThanOrEqual(2);
   expect(xml).toMatch(
     /<w:b\/>[\s\S]{0,300}<w:t[^>]*>Lingkup Pengembangan<\/w:t><\/w:r><w:r>[\s\S]{0,300}<w:t[^>]*>, Sambungan<\/w:t>/,
   );
@@ -1842,14 +1878,24 @@ test("labels split development and activity tables as continuations in preview a
       "Lingkup Pengembangan",
       ["No.", "Pengembangan", "Keterangan"],
       "Pengembangan lanjutan",
-      [1800, 300, 570, 1695, 4815, 86],
+      [
+        BODY_TITLE_WIDTH,
+        BODY_COLUMN_GAP,
+        ...bodyTableBaseColumnWidths(DEVELOPMENT_COLUMN_WIDTHS),
+        MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
+      ],
       [2, 5],
     ],
     [
       "Aktivitas Cabang dan Unit Kerja",
       ["No.", "Aktivitas", "PIC", "Waktu"],
       "Aktivitas lanjutan",
-      [1800, 300, 570, 3405, 1485, 1620, 86],
+      [
+        BODY_TITLE_WIDTH,
+        BODY_COLUMN_GAP,
+        ...bodyTableBaseColumnWidths(ACTIVITY_NUMBERED_COLUMN_WIDTHS),
+        MAIN_BODY_CONTENT_WIDTH - MAIN_BODY_TABLE_WIDTH,
+      ],
       [2, 6],
     ],
   ] as const) {
@@ -1868,7 +1914,9 @@ test("labels split development and activity tables as continuations in preview a
     const continuationTable = xml.slice(tableStart, tableEnd);
     expect(continuationTable.match(/<w:tbl(?=[\s>])/g) ?? []).toHaveLength(1);
     expect(continuationTable).toContain(bodyMarker);
-    expect(continuationTable).toContain('<w:tblW w:type="dxa" w:w="9266"/>');
+    expect(continuationTable).toContain(
+      `<w:tblW w:type="dxa" w:w="${MAIN_PAGE_CONTENT_WIDTH}"/>`,
+    );
     expect(continuationTable).not.toContain("<w:tblInd");
     expect(continuationTable).not.toContain("<w:tblpPr");
     expect(
@@ -2516,12 +2564,29 @@ test("DOCX data tables stay inside the A4 content grid using direct indented gri
   const developmentTable = xml.slice(tableStart, tableEnd);
 
   expect(developmentTable).toBeTruthy();
-  expect(developmentTable).toMatch(/<w:tblW w:type="dxa" w:w="7080"\/>/);
-  expect(developmentTable).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
+  expect(developmentTable).toContain(
+    `<w:tblW w:type="dxa" w:w="${MAIN_BODY_TABLE_WIDTH}"/>`,
+  );
+  expect(developmentTable).toContain(
+    `<w:tblInd w:type="dxa" w:w="${BODY_COLUMN_INDENT}"/>`,
+  );
   expect((developmentTable?.match(/<w:gridCol /g) ?? []).length).toBe(3);
-  expect(developmentTable).toContain('<w:gridCol w:w="570"/>');
-  expect(developmentTable).toContain('<w:gridCol w:w="1412"/>');
-  expect(developmentTable).toContain('<w:gridCol w:w="5098"/>');
+  // A single development row renders unnumbered, then the validation splice
+  // restores the shared leading number column in front of it.
+  const [singleItemWidth, singleDescriptionWidth] =
+    bodyTableBaseColumnWidths(DEVELOPMENT_SINGLE_COLUMN_WIDTHS);
+  const [numberWidth] = bodyTableBaseColumnWidths(DEVELOPMENT_COLUMN_WIDTHS);
+  const developmentGrid = [
+    ...developmentTable.matchAll(/<w:gridCol w:w="(\d+)"\/>/g),
+  ].map((match) => Number(match[1]));
+  expect(developmentGrid).toEqual([
+    numberWidth,
+    singleItemWidth - numberWidth,
+    singleDescriptionWidth,
+  ]);
+  expect(developmentGrid.reduce((sum, width) => sum + width, 0)).toBe(
+    MAIN_BODY_TABLE_WIDTH,
+  );
   expect(developmentTable.match(/<w:gridSpan w:val="2"\/>/g) ?? []).toHaveLength(2);
 
   const appendixTable = documentTableAround(xml, ">Hasil/Keterangan</w:t>");
@@ -2554,6 +2619,87 @@ test("memo heading adds one full line after the header and keeps its labels left
     const margins = cell.match(/<w:tcMar\b[\s\S]*?<\/w:tcMar>/)?.[0] ?? "";
     expect(margins).toBeTruthy();
     expect(margins.match(/w:w="0"/g) ?? []).toHaveLength(4);
+  }
+});
+
+test("letterhead values and every section below share one left column in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+
+  // Column offsets are relative to the page content box, measured over every
+  // rendered main page so pagination cannot hide a drifting block.
+  const previewColumns = await page
+    .locator('aside article[data-page-kind="main"] [data-preview-page-content]')
+    .evaluateAll((contents) => {
+      const sharedContentLeft = contents[0].getBoundingClientRect().left;
+      const offset = (element: Element) =>
+        Math.round((element.getBoundingClientRect().left - sharedContentLeft) * 100) / 100;
+      const collect = (selector: string) =>
+        contents.flatMap((content) => [...content.querySelectorAll(selector)].map(offset));
+      const perihal = contents.flatMap((content) =>
+        [...content.querySelectorAll('span[data-preview-field-id="projectName"]')].map(offset),
+      );
+      return {
+        polValues: contents.flatMap((content) =>
+          [...content.querySelectorAll('span[data-preview-field-id="bureau"]')]
+            .filter((element) => element.textContent?.trim().startsWith("POL "))
+            .map(offset),
+        ),
+        internalText: contents.flatMap((content) =>
+          [...content.querySelectorAll("span")]
+            .filter((element) => element.textContent?.trim() === "INTERNAL BCA")
+            .map(offset),
+        ),
+        perihal,
+        sectionBodies: collect("section h3 + div"),
+        tables: collect("table.memo-preview-table"),
+        closing: collect("[data-preview-closing]"),
+        signers: collect("[data-preview-signers]"),
+        ccClosings: collect("[data-preview-closing], [data-preview-signers]"),
+      };
+    });
+
+  // The letter-head value column is the single shared content column.
+  const headValueColumn = 122;
+  expect(previewColumns.polValues).toHaveLength(1);
+  expect(previewColumns.polValues[0]).toBe(headValueColumn);
+  expect(previewColumns.internalText).toHaveLength(1);
+  expect(previewColumns.perihal).toHaveLength(1);
+  expect(previewColumns.internalText[0]).toBe(headValueColumn);
+  expect(previewColumns.perihal[0]).toBe(headValueColumn);
+  expect(previewColumns.sectionBodies.length).toBeGreaterThanOrEqual(4);
+  expect(previewColumns.tables.length).toBeGreaterThanOrEqual(1);
+  expect(new Set(previewColumns.sectionBodies)).toEqual(new Set([headValueColumn]));
+  expect(new Set(previewColumns.tables)).toEqual(new Set([headValueColumn]));
+  expect(new Set(previewColumns.ccClosings)).toEqual(new Set([headValueColumn]));
+  // 1830 twips = 122px at the 15-twip CSS pixel used across the memo geometry.
+  expect(BODY_COLUMN_INDENT).toBe(1830);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const gridOf = (table: string) =>
+    [...table.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) => Number(match[1]));
+
+  const headingGrid = gridOf(documentTableAround(xml, ">Kepada</w:t>"));
+  expect(headingGrid[0] + headingGrid[1]).toBe(BODY_COLUMN_INDENT);
+  expect(headingGrid[0] + headingGrid[1] + headingGrid[2]).toBe(MAIN_PAGE_CONTENT_WIDTH);
+
+  for (const marker of [
+    ">Pengantar</w:t>",
+    ">Lingkup Pengembangan</w:t>",
+    ">Jadwal Pilot Implementasi</w:t>",
+    ">Aktivitas Cabang dan Unit Kerja</w:t>",
+  ]) {
+    const wrapperGrid = gridOf(documentTableAround(xml, marker));
+    expect(wrapperGrid[0] + wrapperGrid[1]).toBe(BODY_COLUMN_INDENT);
+  }
+
+  for (const marker of [">Keterangan</w:t>", ">Waktu</w:t>"]) {
+    const dataTable = documentTableAround(xml, marker);
+    expect(dataTable).toContain(`<w:tblInd w:type="dxa" w:w="${BODY_COLUMN_INDENT}"/>`);
+    const dataGrid = gridOf(dataTable);
+    expect(dataGrid.reduce((sum, width) => sum + width, 0)).toBe(MAIN_BODY_TABLE_WIDTH);
   }
 });
 
@@ -2653,13 +2799,19 @@ test("DOCX continuation and section rules share the same A4 content boundary", a
   ) ?? tables.find((table) => table.includes("Akses Link"));
 
   expect(continuationRule).toBeTruthy();
-  expect(continuationRule).toMatch(/<w:tblW w:type="dxa" w:w="7166"\/>/);
-  expect(continuationRule).toContain('<w:tblInd w:type="dxa" w:w="2100"/>');
+  expect(continuationRule).toContain(
+    `<w:tblW w:type="dxa" w:w="${MAIN_BODY_CONTENT_WIDTH}"/>`,
+  );
+  expect(continuationRule).toContain(
+    `<w:tblInd w:type="dxa" w:w="${BODY_COLUMN_INDENT}"/>`,
+  );
   expect(accessSection).toBeTruthy();
-  expect(accessSection).toMatch(/<w:tblW w:type="dxa" w:w="9266"\/>/);
-  expect(accessSection).toContain('<w:gridCol w:w="1800"/>');
-  expect(accessSection).toContain('<w:gridCol w:w="300"/>');
-  expect(accessSection).toContain('<w:gridCol w:w="7166"/>');
+  expect(accessSection).toContain(
+    `<w:tblW w:type="dxa" w:w="${MAIN_PAGE_CONTENT_WIDTH}"/>`,
+  );
+  expect(accessSection).toContain(`<w:gridCol w:w="${BODY_TITLE_WIDTH}"/>`);
+  expect(accessSection).toContain(`<w:gridCol w:w="${BODY_COLUMN_GAP}"/>`);
+  expect(accessSection).toContain(`<w:gridCol w:w="${MAIN_BODY_CONTENT_WIDTH}"/>`);
 });
 
 test("empty rich text fields start in plain text mode", async ({ page }) => {
@@ -4104,8 +4256,16 @@ test("DOCX target tables are flat leaf tables with one DXA grid", async ({ page 
   const xml = await documentXmlFrom(await downloadPromise);
 
   const targetTables = [
-    { marker: ">Keterangan</w:t>", width: 7080, grid: [570, 1695, 4815] },
-    { marker: ">Waktu</w:t>", width: 7080, grid: [570, 3405, 1485, 1620] },
+    {
+      marker: ">Keterangan</w:t>",
+      width: MAIN_BODY_TABLE_WIDTH,
+      grid: bodyTableBaseColumnWidths(DEVELOPMENT_COLUMN_WIDTHS),
+    },
+    {
+      marker: ">Waktu</w:t>",
+      width: MAIN_BODY_TABLE_WIDTH,
+      grid: bodyTableBaseColumnWidths(ACTIVITY_NUMBERED_COLUMN_WIDTHS),
+    },
     { marker: ">Hasil/Keterangan</w:t>", width: 15315, grid: [765, 6435, 6435, 1680] },
   ];
 
@@ -4452,7 +4612,7 @@ test("DOCX signer title wraps with a hanging indent aligned like preview", async
   const hanging = Number(indent.match(/w:hanging="(\d+)"/)?.[1]);
 
   expect(indent).toContain("w:hanging");
-  expect(left - hanging).toBe(2100);
+  expect(left - hanging).toBe(BODY_COLUMN_INDENT);
   expect(signerParagraph.replaceAll("\u200B", "")).toContain(signerTitle);
 });
 

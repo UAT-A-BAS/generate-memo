@@ -47,7 +47,6 @@ import {
   MAIN_BODY_TABLE_WIDTH,
   MAIN_PAGE_CONTENT_WIDTH,
   TABLE_HEADER_FILL,
-  WORD_INDENT_002_CM,
   WORD_LINE_MULTIPLE_108,
   WORD_LINE_MULTIPLE_115,
 } from "@/documentLayout";
@@ -115,10 +114,6 @@ function breakLongWords(text: string, chunkSize = 28) {
     const parts = word.match(new RegExp(`.{1,${chunkSize}}`, "g"));
     return parts?.join("\u200B") ?? word;
   });
-}
-
-function pct(value: number) {
-  return value * 50;
 }
 
 function wordSpacing(
@@ -315,7 +310,7 @@ function tabAlignedParagraph(
 function memoHeadingParagraph(text: string, options: Parameters<typeof paragraph>[1] = {}) {
   return paragraph(text, {
     ...options,
-    indent: { left: WORD_INDENT_002_CM, ...options.indent },
+    indent: { left: 0, ...options.indent },
     spacingBefore: options.spacingBefore ?? 40,
     spacingAfter: options.spacingAfter ?? 0,
     line: options.line ?? WORD_LINE_MULTIPLE_115,
@@ -326,7 +321,7 @@ function memoHeadingCell(children: Paragraph[], width: number) {
   return new TableCell({
     borders: noBorder,
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    width: { size: pct(width), type: WidthType.PERCENTAGE },
+    width: { size: width, type: WidthType.DXA },
     children,
   });
 }
@@ -721,7 +716,7 @@ function memoHeadingRecipientParagraphs(recipients: Recipient[]) {
     const position = useDash
       ? dashGapParagraph(recipient.position, {
           size: 22,
-          indent: { left: WORD_INDENT_002_CM },
+          indent: { left: 0 },
           spacingBefore: 80,
           line: WORD_LINE_MULTIPLE_115,
         })
@@ -730,7 +725,7 @@ function memoHeadingRecipientParagraphs(recipients: Recipient[]) {
       ? useDash
         ? tabAlignedParagraph(formatRecipientAttention(recipient), {
             size: 22,
-            indent: { left: WORD_INDENT_002_CM },
+            indent: { left: 0 },
             spacingBefore: 80,
             line: WORD_LINE_MULTIPLE_115,
           })
@@ -1262,35 +1257,37 @@ function blockChildren(
         table([
           new TableRow({
             children: [
-              memoHeadingCell([memoHeadingParagraph("Kepada", { size: 22 })], 18),
-              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], 3),
-              memoHeadingCell(memoHeadingRecipientParagraphs(draft.recipients), 79),
+              memoHeadingCell([memoHeadingParagraph("Kepada", { size: 22 })], BODY_TITLE_WIDTH),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], BODY_COLUMN_GAP),
+              memoHeadingCell(memoHeadingRecipientParagraphs(draft.recipients), MAIN_BODY_CONTENT_WIDTH),
             ],
           }),
           new TableRow({
             children: [
-              memoHeadingCell([memoHeadingParagraph("Dari", { size: 22 })], 18),
-              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], 3),
-              memoHeadingCell([memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau} (UAT ${draft.metadata.bureau})`, { size: 22 })], 79),
+              memoHeadingCell([memoHeadingParagraph("Dari", { size: 22 })], BODY_TITLE_WIDTH),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], BODY_COLUMN_GAP),
+              memoHeadingCell([memoHeadingParagraph(`POL Application & User Acceptance Test Bureau ${draft.metadata.bureau} (UAT ${draft.metadata.bureau})`, { size: 22 })], MAIN_BODY_CONTENT_WIDTH),
             ],
           }),
           new TableRow({
             children: [
-              memoHeadingCell([memoHeadingParagraph("Jenis Informasi", { size: 22 })], 18),
-              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], 3),
-              memoHeadingCell([memoHeadingParagraph("INTERNAL BCA", { size: 22 })], 79),
+              memoHeadingCell([memoHeadingParagraph("Jenis Informasi", { size: 22 })], BODY_TITLE_WIDTH),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22 })], BODY_COLUMN_GAP),
+              memoHeadingCell([memoHeadingParagraph("INTERNAL BCA", { size: 22 })], MAIN_BODY_CONTENT_WIDTH),
             ],
           }),
           new TableRow({
             children: [
-              memoHeadingCell([memoHeadingParagraph("Perihal", { size: 22, font: "Arial" })], 18),
-              memoHeadingCell([memoHeadingParagraph(":", { size: 22, font: "Arial" })], 3),
-              memoHeadingCell([memoHeadingParagraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })], 79),
+              memoHeadingCell([memoHeadingParagraph("Perihal", { size: 22, font: "Arial" })], BODY_TITLE_WIDTH),
+              memoHeadingCell([memoHeadingParagraph(":", { size: 22, font: "Arial" })], BODY_COLUMN_GAP),
+              memoHeadingCell([memoHeadingParagraph(draft.metadata.perihal, { bold: true, size: 24, font: "Arial" })], MAIN_BODY_CONTENT_WIDTH),
             ],
           }),
-        ], MAIN_PAGE_CONTENT_WIDTH, [18, 3, 79].map((columnWidth) =>
-          Math.round((MAIN_PAGE_CONTENT_WIDTH * columnWidth) / 100),
-        )),
+        ], MAIN_PAGE_CONTENT_WIDTH, [
+          BODY_TITLE_WIDTH,
+          BODY_COLUMN_GAP,
+          MAIN_BODY_CONTENT_WIDTH,
+        ]),
       ];
     case "recipients":
       return [];

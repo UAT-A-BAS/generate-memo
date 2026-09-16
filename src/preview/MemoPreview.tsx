@@ -104,7 +104,7 @@ function PreviewSection({
       role={fieldId ? "button" : undefined}
       tabIndex={fieldId ? 0 : undefined}
     >
-      <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-5 text-[14.67px] leading-[1.08]">
+      <div className="grid grid-cols-[102px_minmax(0,1fr)] gap-5 text-[14.67px] leading-[1.08]">
         <h3 className={`${titleRuleClass} text-[13.33px] leading-[1.08]`}>
           {typeof title === "string" ? <strong>{title}</strong> : title}
         </h3>
@@ -275,7 +275,7 @@ function renderBlock(
         : undefined;
       return (
         <div className="mt-[57px] text-[14.67px] leading-[1.15]">
-          <div className="grid grid-cols-[92px_14px_1fr] gap-x-2 gap-y-[5px]">
+          <div className="grid grid-cols-[102px_20px_minmax(0,1fr)] gap-y-[5px]">
             <span
               className={firstRecipientFieldId ? "preview-field-target" : undefined}
               data-preview-field-id={firstRecipientFieldId}
@@ -404,7 +404,7 @@ function renderBlock(
         <div
           data-preview-closing
           data-preview-field-id={draft.signers[0] ? `signer-name-${draft.signers[0].id}` : undefined}
-          className={`ml-[140px] text-[14.67px] leading-[1.08] ${
+          className={`ml-[122px] text-[14.67px] leading-[1.08] ${
             firstBlockOnPage ? "mt-0 pt-0" : "mt-3 border-t border-slate-800 pt-2"
           }`}
         >
@@ -434,7 +434,7 @@ function renderBlock(
     case "cc":
       return (
         <div
-          className="ml-[140px] mt-4 text-[14.67px] leading-[1.08]"
+          className="ml-[122px] mt-4 text-[14.67px] leading-[1.08]"
           data-preview-field-id={block.recipients[0] ? `recipient-${block.recipients[0].id}` : undefined}
         >
           <p>Tembusan:</p>
@@ -452,7 +452,7 @@ function renderBlock(
     case "initials":
       return (
         <p
-          className="ml-[140px] mt-4 text-[13.33px]"
+          className="ml-[122px] mt-4 text-[13.33px]"
           data-preview-field-id="initials"
         >
           {initialsText(draft)}
@@ -833,7 +833,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
               <strong className="font-[Arial] text-[16px]">{draft.metadata.perihal}</strong>
               <span className="font-[Arial] text-[14.67px]">, Sambungan</span>
             </h2>
-            <div className="ml-[140px] mt-5 h-px bg-slate-800" />
+            <div className="ml-[122px] mt-5 h-px bg-slate-800" />
           </div>
         )
       ) : page.kind === "appendix" ? (
@@ -845,7 +845,7 @@ function PageContent({ draft, page }: { draft: MemoDraft; page: PreviewPage }) {
         Boolean(page.continuationTitle && page.kind === "main"),
       )}
       {page.continues && page.kind === "main" ? (
-        <p className="ml-[140px] mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
+        <p className="ml-[122px] mt-3 border-t border-slate-800 pt-1 text-right text-[13.33px] italic leading-[1.08]">
           Bersambung ke halaman berikut
         </p>
       ) : null}
