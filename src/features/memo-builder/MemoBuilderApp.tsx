@@ -58,8 +58,10 @@ import {
   buildScenarioHierarchy,
   computeScenarioLabels,
   flattenScenarioHierarchy,
+  normalizeScenarioHeadingCode,
   scenarioHeadingName,
   scenarioHeadingPath,
+  setScenarioHeadingCode,
   type ScenarioHierarchyNode,
   withScenarioHeadingPath,
 } from "@/utils/scenarioHierarchy";
@@ -1584,6 +1586,7 @@ const SCENARIO_LIST_PREFIX = "scenario-section:";
 type ScenarioSectionGroup = {
   id: string;
   marker: string;
+  autoMarker: string;
   hasExplicitCode?: boolean;
   title: string;
   rows: ScenarioRow[];
@@ -1628,6 +1631,9 @@ function scenarioSectionGroups(
   const indexByKey = new Map<string, number>();
   const groups = scenarioDateGroups(rows);
   const labels = globalLabels ?? computeScenarioLabels(rows, resetPerDate);
+  // Auto letters ignore manual codes so retyping the letter a section would get
+  // anyway keeps auto-arrange instead of freezing a duplicate override.
+  const autoLabels = computeScenarioLabels(clearManualSectionCodes(rows), resetPerDate);
   let runningIndex = 0;
 
   groups.forEach((group) => {
@@ -1646,6 +1652,7 @@ function scenarioSectionGroups(
       const section: ScenarioSectionGroup = {
         id: key,
         marker: labels.get(firstHeading?.id ?? key) ?? alphaIndex(autoIndex),
+        autoMarker: autoLabels.get(firstHeading?.id ?? key) ?? alphaIndex(autoIndex),
         hasExplicitCode: Boolean(firstHeading?.code),
         title: firstHeading?.title ?? row.section,
         rows: [row],
@@ -1758,6 +1765,10 @@ function AppendixPanel({
   const markerEditCancelRef = useRef(false);
   const scenarioLabels = useMemo(
     () => computeScenarioLabels(rows, letterResetPerDate),
+    [rows, letterResetPerDate],
+  );
+  const autoScenarioLabels = useMemo(
+    () => computeScenarioLabels(clearManualSectionCodes(rows), letterResetPerDate),
     [rows, letterResetPerDate],
   );
 
@@ -2275,26 +2286,33 @@ function AppendixPanel({
   }
 
   function commitSectionMarker(section: ScenarioSectionGroup, nextValue: string) {
-    const nextCode = nextValue.trim().toUpperCase();
+    const nextCode = normalizeScenarioHeadingCode(nextValue);
     // Only persist an explicit code when it differs from the auto letter. That
     // way retyping "A" (or clearing the field) keeps auto-arrange, while a
-    // deliberate different letter becomes a manual override.
-    const explicit = nextCode && nextCode !== section.marker ? nextCode : null;
-    setRows(rows.map((row) => {
-      const path = scenarioHeadingPath(row);
-      if (!path.some((heading) => heading.id === section.id)) return row;
-      return withScenarioHeadingPath(
-        row,
-        path.map((heading) =>
-          heading.id === section.id
-            ? { ...heading, code: explicit ?? undefined }
-            : heading,
-        ),
-      );
-    }), true);
+    // deliberate different letter becomes a manual override. Changing the
+    // letter also re-bases every subbagian/sub-subbagian below it.
+    const explicit = nextCode && nextCode !== section.autoMarker ? nextCode : null;
+    setRows(setScenarioHeadingCode(rows, section.id, explicit), true);
     setMarkerDrafts((current) => {
       const next = { ...current };
       delete next[section.id];
+      return next;
+    });
+  }
+
+  function commitHeadingMarker(node: ScenarioHierarchyNode, nextValue: string) {
+    const parentHeading = node.path.at(-2);
+    const parentLabel = parentHeading ? scenarioLabels.get(parentHeading.id) : undefined;
+    const autoLabel = autoScenarioLabels.get(node.id) ?? node.label;
+    const nextCode = normalizeScenarioHeadingCode(
+      nextValue,
+      node.depth > 1 ? parentLabel : undefined,
+    );
+    const explicit = nextCode && nextCode !== autoLabel ? nextCode : null;
+    setRows(setScenarioHeadingCode(rows, node.id, explicit), true);
+    setMarkerDrafts((current) => {
+      const next = { ...current };
+      delete next[node.id];
       return next;
     });
   }
@@ -2552,11 +2570,18 @@ function AppendixPanel({
     );
   }
 
+  // Every surface reads the same label map so an edited letter shows the same
+  // way in the editor input, the preview table, and the DOCX table.
+  function headingLabel(node: { id: string; label: string }) {
+    return scenarioLabels.get(node.id) ?? node.label;
+  }
+
   function nestedHeadingEditor(
     group: ScenarioDateGroup,
     section: ScenarioSectionGroup,
     node: ScenarioHierarchyNode,
   ) {
+    const label = headingLabel(node);
     return (
       <section
         data-scenario-heading-level={node.depth}
@@ -2568,8 +2593,8 @@ function AppendixPanel({
         >
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] font-bold text-[#0f2d4a] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4d78]/25">
             <span className="flex min-w-0 items-center gap-2">
-              {bulkDeleteMode ? deleteCheckbox(`heading:${group.id}:${node.id}`, `Pilih ${scenarioHeadingName(node.depth).toLowerCase()} ${node.label}`) : null}
-              <span>{scenarioHeadingName(node.depth)} {node.label}</span>
+              {bulkDeleteMode ? deleteCheckbox(`heading:${group.id}:${node.id}`, `Pilih ${scenarioHeadingName(node.depth).toLowerCase()} ${label}`) : null}
+              <span>{scenarioHeadingName(node.depth)} {label}</span>
             </span>
             <span className="text-xs font-semibold text-slate-500">{scenarioRowsForNode(node).length} skenario</span>
           </summary>
@@ -2579,8 +2604,40 @@ function AppendixPanel({
               fieldId={`scenario-heading-${node.id}`}
               required
             >
-              <div className="grid grid-cols-[64px_1fr] overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-[#1b4d78] focus-within:ring-2 focus-within:ring-[#1b4d78]/15">
-                <span className="flex items-center justify-center border-r border-slate-200 bg-slate-50 text-xs font-bold text-[#0f2d4a]">{node.label}</span>
+              <div className="grid grid-cols-[minmax(72px,auto)_1fr] overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-[#1b4d78] focus-within:ring-2 focus-within:ring-[#1b4d78]/15">
+                <input
+                  value={markerDrafts[node.id] ?? label}
+                  aria-label={`${scenarioHeadingName(node.depth)} ${label} huruf`}
+                  onChange={(event) =>
+                    setMarkerDrafts((current) => ({
+                      ...current,
+                      [node.id]: event.target.value,
+                    }))
+                  }
+                  onBlur={() => {
+                    if (markerEditCancelRef.current) {
+                      markerEditCancelRef.current = false;
+                      return;
+                    }
+                    const draft = markerDrafts[node.id];
+                    if (draft === undefined) return;
+                    commitHeadingMarker(node, draft);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.currentTarget.blur();
+                    } else if (event.key === "Escape") {
+                      markerEditCancelRef.current = true;
+                      setMarkerDrafts((current) => {
+                        const next = { ...current };
+                        delete next[node.id];
+                        return next;
+                      });
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="min-h-10 w-full border-0 border-r border-slate-200 bg-slate-50 px-1.5 text-center text-xs font-bold text-[#0f2d4a] outline-none"
+                />
                 <AutoResizeTextarea
                   value={node.title}
                   rows={1}
@@ -2611,7 +2668,7 @@ function AppendixPanel({
                   target.children = nextChildren;
                   replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
                 }}
-                itemLabel={(child) => `${scenarioHeadingName(child.depth).toLowerCase()} ${child.label}`}
+                itemLabel={(child) => `${scenarioHeadingName(child.depth).toLowerCase()} ${headingLabel(child)}`}
                 renderItem={(child) => nestedHeadingEditor(group, section, child)}
               />
             ) : null}
@@ -2952,7 +3009,7 @@ function AppendixPanel({
                                       target.children = nextChildren;
                                       replaceSectionRows(section, flattenScenarioHierarchy(hierarchy));
                                     }}
-                                    itemLabel={(node) => `${scenarioHeadingName(node.depth).toLowerCase()} ${node.label}`}
+                                    itemLabel={(node) => `${scenarioHeadingName(node.depth).toLowerCase()} ${headingLabel(node)}`}
                                     renderItem={(node) => nestedHeadingEditor(group, section, node)}
                                   />
                                 </div>

@@ -908,6 +908,81 @@ test("scenario template downloads from the appendix toolbar", async ({ page }) =
   expect((await downloadPromise).suggestedFilename()).toBe("Template Skenario untuk MEMO_AXM.xlsx");
 });
 
+test("editing a letter re-bases subbagian and sub-subbagian letters in editor, preview, and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const base = completeDraft().appendixScenarios[0];
+  const relabelPath = (depth: number) => {
+    const root = { id: "relabel-root", title: "Bagian Relabel", code: "A" };
+    const sub = { id: "relabel-sub", title: "Sub Relabel Anak", code: "A.1" };
+    const subsub = { id: "relabel-subsub", title: "Sub Sub Relabel Cucu", code: "A.1.1" };
+    if (depth === 1) return [root];
+    if (depth === 2) return [root, sub];
+    return [root, sub, subsub];
+  };
+
+  await importDraft(page, {
+    ...completeDraft(),
+    appendixScenarios: [1, 2, 3].map((depth) => ({
+      ...base,
+      id: `relabel-row-${depth}`,
+      dateGroupId: "relabel-date",
+      sectionGroupId: "relabel-root",
+      section: "Bagian Relabel",
+      headingPath: relabelPath(depth),
+      scenario: richText(`Skenario relabel ${depth}`),
+      expectedResult: richText(`Hasil relabel ${depth}`),
+    })),
+  });
+
+  const letterBox = (fieldId: string) => page.locator(`[data-field-id="${fieldId}"] input`).first();
+  const sectionLetter = letterBox("scenario-section-relabel-row-1");
+  const subLetter = letterBox("scenario-heading-relabel-sub");
+  const subSubLetter = letterBox("scenario-heading-relabel-subsub");
+
+  await expect(sectionLetter).toHaveValue("A");
+  await expect(subLetter).toHaveValue("A.1");
+  await expect(subSubLetter).toHaveValue("A.1.1");
+
+  await sectionLetter.fill("C");
+  await sectionLetter.blur();
+  await expect(sectionLetter).toHaveValue("C");
+  await expect(subLetter).toHaveValue("C.1");
+  await expect(subSubLetter).toHaveValue("C.1.1");
+
+  await subLetter.fill("4");
+  await subLetter.blur();
+  await expect(subLetter).toHaveValue("C.4");
+  await expect(subSubLetter).toHaveValue("C.4.1");
+  await expect(page.locator("[data-scenario-heading-level='3']").first().getByText("Sub-subbagian C.4.1", { exact: true }))
+    .toBeVisible();
+
+  const appendixTable = page.locator('aside article[data-page-kind="appendix"] table').last();
+  const headingRow = (title: string) => appendixTable
+    .getByText(title, { exact: true })
+    .locator("xpath=ancestor::tr[1]");
+  await expect(headingRow("Bagian Relabel").locator("td").first()).toHaveText("C");
+  await expect(headingRow("Sub Relabel Anak").locator("td").first()).toHaveText("C.4");
+  await expect(headingRow("Sub Sub Relabel Cucu").locator("td").first()).toHaveText("C.4.1");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const appendixXml = documentTableAround(
+    await documentXmlFrom(await downloadPromise),
+    ">Hasil/Keterangan</w:t>",
+  );
+  const docxRow = (title: string) => {
+    const textIndex = appendixXml.indexOf(title);
+    expect(textIndex).toBeGreaterThan(-1);
+    return appendixXml.slice(
+      appendixXml.lastIndexOf("<w:tr", textIndex),
+      appendixXml.indexOf("</w:tr>", textIndex) + "</w:tr>".length,
+    );
+  };
+  expect(docxRow("Bagian Relabel")).toContain(">C</w:t>");
+  expect(docxRow("Sub Relabel Anak")).toContain(">C.4</w:t>");
+  expect(docxRow("Sub Sub Relabel Cucu")).toContain(">C.4.1</w:t>");
+});
+
 test("bulk appendix delete cascades from a date and requires confirmation", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const baseRow = completeDraft().appendixScenarios[0];

@@ -68,6 +68,42 @@ export function withScenarioHeadingPath(
   };
 }
 
+// Editing one heading letter must re-base everything underneath it. The edited
+// heading keeps the new code (or returns to auto numbering when cleared) and
+// every descendant drops its own code, so its label re-derives from the new
+// parent (B -> B.1 -> B.1.1) instead of keeping a stale imported chain.
+export function setScenarioHeadingCode(
+  rows: ScenarioRow[],
+  headingId: string,
+  code: string | null,
+): ScenarioRow[] {
+  let changed = false;
+  const nextRows = rows.map((row) => {
+    const path = scenarioHeadingPath(row);
+    const index = path.findIndex((heading) => heading.id === headingId);
+    if (index === -1) return row;
+    changed = true;
+    const nextPath = path.map((heading, position) => {
+      if (position < index) return heading;
+      if (position === index) {
+        return code ? { ...heading, code } : { id: heading.id, title: heading.title };
+      }
+      return { id: heading.id, title: heading.title };
+    });
+    return withScenarioHeadingPath(row, nextPath);
+  });
+  return changed ? nextRows : rows;
+}
+
+// Accepts "b", "B.", "B.1" or a bare "3" for nested headings and returns the
+// label the memo tables print, so the letter box and the output always agree.
+export function normalizeScenarioHeadingCode(value: string, parentLabel?: string) {
+  const normalized = value.replace(/\s+/g, "").replace(/\.+$/, "").toUpperCase();
+  if (!normalized) return "";
+  if (parentLabel && !normalized.includes(".")) return `${parentLabel}.${normalized}`;
+  return normalized;
+}
+
 function applyLabels(nodes: ScenarioHierarchyNode[], parentLabel = "") {
   nodes.forEach((node, index) => {
     node.label = node.code ?? (
