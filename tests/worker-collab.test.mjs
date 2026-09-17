@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MAX_CLOCK_SKEW_MS,
+  MAX_REQUEST_BODY_BYTES,
   MAX_SNAPSHOTS,
   nextServerTimestamp,
   validateMemoDraftPayload,
 } from "../workers/collab/draftValidation.mjs";
 import { MemoRoom } from "../workers/collab/worker.js";
+import { buildChangeStamps } from "../workers/collab/draftMerge.mjs";
 
 const richText = {
   type: "doc",
@@ -149,9 +151,146 @@ test("HTTP persistence rejects malformed and oversized requests", async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       draft: validDraft(),
-      padding: "x".repeat(1_000_000),
+      padding: "x".repeat(MAX_REQUEST_BODY_BYTES),
       initialSyncComplete: true,
     }),
   }));
   assert.equal(oversizedResponse.status, 413);
+});
+
+function draftWith(patch) {
+  const draft = validDraft();
+  return {
+    ...draft,
+    ...patch,
+    metadata: { ...draft.metadata, ...(patch.metadata ?? {}) },
+  };
+}
+
+function saveFor(room, draft, base, options = {}) {
+  const updatedAt = options.updatedAt ?? Date.now();
+  return room.saveDraftSnapshot({
+    draft,
+    base,
+    baseRevision: options.baseRevision ?? 0,
+    timestamps: buildChangeStamps(base, draft, updatedAt),
+    updatedAt,
+    saveId: options.saveId,
+    clientId: options.clientId ?? "test-client",
+    user: { id: options.userId ?? "tester" },
+  });
+}
+
+test("two collaborators editing different fields both survive", async () => {
+  const room = new MemoRoom(roomState());
+  const base = validDraft();
+
+  const first = await saveFor(
+    room,
+    draftWith({ metadata: { projectName: "Proyek A" } }),
+    base,
+  );
+  assert.equal(first.revision, 1);
+  assert.equal(first.draft.metadata.projectName, "Proyek A");
+
+  // Second writer still believes the room is empty (stale revision) but only
+  // touched `perihal`; the first writer's project name must survive.
+  const second = await saveFor(
+    room,
+    draftWith({ metadata: { perihal: "Perihal B" } }),
+    base,
+  );
+  assert.equal(second.draft.metadata.projectName, "Proyek A");
+  assert.equal(second.draft.metadata.perihal, "Perihal B");
+});
+
+test("table rows edited by different collaborators both survive", async () => {
+  const room = new MemoRoom(roomState());
+  const base = validDraft();
+  base.activities = [
+    { ...validDraft().activities[0], id: "activity-1", owner: "" },
+    { ...validDraft().activities[0], id: "activity-2", owner: "" },
+  ];
+  await saveFor(room, base, base);
+
+  const firstEdit = {
+    ...base,
+    activities: [
+      { ...base.activities[0], owner: "PIC Satu" },
+      base.activities[1],
+    ],
+  };
+  const first = await saveFor(room, firstEdit, base);
+  assert.equal(first.draft.activities[0].owner, "PIC Satu");
+
+  const secondEdit = {
+    ...base,
+    activities: [
+      base.activities[0],
+      { ...base.activities[1], owner: "PIC Dua" },
+    ],
+  };
+  const second = await saveFor(room, secondEdit, base);
+  assert.equal(second.draft.activities[0].owner, "PIC Satu");
+  assert.equal(second.draft.activities[1].owner, "PIC Dua");
+});
+
+test("the newest write wins when two collaborators touch the same field", async () => {
+  const room = new MemoRoom(roomState());
+  const base = validDraft();
+  const start = Date.now();
+
+  await saveFor(
+    room,
+    draftWith({ metadata: { projectName: "Versi Pertama" } }),
+    base,
+    { updatedAt: start, userId: "writer-one" },
+  );
+  const later = await saveFor(
+    room,
+    draftWith({ metadata: { projectName: "Versi Kedua" } }),
+    base,
+    { updatedAt: start + 5_000, userId: "writer-two" },
+  );
+
+  assert.equal(later.draft.metadata.projectName, "Versi Kedua");
+});
+
+test("a replayed save id is idempotent and never bumps the revision", async () => {
+  const room = new MemoRoom(roomState());
+  const base = validDraft();
+  const draft = draftWith({ metadata: { projectName: "Idempoten" } });
+  const updatedAt = Date.now();
+
+  const first = await saveFor(room, draft, base, {
+    updatedAt,
+    saveId: "replay-1",
+    userId: "writer-one",
+  });
+  const replayed = await saveFor(room, draft, base, {
+    updatedAt: updatedAt + 1_000,
+    saveId: "replay-1",
+    userId: "writer-one",
+  });
+
+  assert.equal(first.revision, 1);
+  assert.equal(replayed.revision, 1);
+  assert.equal(replayed.replayed, true);
+});
+
+test("a delayed save can no longer roll a newer document back", async () => {
+  const room = new MemoRoom(roomState());
+  const base = validDraft();
+  const stale = draftWith({ metadata: { projectName: "Draft Lama" } });
+  const fresh = draftWith({ metadata: { projectName: "Draft Baru" } });
+  const start = Date.now();
+
+  await saveFor(room, fresh, base, { updatedAt: start + 5_000, userId: "writer-two" });
+  const late = await saveFor(room, stale, base, {
+    updatedAt: start,
+    userId: "writer-one",
+  });
+
+  assert.equal(late.draft.metadata.projectName, "Draft Baru");
+  assert.equal(room.doc.getMap("form").get("data").metadata.projectName, "Draft Baru");
 });

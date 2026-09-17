@@ -1,12 +1,18 @@
 import * as Y from "yjs";
 import {
-  MAX_HTTP_BODY_BYTES,
+  MAX_CLOCK_SKEW_MS,
+  MAX_REQUEST_BODY_BYTES,
   MAX_SNAPSHOTS,
   MAX_WS_BINARY_BYTES,
   nextServerTimestamp,
   snapshotTimestamp,
   validateMemoDraftPayload,
 } from "./draftValidation.mjs";
+import {
+  jsonEqual,
+  mergeDraftSnapshot,
+  mergeStamps,
+} from "./draftMerge.mjs";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -17,7 +23,10 @@ const MAP_NAME = "form";
 const DATA_KEY = "data";
 const UPDATED_AT_KEY = "updatedAt";
 const UPDATED_BY_KEY = "updatedBy";
+const REVISION_KEY = "revision";
+const STAMPS_KEY = "stamps";
 const SNAPSHOT_PREFIX = "snapshot:";
+const MAX_RECEIPTS = 200;
 
 async function toUint8Array(data) {
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -86,15 +95,16 @@ function pruneSnapshots(map) {
     .forEach((key) => map.delete(key));
 }
 
-function latestDraftFromDoc(doc) {
+function roomStateFromDoc(doc) {
   const map = doc.getMap(MAP_NAME);
   const draft = map.get(DATA_KEY);
-  if (!draft || typeof draft !== "object") return null;
-
   return {
-    draft,
-    updatedAt: Number(map.get(UPDATED_AT_KEY) || Date.now()),
+    map,
+    draft: draft && typeof draft === "object" ? draft : null,
+    updatedAt: Number(map.get(UPDATED_AT_KEY) || 0),
     updatedBy: String(map.get(UPDATED_BY_KEY) || ""),
+    revision: Number(map.get(REVISION_KEY) || 0),
+    stamps: map.get(STAMPS_KEY) ?? {},
   };
 }
 
@@ -105,6 +115,7 @@ export class MemoRoom {
     this.sessions = new Map();
     this.loaded = false;
     this.messageQueue = Promise.resolve();
+    this.receipts = new Map();
   }
 
   enqueue(task) {
@@ -125,10 +136,25 @@ export class MemoRoom {
     if (this.loaded) return;
     const stored = await this.state.storage.get("ydoc");
     if (stored) Y.applyUpdate(this.doc, await toUint8Array(stored));
-    if (!latestDraftFromDoc(this.doc)) {
+    const room = roomStateFromDoc(this.doc);
+    if (!room.draft) {
       const latestDraft = await this.state.storage.get("latestDraft");
       if (latestDraft?.draft) {
-        await this.saveDraftSnapshot(latestDraft, "");
+        this.doc.transact(() => {
+          room.map.set(DATA_KEY, latestDraft.draft);
+          room.map.set(UPDATED_AT_KEY, Number(latestDraft.updatedAt) || Date.now());
+          room.map.set(UPDATED_BY_KEY, String(latestDraft.updatedBy || ""));
+          room.map.set(REVISION_KEY, 1);
+          room.map.set(STAMPS_KEY, {});
+        });
+      }
+    }
+    const storedReceipts = await this.state.storage.get("saveReceipts");
+    if (Array.isArray(storedReceipts)) {
+      for (const entry of storedReceipts) {
+        if (Array.isArray(entry) && typeof entry[0] === "string") {
+          this.receipts.set(entry[0], entry[1]);
+        }
       }
     }
     this.loaded = true;
@@ -140,39 +166,155 @@ export class MemoRoom {
       Y.encodeStateAsUpdate(this.doc).buffer,
     );
 
-    const latestDraft = latestDraftFromDoc(this.doc);
-    if (latestDraft) {
-      await this.state.storage.put("latestDraft", latestDraft);
+    const room = roomStateFromDoc(this.doc);
+    if (room.draft) {
+      await this.state.storage.put("latestDraft", {
+        draft: room.draft,
+        updatedAt: room.updatedAt,
+        updatedBy: room.updatedBy,
+      });
     }
   }
 
+  async persistReceipts() {
+    const entries = [...this.receipts.entries()].slice(-MAX_RECEIPTS);
+    this.receipts = new Map(entries);
+    await this.state.storage.put("saveReceipts", entries);
+  }
+
+  receiptFor(saveId) {
+    if (!saveId) return null;
+    const entry = this.receipts.get(saveId);
+    return entry && typeof entry === "object" ? entry : null;
+  }
+
+  /**
+   * Merges one sender's snapshot into the room draft. The sender supplies the
+   * draft it started from (`base`), its own edit (`draft`), and its stamp table,
+   * so a field that only the sender touched survives even when another user
+   * saved in between.
+   */
   async saveDraftSnapshot(message, exceptSessionId = "") {
+    const saveId = typeof message.saveId === "string"
+      ? message.saveId.slice(0, 256)
+      : "";
+    const replay = this.receiptFor(saveId);
+    if (replay) return { ...replay, replayed: true };
+
     const validation = validateMemoDraftPayload(message?.draft);
     if (!validation.ok) return null;
 
     const userId = String(message.user?.id || message.userId || "unknown").slice(0, 128);
-    const map = this.doc.getMap(MAP_NAME);
+    const room = roomStateFromDoc(this.doc);
+    const currentRevision = room.revision;
+    const requestedRevision = Number(message.baseRevision);
+    const declaredBase = message?.base;
+    const declaredBaseIsDraft = declaredBase !== undefined &&
+      declaredBase !== null &&
+      validateMemoDraftPayload(declaredBase).ok;
+    const revisionMatches = Number.isFinite(requestedRevision) &&
+      requestedRevision === currentRevision;
+    // A declared base is trusted as the ancestor of the sender's edit. An
+    // explicit `null` base means "the room was empty when I branched", which is
+    // only believable when the sender saw the current revision. Anything else
+    // (including legacy senders with no base at all) falls back to the room
+    // state, which can only add fields the room never had.
+    const hasComparableBase = declaredBaseIsDraft ||
+      (declaredBase === null && revisionMatches);
+
     const updatedAt = nextServerTimestamp(
-      map.get(UPDATED_AT_KEY),
+      room.updatedAt,
       message.updatedAt,
     );
+    // Conflicts are ranked by the sender's intended write time (clamped), not by
+    // arrival order, so a save that was queued while a peer was offline cannot
+    // win a field simply by arriving later.
+    const requestedAt = Number(message.updatedAt);
+    const conflictAt = Number.isFinite(requestedAt)
+      ? Math.min(Math.max(0, requestedAt), Date.now() + MAX_CLOCK_SKEW_MS)
+      : updatedAt;
+    const merged = mergeDraftSnapshot({
+      // Without a base that matches the room revision the merge cannot know what
+      // the sender changed, so treat the room draft as the base: the sender then
+      // only contributes fields the room never touched.
+      base: hasComparableBase ? declaredBase : room.draft,
+      current: room.draft,
+      incoming: message.draft,
+      timestamps: room.stamps,
+      incomingTimestamps: message.timestamps,
+      incomingAt: conflictAt || updatedAt,
+    });
+
+    if (!merged.draft) return null;
+
+    const revision = currentRevision + 1;
+    const nextStamps = mergeStamps(
+      room.stamps,
+      merged.timestamps,
+    ) ?? {};
 
     this.doc.transact(() => {
-      map.set(DATA_KEY, message.draft);
-      map.set(UPDATED_AT_KEY, updatedAt);
-      map.set(UPDATED_BY_KEY, userId);
-      map.set(snapshotKey(updatedAt, userId), message.draft);
-      pruneSnapshots(map);
+      room.map.set(DATA_KEY, merged.draft);
+      room.map.set(UPDATED_AT_KEY, updatedAt);
+      room.map.set(UPDATED_BY_KEY, userId);
+      room.map.set(REVISION_KEY, revision);
+      room.map.set(STAMPS_KEY, nextStamps);
+      room.map.set(snapshotKey(updatedAt, userId), merged.draft);
+      pruneSnapshots(room.map);
     });
 
     await this.persistDoc();
-    this.broadcast(JSON.stringify({
-      type: "draft-update",
-      draft: message.draft,
+
+    const result = {
+      draft: merged.draft,
       updatedAt,
       updatedBy: userId,
+      revision,
+      saveId,
+      clientId: typeof message.clientId === "string"
+        ? message.clientId.slice(0, 128)
+        : "",
+      mergedKeys: merged.mergedKeys,
+      senderDraftMatched: jsonEqual(merged.draft, message.draft),
+    };
+
+    if (saveId) {
+      this.receipts.set(saveId, {
+        draft: merged.draft,
+        updatedAt,
+        updatedBy: userId,
+        revision,
+        clientId: result.clientId,
+        mergedKeys: merged.mergedKeys,
+        senderDraftMatched: result.senderDraftMatched,
+      });
+      await this.persistReceipts();
+    }
+
+    // Peers only ever receive the merged room state, never the raw payload, so
+    // a late or duplicated save can no longer roll a peer's work back.
+    this.broadcast(JSON.stringify({
+      type: "draft-update",
+      draft: merged.draft,
+      updatedAt,
+      updatedBy: userId,
+      revision,
+      saveId,
+      clientId: result.clientId,
+      mergedKeys: merged.mergedKeys,
     }), exceptSessionId);
-    return { draft: message.draft, updatedAt, updatedBy: userId };
+
+    return result;
+  }
+
+  send(session, payload) {
+    try {
+      session.socket.send(typeof payload === "string" ? payload : JSON.stringify(payload));
+      return true;
+    } catch {
+      this.closeSession(session.sessionId);
+      return false;
+    }
   }
 
   async fetch(request) {
@@ -185,7 +327,7 @@ export class MemoRoom {
           { status: 415, headers: CORS_HEADERS },
         );
       }
-      const rawMessage = await readLimitedText(request, MAX_HTTP_BODY_BYTES);
+      const rawMessage = await readLimitedText(request, MAX_REQUEST_BODY_BYTES);
       if (rawMessage === null) {
         return Response.json(
           { ok: false, error: "payload_too_large" },
@@ -200,6 +342,8 @@ export class MemoRoom {
         {
           ok: Boolean(saved),
           updatedAt: saved?.updatedAt,
+          revision: saved?.revision,
+          mergedDraft: saved?.draft,
           error: saved ? undefined : "draft_invalid",
         },
         { status: saved ? 200 : 400, headers: CORS_HEADERS },
@@ -214,8 +358,14 @@ export class MemoRoom {
     }
 
     if (request.headers.get("Upgrade") !== "websocket") {
+      const room = roomStateFromDoc(this.doc);
       return Response.json(
-        { ok: true, users: this.sessions.size, hasDraft: Boolean(latestDraftFromDoc(this.doc)) },
+        {
+          ok: true,
+          users: this.sessions.size,
+          hasDraft: Boolean(room.draft),
+          revision: room.revision,
+        },
         { headers: CORS_HEADERS },
       );
     }
@@ -230,20 +380,22 @@ export class MemoRoom {
   handleSession(socket) {
     socket.accept();
     const sessionId = crypto.randomUUID();
-    this.sessions.set(sessionId, { socket, user: null, initialSyncComplete: false });
-    const roomSnapshot = latestDraftFromDoc(this.doc);
+    const session = { socket, sessionId, user: null, initialSyncComplete: false };
+    this.sessions.set(sessionId, session);
+    const room = roomStateFromDoc(this.doc);
     socket.send(JSON.stringify({
       type: "room-snapshot",
-      draft: roomSnapshot?.draft ?? null,
-      updatedAt: roomSnapshot?.updatedAt ?? 0,
-      updatedBy: roomSnapshot?.updatedBy ?? "",
+      draft: room.draft,
+      updatedAt: room.updatedAt,
+      updatedBy: room.updatedBy,
+      revision: room.revision,
     }));
     socket.send(Y.encodeStateAsUpdate(this.doc));
 
     socket.addEventListener("message", (event) => {
       this.enqueue(async () => {
         if (typeof event.data === "string") {
-          if (byteLength(event.data) > MAX_HTTP_BODY_BYTES) {
+          if (byteLength(event.data) > MAX_REQUEST_BODY_BYTES) {
             socket.close(1009, "Message too large");
             this.closeSession(sessionId);
             return;
@@ -290,26 +442,23 @@ export class MemoRoom {
 
     if (message?.type === "draft-save" && session.initialSyncComplete) {
       const saved = await this.saveDraftSnapshot(message, sessionId);
+      const saveId = typeof message.saveId === "string"
+        ? message.saveId.slice(0, 256)
+        : "";
       if (saved) {
-        try {
-          session.socket.send(JSON.stringify({
-            type: "saved",
-            saveId: typeof message.saveId === "string" ? message.saveId.slice(0, 256) : "",
-            updatedAt: saved.updatedAt,
-          }));
-        } catch {
-          this.closeSession(sessionId);
-        }
+        this.send(session, {
+          type: "saved",
+          saveId,
+          updatedAt: saved.updatedAt,
+          revision: saved.revision,
+          replayed: Boolean(saved.replayed),
+          // Present only when the room landed somewhere other than the payload
+          // the sender sent, so the sender can rebase onto the merged result.
+          mergedDraft: saved.senderDraftMatched ? undefined : saved.draft,
+          mergedKeys: saved.mergedKeys,
+        });
       } else {
-        try {
-          session.socket.send(JSON.stringify({
-            type: "save-error",
-            saveId: typeof message.saveId === "string" ? message.saveId.slice(0, 256) : "",
-            error: "draft_invalid",
-          }));
-        } catch {
-          this.closeSession(sessionId);
-        }
+        this.send(session, { type: "save-error", saveId, error: "draft_invalid" });
       }
     }
   }
@@ -317,11 +466,7 @@ export class MemoRoom {
   broadcast(message, exceptSessionId = "") {
     for (const [sessionId, session] of this.sessions) {
       if (sessionId === exceptSessionId) continue;
-      try {
-        session.socket.send(message);
-      } catch {
-        this.closeSession(sessionId);
-      }
+      this.send(session, message);
     }
   }
 

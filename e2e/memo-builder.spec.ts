@@ -3057,6 +3057,85 @@ test("collaboration hydrates a joiner from the room owner before allowing writes
   await joinerContext.close();
 });
 
+const projectNameField = (page: Page) => page.locator('[data-field-id="projectName"] input');
+const initialsField = (page: Page) => page.locator('[data-field-id="initials"] input');
+
+test("edits to different fields never overwrite each other for collaborators", async ({ browser }) => {
+  const ownerContext = await browser.newContext();
+  const joinerContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const joiner = await joinerContext.newPage();
+
+  await owner.goto("http://localhost:3002");
+  await owner.getByRole("button", { name: "Start Collab" }).click();
+  const ownerDialog = owner.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await ownerDialog.getByLabel("Nama *").fill("Pemilik Room");
+  await ownerDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect(owner).toHaveURL(/room=/);
+  await expect(owner.getByText("Saved")).toBeVisible({ timeout: 20000 });
+
+  await joiner.goto(owner.url());
+  const joinerDialog = joiner.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await joinerDialog.getByLabel("Nama *").fill("Peserta Room");
+  await joinerDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect(joiner.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
+
+  // Both type at nearly the same moment, into different fields.
+  await projectNameField(owner).fill("Proyek Bersama");
+  await initialsField(joiner).fill("AXM");
+
+  // Each page has to end up with both edits, whichever order they landed in.
+  await expect(initialsField(owner)).toHaveValue("AXM", { timeout: 20000 });
+  await expect(projectNameField(owner)).toHaveValue("Proyek Bersama", { timeout: 20000 });
+  await expect(projectNameField(joiner)).toHaveValue("Proyek Bersama", { timeout: 20000 });
+  await expect(initialsField(joiner)).toHaveValue("AXM", { timeout: 20000 });
+
+  // The result has to stay put; a save must never bounce between the two pages.
+  await owner.waitForTimeout(4000);
+  await expect(projectNameField(owner)).toHaveValue("Proyek Bersama");
+  await expect(initialsField(owner)).toHaveValue("AXM");
+  await expect(projectNameField(joiner)).toHaveValue("Proyek Bersama");
+  await expect(initialsField(joiner)).toHaveValue("AXM");
+
+  await ownerContext.close();
+  await joinerContext.close();
+});
+
+test("a later edit to one field keeps the other collaborator's field intact", async ({ browser }) => {
+  const ownerContext = await browser.newContext();
+  const joinerContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const joiner = await joinerContext.newPage();
+
+  await owner.goto("http://localhost:3002");
+  await owner.getByRole("button", { name: "Start Collab" }).click();
+  const ownerDialog = owner.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await ownerDialog.getByLabel("Nama *").fill("Pemilik Room");
+  await ownerDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect(owner).toHaveURL(/room=/);
+  await expect(owner.getByText("Saved")).toBeVisible({ timeout: 20000 });
+
+  await joiner.goto(owner.url());
+  const joinerDialog = joiner.getByRole("dialog", { name: "Isi nama kolaborator" });
+  await joinerDialog.getByLabel("Nama *").fill("Peserta Room");
+  await joinerDialog.getByRole("button", { name: "Lanjut" }).click();
+  await expect(joiner.getByText("Users: 2")).toBeVisible({ timeout: 20000 });
+
+  await initialsField(owner).fill("AAA");
+  await expect(initialsField(joiner)).toHaveValue("AAA", { timeout: 20000 });
+
+  // The joiner now writes a different field without re-reading the first one.
+  await projectNameField(joiner).fill("Proyek Peserta");
+  await expect(projectNameField(owner)).toHaveValue("Proyek Peserta", { timeout: 20000 });
+
+  await owner.waitForTimeout(3000);
+  await expect(initialsField(owner)).toHaveValue("AAA");
+  await expect(initialsField(joiner)).toHaveValue("AAA");
+
+  await ownerContext.close();
+  await joinerContext.close();
+});
+
 test("review comments can be added to a field and focused", async ({ page }) => {
   await page.goto("http://localhost:3002");
   const longComment = `Perbaiki nama project ${"komentarpanjang".repeat(28)}`;

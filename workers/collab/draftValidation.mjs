@@ -1,4 +1,10 @@
 export const MAX_HTTP_BODY_BYTES = 1_000_000;
+/**
+ * Hard limit for one save request. A save carries the sender's draft plus the
+ * base draft and stamp table it was derived from, so the envelope is allowed to
+ * be larger than a single draft.
+ */
+export const MAX_REQUEST_BODY_BYTES = 4_000_000;
 export const MAX_WS_BINARY_BYTES = 256_000;
 export const MAX_SNAPSHOTS = 20;
 export const MAX_CLOCK_SKEW_MS = 30_000;
