@@ -346,6 +346,16 @@ function renderBlock(
           ) : null}
         </PreviewSection>
       );
+    case "custom-section":
+      return (
+        <PreviewSection
+          title={continuationSectionTitle(block.section.title.trim(), block.continuation)}
+          rule={sectionRule}
+          fieldId={`custom-content-${block.section.id}`}
+        >
+          <RichTextView html={richTextToHtml(block.section.content)} />
+        </PreviewSection>
+      );
     case "pilot-schedule":
       return (
         <PreviewSection title={scheduleTitle(draft)} rule={sectionRule} fieldId="schedule">
@@ -512,6 +522,7 @@ function isPreviewSectionBlock(block: PreviewBlock) {
   return (
     block.type === "introduction" ||
     block.type === "reference" ||
+    block.type === "custom-section" ||
     block.type === "pilot-schedule" ||
     block.type === "access-link" ||
     block.type === "attachments" ||

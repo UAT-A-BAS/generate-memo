@@ -22,6 +22,7 @@ const ARRAY_LIMITS = {
   signers: MAX_ARRAY_LENGTH,
   ccRecipients: MAX_ARRAY_LENGTH,
   appendixScenarios: MAX_ARRAY_LENGTH,
+  customSections: MAX_ARRAY_LENGTH,
   reviewComments: MAX_ARRAY_LENGTH,
   reviewAuditLog: MAX_ARRAY_LENGTH,
 };
@@ -163,6 +164,12 @@ function validateComment(row) {
     repliesValid;
 }
 
+function validateCustomSection(row) {
+  return validateStringFields(row, ["id", "title", "after"]) &&
+    typeof row.enabled === "boolean" &&
+    validateRichText(row.content);
+}
+
 export function validateMemoDraftPayload(draft) {
   if (!isRecord(draft) || !validateJsonValue(draft)) {
     return { ok: false, error: "Draft harus berupa objek JSON yang valid." };
@@ -213,6 +220,10 @@ export function validateMemoDraftPayload(draft) {
     ) &&
     validateObjectArray(draft.ccRecipients, ARRAY_LIMITS.ccRecipients, validateRecipient) &&
     validateObjectArray(draft.appendixScenarios, ARRAY_LIMITS.appendixScenarios, validateScenario) &&
+    // `customSections` is additive: a stale client that predates the field may
+    // still save, and its draft simply carries no custom sections.
+    (draft.customSections === undefined ||
+      validateObjectArray(draft.customSections, ARRAY_LIMITS.customSections, validateCustomSection)) &&
     validateObjectArray(draft.reviewComments, ARRAY_LIMITS.reviewComments, validateComment) &&
     validateObjectArray(draft.reviewAuditLog, ARRAY_LIMITS.reviewAuditLog, (row) =>
       validateStringFields(row, [

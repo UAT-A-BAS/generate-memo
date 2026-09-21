@@ -1200,6 +1200,7 @@ function isSectionBlock(block: PreviewBlock) {
   return (
     block.type === "introduction" ||
     block.type === "reference" ||
+    block.type === "custom-section" ||
     block.type === "pilot-schedule" ||
     block.type === "access-link" ||
     block.type === "attachments" ||
@@ -1307,6 +1308,17 @@ function blockChildren(
           ...items.map((item) => paragraph(`\u2022 ${item}`, { size: 22 })),
         ], sectionRule),
       ];
+    case "custom-section": {
+      const title = block.section.title.trim();
+      return [
+        ...leadingSectionSpacer(sectionRule),
+        previewSection(
+          block.continuation ? `${title}, Sambungan` : title,
+          richTextToDocxParagraphs(block.section.content, { size: 22 }),
+          sectionRule,
+        ),
+      ];
+    }
     case "pilot-schedule":
       return [
         ...leadingSectionSpacer(sectionRule),

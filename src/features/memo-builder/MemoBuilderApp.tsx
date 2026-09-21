@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Copy,
   Download,
   FileDown,
@@ -24,6 +25,8 @@ import {
 import type {
   ActivityRow,
   Bureau,
+  CustomSection,
+  CustomSectionAnchor,
   DevelopmentRow,
   MemoDraft,
   MemoMetadata,
@@ -80,6 +83,12 @@ import {
   type PowerAppsLaunchContext,
 } from "@/collaboration/powerAppsPortal";
 import { createId } from "@/utils/ids";
+import {
+  CUSTOM_SECTION_ANCHORS,
+  createCustomSection,
+  customSectionAnchorLabel,
+  reorderCustomSection,
+} from "@/utils/customSections";
 import {
   activityDateSelectionError,
   formatActivityDateRangeID,
@@ -260,6 +269,12 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
   draft.contacts.forEach((contact, index) => {
     if (!hasText(contact.name)) add(`contact-name-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Nama`);
     if (!hasText(contact.email)) add(`contact-email-${contact.id}`, `PIC yang Dapat Dihubungi ${index + 1}: Email`);
+  });
+
+  draft.customSections.forEach((section, index) => {
+    if (!section.enabled) return;
+    if (!hasText(section.title)) add(`custom-title-${section.id}`, `Section Tambahan ${index + 1}: Judul`);
+    if (!hasRichText(section.content)) add(`custom-content-${section.id}`, `Section Tambahan ${index + 1}: Isi`);
   });
 
   draft.signers.forEach((signer, index) => {
@@ -1392,6 +1407,185 @@ function ActivitiesPanel({
         </IconButton>
       </div>
     </Panel>
+  );
+}
+
+function CustomSectionPanel({
+  section,
+  memoType,
+  canMoveUp,
+  canMoveDown,
+  updateSection,
+  removeSection,
+  moveSection,
+}: {
+  section: CustomSection;
+  memoType: MemoType;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  updateSection: (patch: Partial<CustomSection>, recordHistory?: boolean) => void;
+  removeSection: () => void;
+  moveSection: (direction: -1 | 1) => void;
+}) {
+  const moveButtonClass =
+    "flex h-8 w-8 items-center justify-center rounded-md border border-[#c9d3df] text-[#1b4d78] transition hover:bg-[#eef4fa] disabled:cursor-not-allowed disabled:opacity-40";
+
+  return (
+    <Panel className="border-dashed border-[#9fb6cd] bg-[#f8fbfe]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <SectionTitle title={section.title.trim() || "Section Tambahan"} />
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => moveSection(-1)}
+            disabled={!canMoveUp}
+            className={moveButtonClass}
+            aria-label="Pindah section ke atas"
+            title="Pindah ke atas"
+          >
+            <ChevronUp size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => moveSection(1)}
+            disabled={!canMoveDown}
+            className={moveButtonClass}
+            aria-label="Pindah section ke bawah"
+            title="Pindah ke bawah"
+          >
+            <ChevronDown size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={removeSection}
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+            aria-label="Hapus section tambahan"
+            title="Hapus section"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3">
+        <FieldLabel label="Judul Section" fieldId={`custom-title-${section.id}`} required>
+          <input
+            value={section.title}
+            placeholder="Contoh: Ketentuan Pelaksanaan"
+            onChange={(event) => updateSection({ title: event.target.value })}
+            className="h-10 rounded-md border border-slate-400 px-3 text-[15px] font-medium outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </FieldLabel>
+        <FieldLabel label="Posisi Section" fieldId={`custom-position-${section.id}`}>
+          <select
+            value={section.after}
+            onChange={(event) =>
+              updateSection(
+                { after: event.target.value as CustomSectionAnchor },
+                true,
+              )
+            }
+            className="h-10 rounded-md border border-slate-400 bg-white px-3 text-[15px] font-medium text-slate-950 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          >
+            {CUSTOM_SECTION_ANCHORS.map((anchor) => (
+              <option key={anchor} value={anchor}>
+                {customSectionAnchorLabel(anchor, memoType)}
+              </option>
+            ))}
+          </select>
+        </FieldLabel>
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={section.enabled}
+            onChange={(event) => updateSection({ enabled: event.target.checked }, true)}
+            className="h-4 w-4 rounded border-slate-400 text-slate-900 focus:ring-slate-900"
+          />
+          Tampilkan Section
+        </label>
+        <FieldLabel label="Isi Section" fieldId={`custom-content-${section.id}`} required asGroup>
+          <RichTextEditor
+            value={section.content}
+            minHeight={96}
+            onChange={(content) => updateSection({ content })}
+          />
+        </FieldLabel>
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * Renders every custom section that is anchored to one boundary between the
+ * built-in sections, plus the button that adds a new one at that boundary.
+ */
+function CustomSectionSlot({
+  anchor,
+  draft,
+  updateDraft,
+}: {
+  anchor: CustomSectionAnchor;
+  draft: MemoDraft;
+  updateDraft: DraftUpdater;
+}) {
+  const sections = draft.customSections.filter((section) => section.after === anchor);
+  const positionLabel = customSectionAnchorLabel(anchor, draft.metadata.memoType);
+
+  function updateSection(
+    id: string,
+    patch: Partial<CustomSection>,
+    recordHistory = false,
+  ) {
+    updateDraft((current) => ({
+      ...current,
+      customSections: current.customSections.map((section) =>
+        section.id === id ? { ...section, ...patch } : section,
+      ),
+    }), recordHistory);
+  }
+
+  return (
+    <div className="grid gap-4" data-custom-section-slot={anchor}>
+      {sections.map((section, index) => (
+        <CustomSectionPanel
+          key={section.id}
+          section={section}
+          memoType={draft.metadata.memoType}
+          canMoveUp={index > 0}
+          canMoveDown={index < sections.length - 1}
+          updateSection={(patch, recordHistory) => updateSection(section.id, patch, recordHistory)}
+          removeSection={() =>
+            updateDraft((current) => ({
+              ...current,
+              customSections: current.customSections.filter((item) => item.id !== section.id),
+            }), true)
+          }
+          moveSection={(direction) =>
+            updateDraft((current) => ({
+              ...current,
+              customSections: reorderCustomSection(current.customSections, section.id, direction),
+            }), true)
+          }
+        />
+      ))}
+      <button
+        type="button"
+        onClick={() =>
+          updateDraft((current) => ({
+            ...current,
+            customSections: [...current.customSections, createCustomSection({ after: anchor })],
+          }), true)
+        }
+        data-add-custom-section={anchor}
+        aria-label={`Tambah section ${positionLabel.toLowerCase()}`}
+        title={`Tambah section ${positionLabel.toLowerCase()}`}
+        className="flex h-9 items-center justify-center gap-2 rounded-md border border-dashed border-[#9fb6cd] bg-white/70 text-[12px] font-semibold text-[#1b4d78] transition hover:bg-[#eef4fa]"
+      >
+        <Plus size={14} />
+        Tambah Section
+      </button>
+    </div>
   );
 }
 
@@ -3838,9 +4032,15 @@ export function MemoBuilderApp() {
             updateMetadata={updateMetadata}
           />
 
+          <CustomSectionSlot anchor="introduction" draft={draft} updateDraft={updateDraft} />
+
           <ReferencePanel draft={draft} updateDraft={updateDraft} />
 
+          <CustomSectionSlot anchor="reference" draft={draft} updateDraft={updateDraft} />
+
           <DevelopmentPanel rows={draft.developmentRows} updateDraft={updateDraft} />
+
+          <CustomSectionSlot anchor="development" draft={draft} updateDraft={updateDraft} />
 
           <Panel>
             <SectionTitle title={scheduleTitle(draft.metadata.memoType)} />
@@ -3858,7 +4058,11 @@ export function MemoBuilderApp() {
             </div>
           </Panel>
 
+          <CustomSectionSlot anchor="pilot-schedule" draft={draft} updateDraft={updateDraft} />
+
           <ActivitiesPanel rows={draft.activities} updateDraft={updateDraft} />
+
+          <CustomSectionSlot anchor="activities" draft={draft} updateDraft={updateDraft} />
 
           <Panel>
             <SectionTitle title="Akses Link" />
@@ -3896,11 +4100,15 @@ export function MemoBuilderApp() {
             </div>
           </Panel>
 
+          <CustomSectionSlot anchor="access-link" draft={draft} updateDraft={updateDraft} />
+
           <AttachmentsPanel
             enabled={draft.attachmentsEnabled}
             attachments={draft.attachments}
             updateDraft={updateDraft}
           />
+
+          <CustomSectionSlot anchor="attachments" draft={draft} updateDraft={updateDraft} />
 
           <ContactsPanel draft={draft} updateDraft={updateDraft} />
 

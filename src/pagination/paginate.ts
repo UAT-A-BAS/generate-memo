@@ -1,5 +1,7 @@
 import type {
   ActivityRow,
+  CustomSection,
+  CustomSectionAnchor,
   DevelopmentRow,
   MemoDraft,
   Recipient,
@@ -15,6 +17,7 @@ import { formatActivityDateRangeID } from "@/utils/formatDateRangeID";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { richTextToPlainText } from "@/utils/richText";
+import { enabledCustomSectionsForAnchor } from "@/utils/customSections";
 import { alphaIndex, buildScenarioHierarchy, computeScenarioLabels, scenarioHeadingPath, singleRootIsInactive, type ScenarioHierarchyNode } from "@/utils/scenarioHierarchy";
 
 export type PreviewOrientation = "portrait" | "landscape";
@@ -36,6 +39,13 @@ export type PreviewBlock =
   | { id: string; type: "recipients"; estimatedHeight: number }
   | { id: string; type: "introduction"; estimatedHeight: number }
   | { id: string; type: "reference"; estimatedHeight: number }
+  | {
+      id: string;
+      type: "custom-section";
+      estimatedHeight: number;
+      section: CustomSection;
+      continuation: boolean;
+    }
   | { id: string; type: "development-row"; estimatedHeight: number; row: DevelopmentRow; index: number }
   | { id: string; type: "pilot-schedule"; estimatedHeight: number }
   | { id: string; type: "activity-row"; estimatedHeight: number; row: ActivityRow; index: number }
@@ -217,6 +227,12 @@ function ccBlockHeight(recipients: Recipient[]) {
   );
 }
 
+function customSectionHeight(section: CustomSection) {
+  // The title column is narrow, so a long title may wrap onto extra lines.
+  const titleLines = Math.max(1, Math.ceil(section.title.trim().length / 16));
+  return richBlockHeight(section.content, 68, 72) + Math.max(0, titleLines - 1) * 20;
+}
+
 function appendixRowContentHeight(row: ScenarioRow) {
   // Appendix cells are wider than the main-body columns and use a 1.08 line
   // multiple. Keep the estimate close to the rendered table so short sections
@@ -362,6 +378,21 @@ function splitDoc(doc: RichTextDoc, maxChars: number, visualCharsPerLine = 48) {
 }
 
 function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
+  if (block.type === "custom-section" && block.estimatedHeight > 540) {
+    const parts = splitDoc(block.section.content, 520, 60);
+
+    return parts.map((content, index) => {
+      const section = { ...block.section, content };
+      return {
+        ...block,
+        id: `${block.id}-part-${index + 1}`,
+        section,
+        continuation: index > 0,
+        estimatedHeight: customSectionHeight(section),
+      };
+    });
+  }
+
   if (block.type === "cc" && block.estimatedHeight > CC_BLOCK_PAGE_LIMIT) {
     const chunks: Recipient[][] = [];
     let current: Recipient[] = [];
@@ -448,6 +479,15 @@ export function sourceBlockId(id: string) {
 
 function mainBlocks(draft: MemoDraft): PreviewBlock[] {
   const attachmentItems = memoAttachmentItems(draft.attachments);
+  const customSections = draft.customSections ?? [];
+  const customBlocksFor = (anchor: CustomSectionAnchor): PreviewBlock[] =>
+    enabledCustomSectionsForAnchor(customSections, anchor).map((section) => ({
+      id: `custom-${section.id}`,
+      type: "custom-section" as const,
+      section,
+      continuation: false,
+      estimatedHeight: customSectionHeight(section),
+    }));
   const blocks: PreviewBlock[] = [
     {
       id: "memo-heading",
@@ -459,6 +499,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       type: "introduction",
       estimatedHeight: 88,
     },
+    ...customBlocksFor("introduction"),
     ...(draft.referenceEnabled
       ? [{
           id: "reference",
@@ -466,6 +507,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
           estimatedHeight: richBlockHeight(draft.reference, 68, 72),
         }]
       : []),
+    ...customBlocksFor("reference"),
     ...draft.developmentRows.map((row, index) => ({
       id: `development-${row.id}`,
       type: "development-row" as const,
@@ -478,7 +520,9 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
           richVisualBlockHeight(row.description, 0, 62),
         ),
     })),
+    ...customBlocksFor("development"),
     { id: "pilot-schedule", type: "pilot-schedule", estimatedHeight: 96 },
+    ...customBlocksFor("pilot-schedule"),
     ...draft.activities.map((row, index) => ({
       id: `activity-${row.id}`,
       type: "activity-row" as const,
@@ -488,9 +532,11 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
         (index === 0 ? 104 : 24) +
         richVisualBlockHeight(row.activity, 0, 44),
     })),
+    ...customBlocksFor("activities"),
     ...(draft.metadata.accessLinkEnabled
       ? [{ id: "access-link", type: "access-link" as const, estimatedHeight: 72 }]
       : []),
+    ...customBlocksFor("access-link"),
     ...(draft.attachmentsEnabled
       ? [{
           id: "attachments",
@@ -498,6 +544,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
           estimatedHeight: 58 + Math.max(1, attachmentItems.length) * 24,
         }]
       : []),
+    ...customBlocksFor("attachments"),
     {
       id: "contacts",
       type: "contacts",

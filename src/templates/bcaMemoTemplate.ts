@@ -1,6 +1,7 @@
 import type {
   ActivityRow,
   ContactRow,
+  CustomSection,
   DevelopmentRow,
   MemoDraft,
   MemoMetadata,
@@ -15,6 +16,7 @@ import type { RichTextDoc, RichTextMark, RichTextNode } from "@/types/richText";
 import { emptyRichText } from "@/types/richText";
 import { generatePerihal } from "@/utils/generatePerihal";
 import { createId } from "@/utils/ids";
+import { normalizeCustomSectionAnchor } from "@/utils/customSections";
 import {
   isValidDateValue,
   isValidInputDate,
@@ -144,6 +146,17 @@ function normalizeSigner(value: unknown, index: number): SignerRow {
   };
 }
 
+function normalizeCustomSection(value: unknown, index: number): CustomSection {
+  const row = isRecord(value) ? value : {};
+  return {
+    id: stableId(row.id, "custom-section", index),
+    title: stringValue(row.title),
+    content: normalizeRichText(row.content),
+    enabled: typeof row.enabled === "boolean" ? row.enabled : true,
+    after: normalizeCustomSectionAnchor(row.after),
+  };
+}
+
 export function createRecipient(seed: Partial<Recipient> = {}): Recipient {
   return {
     id: createId("recipient"),
@@ -253,6 +266,7 @@ export function createInitialMemoDraft(): MemoDraft {
     initialsBureau: "A",
     scenarioLetterResetPerDate: true,
     appendixScenarios: [createScenarioRow()],
+    customSections: [],
     reviewComments: [],
     reviewAuditLog: [],
     updatedAt: new Date().toISOString(),
@@ -575,6 +589,9 @@ export function normalizeMemoDraft(input: MemoDraftInput | null | undefined): Me
         ? source.scenarioLetterResetPerDate
         : base.scenarioLetterResetPerDate,
     appendixScenarios,
+    customSections: Array.isArray(source.customSections)
+      ? source.customSections.map(normalizeCustomSection)
+      : base.customSections,
     reviewComments: normalizeReviewComments(source.reviewComments),
     reviewAuditLog: normalizeReviewAuditLog(source.reviewAuditLog),
     updatedAt: stringValue(source.updatedAt, new Date().toISOString()),

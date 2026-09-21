@@ -37,6 +37,7 @@ export const MERGE_KEYS = [
   "initialsBureau",
   "scenarioLetterResetPerDate",
   "appendixScenarios",
+  "customSections",
   "reviewComments",
   "reviewAuditLog",
 ];
@@ -50,6 +51,7 @@ export const ID_ROW_KEYS = [
   "signers",
   "ccRecipients",
   "appendixScenarios",
+  "customSections",
   "reviewComments",
   "reviewAuditLog",
 ];

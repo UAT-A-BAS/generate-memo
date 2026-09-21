@@ -64,6 +64,28 @@ export type SignerRow = {
   title: string;
 };
 
+/**
+ * Named insertion points for custom sections. Every anchor sits between the
+ * Pengantar section and the PIC yang Dapat Dihubungi section, so a custom
+ * section can never be placed above the opening or below the contacts.
+ */
+export type CustomSectionAnchor =
+  | "introduction"
+  | "reference"
+  | "development"
+  | "pilot-schedule"
+  | "activities"
+  | "access-link"
+  | "attachments";
+
+export type CustomSection = {
+  id: string;
+  title: string;
+  content: RichTextDoc;
+  enabled: boolean;
+  after: CustomSectionAnchor;
+};
+
 export type ReviewCommentReply = {
   id: string;
   text: string;
@@ -142,6 +164,7 @@ export type MemoDraft = {
   initialsBureau: Bureau;
   scenarioLetterResetPerDate: boolean;
   appendixScenarios: ScenarioRow[];
+  customSections: CustomSection[];
   reviewComments: ReviewComment[];
   reviewAuditLog: ReviewAuditLogEntry[];
   updatedAt: string;
