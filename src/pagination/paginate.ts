@@ -459,7 +459,7 @@ function mainBlocks(draft: MemoDraft): PreviewBlock[] {
       type: "introduction",
       estimatedHeight: 88,
     },
-    ...(draft.metadata.memoType === "Nasional" && draft.referenceEnabled
+    ...(draft.referenceEnabled
       ? [{
           id: "reference",
           type: "reference" as const,

@@ -229,7 +229,7 @@ function validateMemoDraft(draft: MemoDraft): ValidationIssue[] {
     if (!hasText(recipient.position)) add(`recipient-${recipient.id}`, `Tembusan ${index + 1}: Jabatan / Unit`);
   });
 
-  if (draft.metadata.memoType === "Nasional" && draft.referenceEnabled && !hasRichText(draft.reference)) {
+  if (draft.referenceEnabled && !hasRichText(draft.reference)) {
     add("reference", "Daftar Referensi");
   }
 
@@ -1402,8 +1402,6 @@ function ReferencePanel({
   draft: MemoDraft;
   updateDraft: DraftUpdater;
 }) {
-  if (draft.metadata.memoType !== "Nasional") return null;
-
   return (
     <Panel>
       <SectionTitle title="Referensi" />

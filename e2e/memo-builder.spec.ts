@@ -5046,6 +5046,42 @@ test("Nasional reference editor creates a new bullet when Enter is pressed", asy
   expect(xml).toContain("• Referensi kedua");
 });
 
+test("Pilot memos keep the reference tab and render it in preview and DOCX", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    metadata: {
+      ...completeDraft().metadata,
+      memoType: "Pilot",
+    },
+    referenceEnabled: true,
+    reference: richText(""),
+  });
+
+  const field = page.locator('[data-field-id="reference"]');
+  await expect(field).toBeVisible();
+  const editor = field.locator(".ProseMirror");
+
+  const blockedDownload = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  expect(await blockedDownload).toBeNull();
+  await expect(page.locator('[data-validation-issue-id="reference"]')).toHaveText(
+    "- Daftar Referensi",
+  );
+
+  await editor.click();
+  await page.keyboard.type("Referensi Pilot");
+
+  await expect(page.locator('aside [data-preview-field-id="reference"]')).toContainText(
+    "Referensi Pilot",
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("Referensi Pilot");
+});
+
 test("editable multi-line fields auto-resize without oversized empty space", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
