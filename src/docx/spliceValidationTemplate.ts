@@ -182,11 +182,9 @@ function sectionBreakParagraph(sectPr: string) {
 
   const zeroHeightParagraph =
     '<w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/><w:rPr><w:sz w:val="1"/><w:szCs w:val="1"/></w:rPr>';
-  const normalizedSectPr = /<w:type\b/.test(sectPr)
-    ? sectPr.replace(/<w:type\b[^>]*\/>/, '<w:type w:val="continuous"/>')
-    : sectPr.replace(/(<w:pgSz\b)/, '<w:type w:val="continuous"/>$1');
-
-  return `<w:p><w:pPr>${zeroHeightParagraph}${normalizedSectPr}</w:pPr></w:p>`;
+  // These properties belong to the preceding section. Replacing nextPage with
+  // continuous changes where that section (including the appendix) starts.
+  return `<w:p><w:pPr>${zeroHeightParagraph}${sectPr}</w:pPr></w:p>`;
 }
 
 function prefixedTarget(target: string) {

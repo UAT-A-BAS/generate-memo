@@ -1,14 +1,20 @@
 import {
+  AlignmentType,
+  LevelFormat,
+  LevelSuffix,
   LineRuleType,
   Paragraph,
+  TabStopType,
   TextRun,
   UnderlineType,
   type IParagraphOptions,
+  type INumberingOptions,
 } from "docx";
 import type { RichTextDoc, RichTextMark, RichTextNode } from "@/types/richText";
 import { trimTrailingEmptyRichTextNodes } from "@/utils/richText";
 
 type RichTextDocxOptions = {
+  numberingContext?: RichTextNumbering;
   size?: number;
   bold?: boolean;
   spacingAfter?: number;
@@ -16,6 +22,14 @@ type RichTextDocxOptions = {
   line?: number;
   alignment?: IParagraphOptions["alignment"];
 };
+
+export type RichTextNumbering = {
+  config: INumberingOptions["config"][number][];
+};
+
+export function createRichTextNumbering(): RichTextNumbering {
+  return { config: [] };
+}
 
 const WORD_LINE_MULTIPLE_108 = 259;
 
@@ -57,18 +71,20 @@ function textRunsFromNode(node: RichTextNode, options: RichTextDocxOptions): Tex
 function paragraphFromNode(
   node: RichTextNode,
   options: RichTextDocxOptions,
-  prefix = "",
-  depth = 0,
+  numbering?: IParagraphOptions["numbering"],
+  listDepth?: number,
 ): Paragraph {
   const runs = textRunsFromNode(node, options);
 
   return new Paragraph({
     alignment: options.alignment,
-    indent: prefix
-      ? { left: (depth + 1) * 360, hanging: 240 }
-      : depth > 0
-        ? { left: (depth + 1) * 360 }
-        : undefined,
+    numbering,
+    tabStops: numbering && listDepth !== undefined
+      ? [{ type: TabStopType.NUM, position: (listDepth + 1) * 360 }]
+      : undefined,
+    indent: listDepth !== undefined
+      ? { left: (listDepth + 1) * 360, ...(numbering ? { hanging: 240 } : {}) }
+      : undefined,
     spacing: {
       before: options.spacingBefore ?? 0,
       after: options.spacingAfter ?? 0,
@@ -76,7 +92,6 @@ function paragraphFromNode(
       lineRule: LineRuleType.AUTO,
     },
     children: [
-      ...(prefix ? [new TextRun({ text: prefix, font: "Times New Roman", size: options.size ?? 22 })] : []),
       ...(runs.length
         ? runs
         : [new TextRun({ text: "", font: "Times New Roman", size: options.size ?? 22 })]),
@@ -89,10 +104,29 @@ function listNodeParagraphs(
   options: RichTextDocxOptions,
   depth = 0,
 ): Paragraph[] {
-  const start = Number(node.attrs?.start ?? 1);
+  if (!options.numberingContext) throw new Error("Rich text lists require a DOCX numbering context.");
+  const level = Math.min(depth, 8);
+  const rawStart = Number(node.attrs?.start ?? 1);
+  const start = Number.isInteger(rawStart) && rawStart > 0 ? rawStart : 1;
+  const reference = `rich-text-list-${options.numberingContext.config.length + 1}`;
+  const left = (level + 1) * 360;
+  options.numberingContext.config.push({
+    reference,
+    levels: [{
+      level,
+      start,
+      format: node.type === "orderedList" ? LevelFormat.DECIMAL : LevelFormat.BULLET,
+      text: node.type === "orderedList" ? `%${level + 1}.` : ["•", "◦", "▪"][level % 3],
+      alignment: AlignmentType.LEFT,
+      suffix: LevelSuffix.TAB,
+      style: {
+        run: { font: "Times New Roman", size: options.size ?? 22 },
+        paragraph: { indent: { left, hanging: 240 } },
+      },
+    }],
+  });
 
-  return (node.content ?? []).flatMap((item, itemIndex) => {
-    const prefix = node.type === "orderedList" ? `${start + itemIndex}. ` : "\u2022 ";
+  return (node.content ?? []).flatMap((item) => {
     const children = item.content ?? [];
     const paragraphs: Paragraph[] = [];
     let hasPrimaryParagraph = false;
@@ -104,13 +138,13 @@ function listNodeParagraphs(
       }
 
       paragraphs.push(
-        paragraphFromNode(child, options, hasPrimaryParagraph ? "" : prefix, depth),
+        paragraphFromNode(child, options, hasPrimaryParagraph ? undefined : { reference, level }, level),
       );
       hasPrimaryParagraph = true;
     }
 
     if (!hasPrimaryParagraph) {
-      paragraphs.unshift(paragraphFromNode(item, options, prefix, depth));
+      paragraphs.unshift(paragraphFromNode({ type: "paragraph", content: [] }, options, { reference, level }, level));
     }
 
     return paragraphs;

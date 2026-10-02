@@ -5,6 +5,7 @@ import { isTableSectionContinuation, paginateMemoDraft, sourceBlockId } from "@/
 import type { RichTextDoc } from "@/types/richText";
 import { formatActivityDateRangeID, formatDateRangeID } from "@/utils/formatDateRangeID";
 import { richTextToHtml, richTextToListItems, richTextToPlainText } from "@/utils/richText";
+import { referenceIntroduction } from "@/utils/reference";
 import { memoAttachmentItems } from "@/utils/attachments";
 import { formatRecipientAttention } from "@/utils/formatRecipient";
 import { consecutiveMergeState } from "@/utils/tableMerge";
@@ -336,8 +337,8 @@ function renderBlock(
       const items = referenceItems(draft);
       return (
         <PreviewSection title="Referensi" rule={sectionRule} fieldId="reference">
-          <p>Memorandum ini mengacu pada.</p>
-          {items.length ? (
+          <p>{referenceIntroduction(items)}</p>
+          {items.length > 1 ? (
             <ul className="mt-1 list-disc pl-5">
               {items.map((item, index) => (
                 <li key={`${item}-${index}`}>{item}</li>

@@ -71,6 +71,31 @@ function richListFrom(type: "bulletList" | "orderedList", start: number, items: 
   return doc;
 }
 
+async function numberingXmlFrom(download: Download) {
+  const path = await download.path();
+  if (!path) throw new Error("DOCX download has no path");
+  const zip = await JSZip.loadAsync(await readFile(path));
+  return zip.file("word/numbering.xml")!.async("string");
+}
+
+function docxParagraphWith(xml: string, text: string) {
+  return [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
+    .find((match) => match[0].includes(text))?.[0] ?? "";
+}
+
+function numberingLevelFor(xml: string, numbering: string, text: string) {
+  const paragraph = docxParagraphWith(xml, text);
+  const numId = paragraph.match(/<w:numId w:val="(\d+)"\/>/)?.[1];
+  const level = paragraph.match(/<w:ilvl w:val="(\d+)"\/>/)?.[1];
+  const concrete = [...numbering.matchAll(/<w:num\b[\s\S]*?<\/w:num>/g)]
+    .find((match) => match[0].startsWith(`<w:num w:numId="${numId}"`))?.[0] ?? "";
+  const abstractId = concrete.match(/<w:abstractNumId w:val="(\d+)"\/>/)?.[1];
+  const abstract = [...numbering.matchAll(/<w:abstractNum\b[\s\S]*?<\/w:abstractNum>/g)]
+    .find((match) => match[0].startsWith(`<w:abstractNum w:abstractNumId="${abstractId}"`))?.[0] ?? "";
+  return [...abstract.matchAll(/<w:lvl\b[\s\S]*?<\/w:lvl>/g)]
+    .find((match) => match[0].startsWith(`<w:lvl w:ilvl="${level}"`))?.[0] ?? "";
+}
+
 function richListWithTrailingEmpty(type: "bulletList" | "orderedList", items: string[]) {
   const doc = richList(type, items);
   return {
@@ -747,7 +772,7 @@ test("MOM scenario import replaces the completely empty appendix placeholder", a
   await expect(page.locator("[data-scenario-row]:not([open])")).toHaveCount(0);
   await expect(page.locator("[data-scenario-date-group]")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Tanggal 1 *" })).toContainText("1 Juli 2026");
-  await expect(page.getByRole("textbox", { name: "Bagian A" }).first()).toHaveValue("Fitur Alpha");
+  await expect(page.locator('[data-field-id^="scenario-section-"] textarea').first()).toHaveValue("Fitur Alpha");
   await expect(page.getByLabel("Nama Project")).toHaveValue("");
 });
 
@@ -766,7 +791,7 @@ test("MOM scenario import appends only appendix scenarios", async ({ page }) => 
   await expect(page.getByLabel("Nama Project")).toHaveValue(originalProject);
   await expect(page.getByLabel("Jabatan / Unit").first()).toHaveValue("Kepala Operasi Cabang Pluit");
   await expect(page.locator("[data-scenario-row]")).toHaveCount(originalRows + 3);
-  await expect(page.getByRole("textbox", { name: /Bagian [A-Z]+/ }).nth(1)).toHaveValue("Fitur Alpha");
+  await expect(page.locator('[data-field-id^="scenario-section-"] textarea').nth(1)).toHaveValue("Fitur Alpha");
   await expect(page.locator('[data-field-id^="scenario-pic-"] textarea').last()).toHaveValue("");
   await expect(page.getByRole("button", { name: /Tanggal \d+ \*/ }).last()).toContainText("8-9 Juli 2026");
   await expect(page.locator("[data-scenario-row]").last()).toContainText("Langkah Beta");
@@ -824,11 +849,15 @@ test("XLSX scenario import uses the same button and recognizes optional hierarch
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
-  const xml = await documentXmlFrom(await downloadPromise);
+  const download = await downloadPromise;
+  const xml = await documentXmlFrom(download);
   const plainXmlText = xml.replace(/<[^>]+>/g, "");
   expect(xml).toContain("<w:br");
-  expect(plainXmlText).toContain("• Input nomor CIN Organisasi");
-  expect(plainXmlText).toContain("1. Validasi pertama");
+  expect(plainXmlText).toContain("Input nomor CIN Organisasi");
+  expect(plainXmlText).toContain("Validasi pertama");
+  const numbering = await numberingXmlFrom(download);
+  expect(numberingLevelFor(xml, numbering, "Input nomor CIN Organisasi")).toContain('<w:numFmt w:val="bullet"/>');
+  expect(numberingLevelFor(xml, numbering, "Validasi pertama")).toContain('<w:numFmt w:val="decimal"/>');
 });
 
 test("XLSX scenario import recognizes a standalone merged date row", async ({ page }) => {
@@ -1135,7 +1164,8 @@ test("exports DOCX from current draft", async ({ page }) => {
   expect(attachmentParagraph).toContain("<w:tab/>");
   expect(xml).toMatch(/<w:t[^>]*>Nama PIC \u2013 pic@example\.com<\/w:t>/);
   expect(xml).toMatch(/<w:t[^>]*>Kepala KCU Pluit<\/w:t>/);
-  expect(xml).toContain('<w:type w:val="continuous"/>');
+  expect(xml).not.toContain('<w:type w:val="continuous"/>');
+  expect(xml).toContain('<w:type w:val="nextPage"/>');
   expect(xml).not.toContain('w:type="page"');
   expect(xml).toContain("<w:hyperlink");
   expect(rels).toContain('Target="https://bdswebg2-pilot.intra.bca.co.id:63144/#/auth/login"');
@@ -1329,10 +1359,12 @@ test("preserves bullet and numbered rich text in preview and DOCX", async ({ pag
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
-  const xml = await documentXmlFrom(await downloadPromise);
-  expect(xml).toContain("• ");
-  expect(xml).toContain("1. ");
-  expect(xml).toContain("2. ");
+  const download = await downloadPromise;
+  const xml = await documentXmlFrom(download);
+  const numbering = await numberingXmlFrom(download);
+  expect(numberingLevelFor(xml, numbering, "Bullet satu")).toContain('<w:numFmt w:val="bullet"/>');
+  expect(numberingLevelFor(xml, numbering, "Nomor satu")).toContain('<w:numFmt w:val="decimal"/>');
+  expect(docxParagraphWith(xml, "Nomor dua")).toContain("<w:numPr>");
 });
 
 test("preserves an ordered-list start value in preview and DOCX", async ({ page }) => {
@@ -1352,9 +1384,11 @@ test("preserves an ordered-list start value in preview and DOCX", async ({ page 
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
-  const xml = await documentXmlFrom(await downloadPromise);
-  expect(xml).toContain("4. ");
-  expect(xml).toContain("5. ");
+  const download = await downloadPromise;
+  const xml = await documentXmlFrom(download);
+  const numbering = await numberingXmlFrom(download);
+  expect(numberingLevelFor(xml, numbering, "Keempat")).toContain('<w:start w:val="4"/>');
+  expect(docxParagraphWith(xml, "Kelima")).toContain("<w:numPr>");
 });
 
 test("bold toolbar button toggles bold and paragraph toolbar button is removed", async ({ page }) => {
@@ -3259,12 +3293,13 @@ test("appendix preview omits the only section heading", async ({ page }) => {
   await expect(appendixTable).toContainText("1.");
 });
 
-test("appendix uses local numeric headings for one section and letters for multiple sections", async ({ page }) => {
+test("appendix preserves parent labels and resets letters per date", async ({ page }) => {
   const base = completeDraft();
   const scenario = base.appendixScenarios[0];
   await page.goto("http://localhost:3002");
   await importDraft(page, {
     ...base,
+    scenarioLetterResetPerDate: true,
     appendixScenarios: [
       {
         ...scenario,
@@ -3336,11 +3371,11 @@ test("appendix uses local numeric headings for one section and letters for multi
     .getByText(title, { exact: true })
     .locator("xpath=ancestor::tr[1]");
 
-  await expect(appendixTable.getByText("Bagian Tunggal", { exact: true })).toHaveCount(0);
-  await expect(headingRow("Subbagian Tunggal").locator("td").first()).toHaveText("1.");
-  await expect(headingRow("Sub-subbagian Tunggal").locator("td").first()).toHaveText("1.1.");
-  await expect(headingRow("Bagian Alpha").locator("td").first()).toHaveText("A.");
-  await expect(headingRow("Bagian Beta").locator("td").first()).toHaveText("B.");
+  await expect(appendixTable.getByText("Bagian Tunggal", { exact: true })).toHaveCount(1);
+  await expect(headingRow("Subbagian Tunggal").locator("td").first()).toHaveText("A.1");
+  await expect(headingRow("Sub-subbagian Tunggal").locator("td").first()).toHaveText("A.1.1");
+  await expect(headingRow("Bagian Alpha").locator("td").first()).toHaveText("A");
+  await expect(headingRow("Bagian Beta").locator("td").first()).toHaveText("B");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
@@ -3357,11 +3392,11 @@ test("appendix uses local numeric headings for one section and letters for multi
     );
   };
 
-  expect(appendixXml).not.toContain("Bagian Tunggal");
-  expect(docxRow("Subbagian Tunggal")).toContain(">1.</w:t>");
-  expect(docxRow("Sub-subbagian Tunggal")).toContain(">1.1.</w:t>");
-  expect(docxRow("Bagian Alpha")).toContain(">A.</w:t>");
-  expect(docxRow("Bagian Beta")).toContain(">B.</w:t>");
+  expect(docxRow("Bagian Tunggal")).toContain(">A</w:t>");
+  expect(docxRow("Subbagian Tunggal")).toContain(">A.1</w:t>");
+  expect(docxRow("Sub-subbagian Tunggal")).toContain(">A.1.1</w:t>");
+  expect(docxRow("Bagian Alpha")).toContain(">A</w:t>");
+  expect(docxRow("Bagian Beta")).toContain(">B</w:t>");
 });
 
 test("lampiran toggle shows attachment list in preview", async ({ page }) => {
@@ -3398,11 +3433,12 @@ test("appendix hierarchy adds date, section, and scenario in place", async ({ pa
     .filter({ has: page.getByRole("heading", { name: "Lampiran Skenario" }) })
     .first();
 
-  const sectionInputs = appendixPanel.getByRole("textbox", { name: /Bagian(?: \*)? [A-Z]+/ });
+  const sectionInputs = appendixPanel.locator('[data-field-id^="scenario-section-"] textarea');
   await expect(sectionInputs).toHaveCount(1);
   await appendixPanel.getByRole("button", { name: "Bagian", exact: true }).click();
   await expect(sectionInputs).toHaveCount(2);
-  await expect(appendixPanel.getByRole("textbox", { name: /Bagian \* [A-Z]+/ })).toHaveCount(2);
+  await expect(sectionInputs.nth(0)).toBeEnabled();
+  await expect(sectionInputs.nth(1)).toBeEnabled();
 
   await expect(appendixPanel.getByRole("button", { name: "Skenario", exact: true })).toHaveCount(2);
   await appendixPanel.getByRole("button", { name: "Skenario", exact: true }).first().click();
@@ -4879,11 +4915,11 @@ test("one appendix section allows an empty title and exports without a heading r
   });
 
   const disabledSection = page.locator('[data-scenario-section-disabled="true"]');
-  const sectionTitle = page.getByRole("textbox", { name: "Bagian A" });
+  const sectionTitle = disabledSection.locator("textarea");
   const tooltip = disabledSection.getByRole("tooltip");
 
   await expect(sectionTitle).toBeDisabled();
-  await expect(page.getByRole("textbox", { name: "Bagian * A" })).toHaveCount(0);
+  await expect(page.locator('[data-field-id^="scenario-section-"] textarea:enabled')).toHaveCount(0);
   await expect(page.getByText("Tidak perlu diisi", { exact: true })).toBeVisible();
   await expect(tooltip).toHaveText("Tidak perlu diisi jika hanya 1 Bagian/Poin pada Lampiran Skenario Memo");
   await expect(tooltip).toHaveCSS("opacity", "0");
@@ -4912,10 +4948,10 @@ test("newly added mandatory appendix fields also block DOCX generation", async (
     .first();
   await appendixPanel.getByRole("button", { name: "Bagian", exact: true }).click();
 
-  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * A" })).toBeVisible();
-  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * B" })).toBeVisible();
-  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * A" })).toBeEnabled();
-  await expect(appendixPanel.getByRole("textbox", { name: "Bagian * B" })).toBeEnabled();
+  await expect(appendixPanel.locator('[data-field-id^="scenario-section-"] textarea').nth(0)).toBeVisible();
+  await expect(appendixPanel.locator('[data-field-id^="scenario-section-"] textarea').nth(1)).toBeVisible();
+  await expect(appendixPanel.locator('[data-field-id^="scenario-section-"] textarea').nth(0)).toBeEnabled();
+  await expect(appendixPanel.locator('[data-field-id^="scenario-section-"] textarea').nth(1)).toBeEnabled();
   await expect(appendixPanel.locator('[data-scenario-section-disabled="true"]')).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download", { timeout: 1200 }).catch(() => null);
@@ -5145,4 +5181,110 @@ test("cross-date dragging exposes a visible drop target before release", async (
   expect(await page.evaluate(() =>
     (window as typeof window & { __maxDropTargets?: number }).__maxDropTargets,
   )).toBe(1);
+});
+
+for (const memoType of ["Pilot", "Nasional"] as const) {
+  test(`regression: ${memoType} single reference is a sentence without a list`, async ({ page }) => {
+    await page.goto("http://localhost:3002");
+    await importDraft(page, {
+      ...completeDraft(),
+      metadata: { ...completeDraft().metadata, memoType },
+      referenceEnabled: true,
+      reference: richList("orderedList", ["Memo nomor 123"]),
+    });
+    const section = page.locator('aside [data-preview-field-id="reference"]');
+    await expect(section).toContainText("Memorandum ini mengacu pada Memo nomor 123.");
+    await expect(section.locator("ul, ol")).toHaveCount(0);
+    const pending = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+    const xml = await documentXmlFrom(await pending);
+    const paragraph = docxParagraphWith(xml, "Memo nomor 123");
+    expect(paragraph).toContain("Memorandum ini mengacu pada Memo nomor 123.");
+    expect(paragraph).not.toContain("•");
+    expect(paragraph).not.toContain("<w:numPr>");
+  });
+}
+
+test("regression: Excel escaped carriage returns keep line breaks and escaped literal tokens", async ({ page }) => {
+  const zip = await JSZip.loadAsync(await xlsxBreakAndSectionWorkbook());
+  const shared = await zip.file("xl/sharedStrings.xml")!.async("string");
+  zip.file("xl/sharedStrings.xml", shared.replace(
+    '<si><r><t>Langkah satu alias</t></r><r><br/></r><r><t>Langkah dua</t></r></si>',
+    '<si><r><t>Langkah satu_x00</t></r><r><t>0D_\nLangkah dua</t></r></si>',
+  ));
+  const sheet = await zip.file("xl/worksheets/sheet1.xml")!.async("string");
+  zip.file("xl/worksheets/sheet1.xml", sheet.replace(
+    '<c r="C3" t="s"><v>6</v></c>',
+    '<c r="C3" t="inlineStr"><is><t>Hasil satu_x000D_Hasil dua_x000D_\nKode literal _x005F_x000D_</t></is></c>',
+  ));
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+  await page.locator("[data-scenario-import-input]").setInputFiles({
+    name: "escaped-breaks.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await zip.generateAsync({ type: "nodebuffer" }),
+  });
+  await page.getByRole("dialog", { name: "Preview import skenario" })
+    .getByRole("button", { name: "Import 1 skenario" }).click();
+  const scenario = page.locator("aside .preview-rich-text").filter({ hasText: "Langkah satu" }).first();
+  await expect(scenario).not.toContainText("_x000D_");
+  await expect(scenario.locator("br")).toHaveCount(1);
+  const result = page.locator("aside .preview-rich-text").filter({ hasText: "Hasil satu" }).first();
+  await expect(result.locator("br")).toHaveCount(2);
+  await expect(result).toContainText("Kode literal _x000D_");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await pending);
+  expect(xml).not.toContain("Langkah satu_x000D_");
+  expect(xml).toContain("Kode literal _x000D_");
+  expect(docxParagraphWith(xml, "Langkah satu")).toContain("<w:br");
+});
+
+test("regression: appendix starts a new page and keeps its next-page landscape section after template splice", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, completeDraft());
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await pending);
+  expect(docxParagraphWith(xml, "Lampiran - Skenario")).toContain("<w:pageBreakBefore/>");
+  const landscape = [...xml.matchAll(/<w:sectPr[\s\S]*?<\/w:sectPr>/g)]
+    .find((match) => match[0].includes('w:orient="landscape"'))?.[0];
+  expect(landscape).toContain('<w:type w:val="nextPage"/>');
+});
+
+test("regression: table lists use Word numbering and independent lists restart at one", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [
+      { id: "list-a", item: richList("bulletList", ["Bullet asli", "Bullet panjang ".repeat(20)]), description: richList("orderedList", ["Daftar pertama satu", "Daftar pertama dua"]) },
+      { id: "list-b", item: richText("Item kedua"), description: richList("orderedList", ["Daftar kedua satu", "Daftar kedua dua"]) },
+    ],
+    appendixScenarios: [{ ...completeDraft().appendixScenarios[0], scenario: {
+      type: "doc", content: [{ type: "orderedList", content: [{ type: "listItem", content: [
+        { type: "paragraph", content: [{ type: "text", text: "Induk list" }] },
+        { type: "paragraph", content: [{ type: "text", text: "Lanjutan item yang sama" }] },
+        { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Anak list" }] }] }] },
+      ] }] }],
+    } }],
+  });
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const download = await pending;
+  const xml = await documentXmlFrom(download);
+  const numbering = await numberingXmlFrom(download);
+  for (const text of ["Bullet asli", "Daftar pertama satu", "Daftar pertama dua", "Daftar kedua satu", "Induk list", "Anak list"]) {
+    expect(docxParagraphWith(xml, text)).toContain("<w:numPr>");
+  }
+  expect(docxParagraphWith(xml, "Lanjutan item yang sama")).not.toContain("<w:numPr>");
+  const numberId = (text: string) => docxParagraphWith(xml, text).match(/<w:numId w:val="(\d+)"\/>/)?.[1];
+  expect(numberId("Daftar pertama satu")).toBe(numberId("Daftar pertama dua"));
+  expect(numberId("Daftar pertama satu")).not.toBe(numberId("Daftar kedua satu"));
+  for (const text of ["Daftar pertama satu", "Daftar kedua satu", "Induk list"]) {
+    expect(numberingLevelFor(xml, numbering, text)).toContain('<w:start w:val="1"/>');
+  }
+  expect(numberingLevelFor(xml, numbering, "Anak list")).toContain('<w:numFmt w:val="bullet"/>');
+  expect(numbering).toContain('<w:numFmt w:val="bullet"/>');
+  expect(numbering).toContain('<w:numFmt w:val="decimal"/>');
+  expect(numbering).toContain('<w:start w:val="1"/>');
+  expect(docxParagraphWith(xml, "Bullet asli")).not.toContain('>• ');
 });

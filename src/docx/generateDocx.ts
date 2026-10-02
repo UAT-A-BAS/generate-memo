@@ -62,7 +62,8 @@ import {
   type ConsecutiveMergeState,
 } from "@/utils/tableMerge";
 import { richTextToListItems, richTextToPlainText } from "@/utils/richText";
-import { richTextToDocxParagraphs } from "./richTextToDocx";
+import { createRichTextNumbering, richTextToDocxParagraphs, type RichTextNumbering } from "./richTextToDocx";
+import { referenceIntroduction } from "@/utils/reference";
 import { spliceValidationTemplate } from "./spliceValidationTemplate";
 import type { RichTextDoc } from "@/types/richText";
 
@@ -775,6 +776,7 @@ function ccRecipientParagraphs(recipients: Recipient[], totalRecipients = recipi
 
 function developmentTable(
   rows: Extract<PreviewBlock, { type: "development-row" }>[],
+  numbering: RichTextNumbering,
   numbered: boolean,
   itemTexts: string[],
   continuationTitle?: string,
@@ -845,6 +847,7 @@ function developmentTable(
               : [
                   mergedCell(
                     richTextToDocxParagraphs(block.row.item, {
+                      numberingContext: numbering,
                       size: 22,
                     }),
                     columnWidths[itemColumn],
@@ -857,6 +860,7 @@ function developmentTable(
               : [
                   mergedCell(
                     richTextToDocxParagraphs(block.row.description, {
+                      numberingContext: numbering,
                       size: 22,
                     }),
                     columnWidths[descriptionColumn],
@@ -889,6 +893,7 @@ function developmentTable(
 
 function activityTable(
   rows: Extract<PreviewBlock, { type: "activity-row" }>[],
+  numbering: RichTextNumbering,
   numbered: boolean,
   continuationTitle?: string,
 ) {
@@ -963,6 +968,7 @@ function activityTable(
               : [
                   mergedCell(
                     richTextToDocxParagraphs(block.row.activity, {
+                      numberingContext: numbering,
                       size: 22,
                     }),
                     numbered
@@ -1019,7 +1025,7 @@ function activityTable(
     : bodyTable(tableRows, columnWidths, BODY_COLUMN_INDENT, dataTableBorders);
 }
 
-function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) {
+function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[], numbering: RichTextNumbering) {
   const splitAwareMergeKey = (
     row: Extract<PreviewBlock, { type: "appendix-row" }>,
     value: string,
@@ -1121,6 +1127,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             : [
                 mergedCompactCell(
                   richTextToDocxParagraphs(scenarioDoc, {
+                    numberingContext: numbering,
                     size: 22,
                     spacingBefore: 0,
                     spacingAfter: 0,
@@ -1135,6 +1142,7 @@ function appendixTable(rows: Extract<PreviewBlock, { type: "appendix-row" }>[]) 
             : [
                 mergedCompactCell(
                   richTextToDocxParagraphs(resultDoc, {
+                    numberingContext: numbering,
                     size: 22,
                     spacingBefore: 0,
                     spacingAfter: 0,
@@ -1237,6 +1245,7 @@ function tableBottomSpacer() {
 function blockChildren(
   draft: MemoDraft,
   block: PreviewBlock,
+  numbering: RichTextNumbering,
   sectionRule: SectionRule = "content",
   options: {
     firstBlockOnContinuation?: boolean;
@@ -1304,8 +1313,8 @@ function blockChildren(
       return [
         ...leadingSectionSpacer(sectionRule),
         previewSection("Referensi", [
-          paragraph("Memorandum ini mengacu pada.", { size: 22 }),
-          ...items.map((item) => paragraph(`\u2022 ${item}`, { size: 22 })),
+          paragraph(referenceIntroduction(items), { size: 22 }),
+          ...(items.length > 1 ? items.map((item) => paragraph(`\u2022 ${item}`, { size: 22 })) : []),
         ], sectionRule),
       ];
     case "custom-section": {
@@ -1314,7 +1323,7 @@ function blockChildren(
         ...leadingSectionSpacer(sectionRule),
         previewSection(
           block.continuation ? `${title}, Sambungan` : title,
-          richTextToDocxParagraphs(block.section.content, { size: 22 }),
+          richTextToDocxParagraphs(block.section.content, { size: 22, numberingContext: numbering }),
           sectionRule,
         ),
       ];
@@ -1405,6 +1414,7 @@ function blockChildren(
 function pageChildren(
   draft: MemoDraft,
   page: PreviewPage,
+  numbering: RichTextNumbering,
   options: { pageBreakBefore?: boolean } = {},
 ): FileChild[] {
   const children: FileChild[] = [];
@@ -1457,7 +1467,7 @@ function pageChildren(
     }
   } else if (page.kind === "appendix") {
     children.push(new Paragraph({
-      pageBreakBefore: options.pageBreakBefore,
+      pageBreakBefore: true,
       spacing: wordSpacing({ before: 0, after: 180 }),
       children: [run(page.title, { bold: true, size: 20 })],
     }));
@@ -1477,6 +1487,7 @@ function pageChildren(
         : "Lingkup Pengembangan";
       const rowsTable = developmentTable(
         developmentRows,
+        numbering,
         draft.developmentRows.length > 1,
         draft.developmentRows.map((row) => richTextToPlainText(row.item)),
         continuation ? title : undefined,
@@ -1514,6 +1525,7 @@ function pageChildren(
         : "Aktivitas Cabang dan Unit Kerja";
       const rowsTable = activityTable(
         activityRows,
+        numbering,
         draft.activities.length > 1,
         continuation ? title : undefined,
       );
@@ -1542,13 +1554,13 @@ function pageChildren(
 
     if (block.type === "appendix-row") {
       const { rows, nextIndex } = consumeTableRows(page.blocks, index, "appendix-row");
-      children.push(appendixTable(rows as Extract<PreviewBlock, { type: "appendix-row" }>[]));
+      children.push(appendixTable(rows as Extract<PreviewBlock, { type: "appendix-row" }>[], numbering));
       index = nextIndex;
       continue;
     }
 
     children.push(
-      ...blockChildren(draft, block, isSectionBlock(block) ? nextSectionRule() : "content", {
+      ...blockChildren(draft, block, numbering, isSectionBlock(block) ? nextSectionRule() : "content", {
         firstBlockOnContinuation: Boolean(
           page.continuationTitle &&
           page.kind === "main" &&
@@ -1585,10 +1597,10 @@ function sectionProperties(orientation: PreviewOrientation) {
   };
 }
 
-function buildSection(draft: MemoDraft, pages: PreviewPage[]): ISectionOptions {
+function buildSection(draft: MemoDraft, pages: PreviewPage[], numbering: RichTextNumbering): ISectionOptions {
   const orientation = pages[0]?.orientation ?? "portrait";
   const children = pages.flatMap((page, index) =>
-    pageChildren(draft, page, { pageBreakBefore: index > 0 }),
+    pageChildren(draft, page, numbering, { pageBreakBefore: index > 0 }),
   );
 
   return {
@@ -1614,8 +1626,14 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
     );
   }
   const validationTemplateBuffer = await templateResponse.arrayBuffer();
+  const numbering = createRichTextNumbering();
+  const sections = [
+    buildSection(draft, mainPages, numbering),
+    ...(appendixPages.length ? [buildSection(draft, appendixPages, numbering)] : []),
+  ];
 
   const doc = new Document({
+    numbering,
     title: draft.metadata.perihal,
     creator: "Memo Generator",
     description: "Generated memo document",
@@ -1629,10 +1647,7 @@ export async function generateMemoDocxBlob(draft: MemoDraft) {
         },
       },
     },
-    sections: [
-      buildSection(draft, mainPages),
-      ...(appendixPages.length ? [buildSection(draft, appendixPages)] : []),
-    ],
+    sections,
   });
 
   const generatedDocx = await Packer.toBlob(doc);
