@@ -2819,6 +2819,10 @@ test("DOCX data tables use one non-overlapping one-point border source", async (
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
+  const tableBorders = [...xml.matchAll(/<w:(?:tcBorders|tblBorders)\b[\s\S]*?<\/w:(?:tcBorders|tblBorders)>/g)]
+    .map((match) => match[0])
+    .join("");
+  expect(tableBorders).not.toContain('w:themeColor="accent6"');
   for (const marker of [">Keterangan</w:t>", ">Waktu</w:t>"]) {
     expectStableTableLevelGrid(documentTableAround(xml, marker));
   }
