@@ -3483,6 +3483,26 @@ test("Lingkup wording uses only project name and document borders stay PDF-safe"
   );
 });
 
+test("draft JSON import drops Excel _x000D_ carriage-return escapes", async ({ page }) => {
+  await page.goto("http://localhost:3002");
+  const draft = completeDraft();
+  await importDraft(page, {
+    ...draft,
+    appendixScenarios: [{
+      ...draft.appendixScenarios[0],
+      scenario: richText("Input password TB_PASSWORD_WIFI_x000D_"),
+      expectedResult: richText("Tampil layar login_x000D_\nTampil tombol verifikasi"),
+    }],
+  });
+
+  await expect(page.locator("aside").getByText("_x000D_")).toHaveCount(0);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  expect(xml).toContain("TB_PASSWORD_WIFI");
+  expect(xml).not.toContain("_x000D_");
+});
+
 test("schedule keeps the complete date range together in preview and DOCX", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, {

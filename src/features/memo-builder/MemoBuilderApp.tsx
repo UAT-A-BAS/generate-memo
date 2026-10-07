@@ -56,6 +56,7 @@ import { paginateMemoDraft } from "@/pagination/paginate";
 import { useMemoDraftStore } from "@/store/useMemoDraftStore";
 import { generateMomJsonToMemoDraft } from "@/utils/generateMomJsonToMemoDraft";
 import { importMomScenarioRows } from "@/utils/importMomScenarios";
+import { parseJsonStrippingExcelCarriageReturns } from "@/utils/excelEscapes";
 import { importScenarioWorkbook, type ScenarioWorkbookPreview, type ScenarioWorkbookSheet } from "@/utils/importScenarioWorkbook";
 import {
   buildScenarioHierarchy,
@@ -1980,7 +1981,7 @@ function AppendixPanel({
         setScenarioImportError("");
         return;
       }
-      const importedRows = importMomScenarioRows(JSON.parse(await file.text()));
+      const importedRows = importMomScenarioRows(parseJsonStrippingExcelCarriageReturns(await file.text()));
       const boundRows = bindUndatedImportToExistingDate(rows, importedRows);
       setRows(
         scenarioRowsAreCompletelyEmpty(rows) ? boundRows : [...rows, ...boundRows],
@@ -3544,7 +3545,7 @@ export function MemoBuilderApp() {
     setIsImportingDraft(true);
     try {
       const text = await file.text();
-      const payload = JSON.parse(text) as Record<string, unknown>;
+      const payload = parseJsonStrippingExcelCarriageReturns(text) as Record<string, unknown>;
       const mapped =
         payload.appendixScenarios || payload.metadata ? payload : generateMomJsonToMemoDraft(payload);
       const normalized = normalizeMemoDraft(mapped as Partial<MemoDraft>);

@@ -4,6 +4,7 @@ import type { RichTextDoc, RichTextNode } from "@/types/richText";
 import { paragraphRichText } from "@/types/richText";
 import { createScenarioRow } from "@/templates/bcaMemoTemplate";
 import { datesFromRange, isValidInputDate } from "@/utils/formatDateRangeID";
+import { decodeExcelEscapes } from "@/utils/excelEscapes";
 import { createId } from "@/utils/ids";
 import { scenarioHierarchyDepth } from "@/utils/scenarioHierarchy";
 
@@ -149,12 +150,7 @@ function richTextFromCellText(value: string): RichTextDoc {
 function cellValue(text: string): CellValue {
   // Decode once: _x005F_x000D_ represents literal text "_x000D_".
   // Decode after joining string runs so an escape can span multiple <t> nodes.
-  const normalized = text
-    .replace(/_x(000d|000a|0009|005f)_/gi, (_, code: string) =>
-      String.fromCharCode(parseInt(code, 16)),
-    )
-    .replace(/\r\n?/g, "\n")
-    .trim();
+  const normalized = decodeExcelEscapes(text).trim();
   return {
     text: normalized,
     richText: richTextFromCellText(normalized),
