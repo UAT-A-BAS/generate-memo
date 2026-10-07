@@ -531,7 +531,7 @@ function parsePhysicalBorderTable(table: string) {
       for (const match of bordersXml.matchAll(/<w:(top|left|bottom|right)\b[^>]*\/>/g)) {
         const edge = match[1] as TestCellBorderEdge;
         expect(match[0]).toMatch(/w:val="single"/);
-        expect(match[0]).toMatch(/w:sz="8"/);
+        expect(match[0]).toMatch(/w:sz="4"/);
         expect(match[0]).toMatch(/w:space="0"/);
         expect(match[0]).toMatch(/w:color="000000"/);
         edges.add(edge);
@@ -2812,7 +2812,7 @@ test("letterhead values and every section below share one left column in preview
   }
 });
 
-test("DOCX data tables use one non-overlapping one-point border source", async ({ page }) => {
+test("DOCX data tables use one non-overlapping half-point border source", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 

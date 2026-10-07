@@ -309,7 +309,8 @@ const CELL_BORDER_EDGES = ["top", "left", "bottom", "right"] as const;
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-const GRID_BORDER_SIZE = "8";
+// Half-point lines render evenly in Word's PDF export; 1pt lines alternate thick/thin.
+const GRID_BORDER_SIZE = "4";
 
 type CellBorderEdge = (typeof CELL_BORDER_EDGES)[number];
 
