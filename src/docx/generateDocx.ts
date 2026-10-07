@@ -91,18 +91,14 @@ const noTableBorder = {
   insideHorizontal: hiddenBorder,
   insideVertical: hiddenBorder,
 };
-// Half-point grid lines stay one device pixel wide at common PDF zoom levels;
-// 1pt lines straddle pixel rows and render alternately thick and thin.
-const TABLE_GRID_BORDER_SIZE = 4;
-
 function createStableDocxTableBorders() {
   return {
-    top: createDocxBorder(TABLE_GRID_BORDER_SIZE),
-    bottom: createDocxBorder(TABLE_GRID_BORDER_SIZE),
-    left: createDocxBorder(TABLE_GRID_BORDER_SIZE),
-    right: createDocxBorder(TABLE_GRID_BORDER_SIZE),
-    insideHorizontal: createDocxBorder(TABLE_GRID_BORDER_SIZE),
-    insideVertical: createDocxBorder(TABLE_GRID_BORDER_SIZE),
+    top: createDocxBorder(8),
+    bottom: createDocxBorder(8),
+    left: createDocxBorder(8),
+    right: createDocxBorder(8),
+    insideHorizontal: createDocxBorder(8),
+    insideVertical: createDocxBorder(8),
   };
 }
 

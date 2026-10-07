@@ -309,8 +309,7 @@ const CELL_BORDER_EDGES = ["top", "left", "bottom", "right"] as const;
 const NIL_TABLE_BORDER_XML = TABLE_BORDER_EDGES
   .map((edge) => `<w:${edge} w:val="nil"/>`)
   .join("");
-// Half-point lines render evenly in Word's PDF export; 1pt lines alternate thick/thin.
-const GRID_BORDER_SIZE = "4";
+const GRID_BORDER_SIZE = "8";
 
 type CellBorderEdge = (typeof CELL_BORDER_EDGES)[number];
 
@@ -494,6 +493,115 @@ function removeWhiteCellShading(tableXml: string) {
   return tableXml.replace(/<w:shd\b[^>]*\/>/gi, (tag) =>
     getAttr(tag, "w:fill").toUpperCase() === "FFFFFF" ? "" : tag,
   );
+}
+
+const PARAGRAPH_PROPERTIES_AFTER_SPACING = [
+  "ind",
+  "contextualSpacing",
+  "mirrorIndents",
+  "suppressOverlap",
+  "jc",
+  "textDirection",
+  "textAlignment",
+  "textboxTightWrap",
+  "outlineLvl",
+  "divId",
+  "cnfStyle",
+  "rPr",
+  "sectPr",
+  "pPrChange",
+];
+
+function addParagraphSpacing(paragraphXml: string, side: "before" | "after", amount: number) {
+  if (amount <= 0) return paragraphXml;
+  const spacingXml = `<w:spacing w:${side}="${amount}"/>`;
+
+  if (/^<w:p\b[^>]*\/>$/.test(paragraphXml)) {
+    return paragraphXml.replace(/\/>$/, `><w:pPr>${spacingXml}</w:pPr></w:p>`);
+  }
+
+  const propertiesXml = paragraphXml.match(/<w:pPr\s*\/>|<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/)?.[0];
+  if (!propertiesXml) {
+    return paragraphXml.replace(
+      /^<w:p\b[^>]*>/,
+      (openTag) => `${openTag}<w:pPr>${spacingXml}</w:pPr>`,
+    );
+  }
+  if (/^<w:pPr\s*\/>$/.test(propertiesXml)) {
+    return paragraphXml.replace(propertiesXml, () => `<w:pPr>${spacingXml}</w:pPr>`);
+  }
+
+  // The paragraph mark's rPr can hold character spacing under the same element name.
+  const runPropertiesIndex = propertiesXml.search(/<w:rPr\b/);
+  const paragraphLevelXml = runPropertiesIndex >= 0
+    ? propertiesXml.slice(0, runPropertiesIndex)
+    : propertiesXml;
+  const existingSpacing = paragraphLevelXml.match(/<w:spacing\b[^>]*\/>/)?.[0];
+  let nextPropertiesXml: string;
+  if (existingSpacing) {
+    const current = Number.parseInt(getAttr(existingSpacing, `w:${side}`), 10) || 0;
+    // Explicit twips win over line-based or automatic spacing on the same side.
+    const explicitSpacing = existingSpacing.replace(
+      new RegExp(`\\sw:${side}(?:Lines|Autospacing)="[^"]*"`, "g"),
+      "",
+    );
+    nextPropertiesXml = paragraphLevelXml.replace(existingSpacing, () =>
+      setAttr(explicitSpacing, `w:${side}`, String(current + amount)),
+    ) + propertiesXml.slice(paragraphLevelXml.length);
+  } else {
+    const successor = new RegExp(
+      `<w:(?:${PARAGRAPH_PROPERTIES_AFTER_SPACING.join("|")})\\b`,
+    ).exec(propertiesXml);
+    nextPropertiesXml = successor
+      ? `${propertiesXml.slice(0, successor.index)}${spacingXml}${propertiesXml.slice(successor.index)}`
+      : propertiesXml.replace(/<\/w:pPr>$/, `${spacingXml}</w:pPr>`);
+  }
+
+  return paragraphXml.replace(propertiesXml, () => nextPropertiesXml);
+}
+
+/**
+ * Word paints a shaded cell's top and bottom margin bands after the cell
+ * borders. PDF viewers snap those bands to whole pixels, so the gray covers part
+ * of the adjacent 1pt line and lines beside shaded rows render thinner than the
+ * rest. Carrying that padding as paragraph spacing keeps the cell height while
+ * the whole fill is painted underneath the borders.
+ */
+function moveShadedCellPaddingIntoParagraphs(tableXml: string) {
+  return tableXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    const cellPrXml = cellXml.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/)?.[0] ?? "";
+    const fill = getAttr(cellPrXml.match(/<w:shd\b[^>]*\/>/)?.[0] ?? "", "w:fill").toUpperCase();
+    if (!fill || fill === "AUTO" || fill === "FFFFFF") return cellXml;
+
+    const marginsXml = cellPrXml.match(/<w:tcMar\b[\s\S]*?<\/w:tcMar>/)?.[0] ?? "";
+    const marginOf = (edge: "top" | "bottom") =>
+      Number.parseInt(
+        getAttr(marginsXml.match(new RegExp(`<w:${edge}\\b[^>]*\\/>`))?.[0] ?? "", "w:w"),
+        10,
+      ) || 0;
+    const top = marginOf("top");
+    const bottom = marginOf("bottom");
+    if (!top && !bottom) return cellXml;
+
+    const zeroedMarginsXml = marginsXml.replace(
+      /<w:(top|bottom)\b[^>]*\/>/g,
+      (_tag, edge: string) => `<w:${edge} w:type="dxa" w:w="0"/>`,
+    );
+    const paragraphs = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+    const paragraphCount = cellXml.match(paragraphs)?.length ?? 0;
+    if (!paragraphCount) return cellXml;
+
+    let paragraphIndex = 0;
+    return cellXml
+      .replace(cellPrXml, () => cellPrXml.replace(marginsXml, () => zeroedMarginsXml))
+      .replace(paragraphs, (paragraphXml) => {
+        const index = paragraphIndex++;
+        let result = paragraphXml;
+        if (index === 0) result = addParagraphSpacing(result, "before", top);
+        if (index === paragraphCount - 1) result = addParagraphSpacing(result, "after", bottom);
+        return result;
+      });
+  });
 }
 
 function normalizeCellWidths(tableXml: string, spec: DataTableSpec) {
@@ -691,16 +799,20 @@ function normalizeOwnedCellBorders(tableXml: string, spec: DataTableSpec) {
 }
 
 function stableSimpleDataTable(tableXml: string, spec: DataTableSpec) {
-  return removeWhiteCellShading(
-    normalizeOwnedCellBorders(normalizeDataTableGeometry(tableXml, spec), spec),
+  return moveShadedCellPaddingIntoParagraphs(
+    removeWhiteCellShading(
+      normalizeOwnedCellBorders(normalizeDataTableGeometry(tableXml, spec), spec),
+    ),
   );
 }
 
 function stableAppendixDataTable(tableXml: string) {
-  return removeWhiteCellShading(
-    normalizeOwnedCellBorders(
-      normalizeDataTableGeometry(tableXml, APPENDIX_DATA_TABLE_SPEC),
-      APPENDIX_DATA_TABLE_SPEC,
+  return moveShadedCellPaddingIntoParagraphs(
+    removeWhiteCellShading(
+      normalizeOwnedCellBorders(
+        normalizeDataTableGeometry(tableXml, APPENDIX_DATA_TABLE_SPEC),
+        APPENDIX_DATA_TABLE_SPEC,
+      ),
     ),
   );
 }

@@ -531,7 +531,7 @@ function parsePhysicalBorderTable(table: string) {
       for (const match of bordersXml.matchAll(/<w:(top|left|bottom|right)\b[^>]*\/>/g)) {
         const edge = match[1] as TestCellBorderEdge;
         expect(match[0]).toMatch(/w:val="single"/);
-        expect(match[0]).toMatch(/w:sz="4"/);
+        expect(match[0]).toMatch(/w:sz="8"/);
         expect(match[0]).toMatch(/w:space="0"/);
         expect(match[0]).toMatch(/w:color="000000"/);
         edges.add(edge);
@@ -606,6 +606,25 @@ function expectPhysicalBorderOwnership(table: string) {
   }
 }
 
+// Word paints shaded-cell margin bands after the borders, so shaded cells carry
+// their vertical padding as paragraph spacing and keep zero top/bottom margins.
+function expectShadedCellsPaintUnderBorders(table: string, padding: number) {
+  const shadedCells = (table.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? []).filter((cell) =>
+    /<w:shd\b[^>]*w:fill="D9D9D9"/.test(cell.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/)?.[0] ?? ""),
+  );
+  expect(shadedCells.length).toBeGreaterThan(0);
+  for (const cell of shadedCells) {
+    const margins = cell.match(/<w:tcMar\b[\s\S]*?<\/w:tcMar>/)?.[0] ?? "";
+    expect(margins).toContain('<w:top w:type="dxa" w:w="0"/>');
+    expect(margins).toContain('<w:bottom w:type="dxa" w:w="0"/>');
+    const paragraphs = cell.match(/<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
+    expect(paragraphs.length).toBeGreaterThan(0);
+    const spacing = (paragraph = "") => paragraph.match(/<w:spacing\b[^>]*\/>/)?.[0] ?? "";
+    expect(spacing(paragraphs[0])).toContain(`w:before="${padding}"`);
+    expect(spacing(paragraphs.at(-1))).toContain(`w:after="${padding}"`);
+  }
+}
+
 function expectStableTableLevelGrid(table: string) {
   const tableProperties = table.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
   const tableBorders = tableProperties.match(/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/)?.[0] ?? "";
@@ -618,6 +637,7 @@ function expectStableTableLevelGrid(table: string) {
   }
   expect(tableBorders).not.toMatch(/w:val="single"/);
   expect(table).not.toMatch(/<w:shd\b[^>]*w:fill="FFFFFF"[^>]*\/>/);
+  expectShadedCellsPaintUnderBorders(table, 45);
   expectPhysicalBorderOwnership(table);
 }
 
@@ -646,6 +666,7 @@ function expectAppendixTableLevelGrid(table: string) {
       if (shading) expect(shading).toContain('w:fill="D9D9D9"');
     });
   });
+  expectShadedCellsPaintUnderBorders(table, 30);
   expectPhysicalBorderOwnership(table);
 }
 
@@ -2812,7 +2833,7 @@ test("letterhead values and every section below share one left column in preview
   }
 });
 
-test("DOCX data tables use one non-overlapping half-point border source", async ({ page }) => {
+test("DOCX data tables use one non-overlapping one-point border source", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await importDraft(page, completeDraft());
 
