@@ -34,6 +34,9 @@ export type AppendixRowMeta = {
   isSplitContinuation: boolean;
 };
 
+/** Which pieces of one oversized table row a split block carries (first..last of total). */
+export type TableRowSplit<Row> = { source: Row; first: number; last: number; total: number };
+
 export type PreviewBlock =
   | { id: string; type: "memo-heading"; estimatedHeight: number }
   | { id: string; type: "recipients"; estimatedHeight: number }
@@ -46,9 +49,23 @@ export type PreviewBlock =
       section: CustomSection;
       continuation: boolean;
     }
-  | { id: string; type: "development-row"; estimatedHeight: number; row: DevelopmentRow; index: number }
+  | {
+      id: string;
+      type: "development-row";
+      estimatedHeight: number;
+      row: DevelopmentRow;
+      index: number;
+      split?: TableRowSplit<DevelopmentRow>;
+    }
   | { id: string; type: "pilot-schedule"; estimatedHeight: number }
-  | { id: string; type: "activity-row"; estimatedHeight: number; row: ActivityRow; index: number }
+  | {
+      id: string;
+      type: "activity-row";
+      estimatedHeight: number;
+      row: ActivityRow;
+      index: number;
+      split?: TableRowSplit<ActivityRow>;
+    }
   | { id: string; type: "access-link"; estimatedHeight: number }
   | { id: string; type: "attachments"; estimatedHeight: number }
   | { id: string; type: "contacts"; estimatedHeight: number }
@@ -429,6 +446,7 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
         ...block,
         id: `${block.id}-part-${part + 1}`,
         row: { ...block.row, item, description },
+        split: { source: block.row, first: part + 1, last: part + 1, total },
         estimatedHeight:
           96 +
           Math.max(
@@ -440,10 +458,12 @@ function expandLargeMainBlock(block: PreviewBlock): PreviewBlock[] {
   }
 
   if (block.type === "activity-row" && block.estimatedHeight > 540) {
-    return splitDoc(block.row.activity, 650, 44).map((activity, part) => ({
+    const activityParts = splitDoc(block.row.activity, 650, 44);
+    return activityParts.map((activity, part) => ({
       ...block,
       id: `${block.id}-part-${part + 1}`,
       row: { ...block.row, activity },
+      split: { source: block.row, first: part + 1, last: part + 1, total: activityParts.length },
       estimatedHeight: 96 + richVisualBlockHeight(activity, 0, 44),
     }));
   }
@@ -711,6 +731,74 @@ function appendixBlocks(draft: MemoDraft): PreviewBlock[] {
   });
 }
 
+function concatRichText(docs: RichTextDoc[]): RichTextDoc {
+  const content = docs.flatMap((doc) => doc.content);
+  return content.length ? { type: "doc", content } : paragraphRichText("");
+}
+
+function isBlankRichText(doc: RichTextDoc) {
+  return !richTextToPlainText(doc).trim();
+}
+
+/**
+ * Pieces of one oversized table row that land on the same page are joined
+ * back into a single row, so the table shows no separator line inside a
+ * cell that the author wrote as one row.
+ */
+function joinSplitTableRow(previous: PreviewBlock | undefined, block: PreviewBlock): PreviewBlock | null {
+  if (
+    !previous ||
+    previous.type !== block.type ||
+    (block.type !== "development-row" && block.type !== "activity-row") ||
+    !block.split ||
+    !("split" in previous) ||
+    !previous.split ||
+    sourceBlockId(previous.id) !== sourceBlockId(block.id) ||
+    previous.split.last + 1 !== block.split.first
+  ) {
+    return null;
+  }
+
+  const first = previous.split.first;
+  const last = block.split.last;
+  const whole = first === 1 && last === block.split.total;
+
+  if (block.type === "development-row" && previous.type === "development-row") {
+    const item = JSON.stringify(previous.row.item) === JSON.stringify(block.row.item)
+      ? previous.row.item
+      : concatRichText([previous.row.item, block.row.item]);
+    const description = concatRichText(
+      [previous.row.description, block.row.description].filter((doc) => !isBlankRichText(doc)),
+    );
+    const row = whole ? block.split.source : { ...previous.row, item, description };
+    return {
+      ...previous,
+      row,
+      split: { ...block.split, first, last },
+      estimatedHeight:
+        96 +
+        Math.max(
+          richVisualBlockHeight(row.item, 0, 30),
+          richVisualBlockHeight(row.description, 0, 62),
+        ),
+    };
+  }
+
+  if (block.type === "activity-row" && previous.type === "activity-row") {
+    const row = whole
+      ? block.split.source
+      : { ...previous.row, activity: concatRichText([previous.row.activity, block.row.activity]) };
+    return {
+      ...previous,
+      row,
+      split: { ...block.split, first, last },
+      estimatedHeight: 96 + richVisualBlockHeight(row.activity, 0, 44),
+    };
+  }
+
+  return null;
+}
+
 function packPages(
   blocks: PreviewBlock[],
   options: {
@@ -754,11 +842,13 @@ function packPages(
     const hasContent = current.blocks.length > 0;
     const closingBlock = options.kind === "main" && isClosingBlock(block);
     const currentHasClosing = current.blocks.some(isClosingBlock);
-    let sectionHeadingHeight = repeatedTableHeadingHeight(
-      block,
-      current.blocks[current.blocks.length - 1],
-    );
-    const wouldOverflow = used + sectionHeadingHeight + block.estimatedHeight > limit;
+    const previous = current.blocks[current.blocks.length - 1];
+    let sectionHeadingHeight = repeatedTableHeadingHeight(block, previous);
+    const joined = joinSplitTableRow(previous, block);
+    const addedHeight = joined && previous
+      ? joined.estimatedHeight - previous.estimatedHeight
+      : block.estimatedHeight;
+    const wouldOverflow = used + sectionHeadingHeight + addedHeight > limit;
     const closingGroupWouldOverflow = closingBlock && !currentHasClosing &&
       used + contiguousClosingHeight(blocks, blockIndex) > limit;
     const shouldStartDedicatedClosingPage = closingBlock && hasContent &&
@@ -781,8 +871,13 @@ function packPages(
       sectionHeadingHeight = repeatedTableHeadingHeight(block);
     }
 
-    current.blocks.push(block);
-    used += sectionHeadingHeight + block.estimatedHeight;
+    if (joined && !shouldBreakForOverflow) {
+      current.blocks[current.blocks.length - 1] = joined;
+      used += sectionHeadingHeight + addedHeight;
+    } else {
+      current.blocks.push(block);
+      used += sectionHeadingHeight + block.estimatedHeight;
+    }
   }
 
   pages.push(current);

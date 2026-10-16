@@ -2135,6 +2135,82 @@ test("does not duplicate development scope inside the same continued table", asy
   ).toHaveCount(1);
 });
 
+test("keeps a split development description in one Keterangan cell on the same page", async ({ page }) => {
+  const bullets = Array.from(
+    { length: 12 },
+    (_, index) => `Penyesuaian tampilan dan validasi data nasabah bagian ${index + 1} agar sesuai ketentuan`,
+  );
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    developmentRows: [{
+      id: "development-one-cell",
+      item: richText("Pengembangan Satu Sel"),
+      description: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Perubahan pada modul berikut:" }] },
+          { type: "paragraph", content: [] },
+          ...richList("bulletList", bullets).content,
+          { type: "paragraph", content: [] },
+        ],
+      },
+    }],
+  });
+
+  const firstDevelopmentTable = page
+    .locator("aside h3")
+    .filter({ hasText: "Lingkup Pengembangan" })
+    .first()
+    .locator("xpath=ancestor::section[1]")
+    .locator("table.memo-preview-table");
+  await expect(firstDevelopmentTable.locator("tbody tr")).toHaveCount(1);
+  const descriptionCell = firstDevelopmentTable.locator("tbody td").last();
+  await expect(descriptionCell).toContainText("Perubahan pada modul berikut:");
+  await expect(descriptionCell).toContainText("bagian 2 agar");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
+  const xml = await documentXmlFrom(await downloadPromise);
+  const firstCell = (xml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [])
+    .find((cell) => cell.includes("Perubahan pada modul berikut:"));
+  expect(firstCell).toContain("bagian 2 agar");
+});
+
+test("keeps a split activity in one Aktivitas cell on the same page", async ({ page }) => {
+  const steps = Array.from(
+    { length: 12 },
+    (_, index) => `Cabang memastikan langkah operasional nomor ${index + 1} berjalan sesuai prosedur`,
+  );
+  await page.goto("http://localhost:3002");
+  await importDraft(page, {
+    ...completeDraft(),
+    activities: [{
+      id: "activity-one-cell",
+      startDate: "2026-05-07",
+      endDate: "2026-05-21",
+      owner: "Tim APV",
+      activity: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Aktivitas cabang berikut:" }] },
+          ...richList("bulletList", steps).content,
+        ],
+      },
+    }],
+  });
+
+  // The last two pieces of the split row land on the continuation page together.
+  const continuedActivityTable = page
+    .locator("aside h3")
+    .filter({ hasText: "Aktivitas Cabang dan Unit Kerja, Sambungan" })
+    .first()
+    .locator("xpath=ancestor::section[1]")
+    .locator("table.memo-preview-table");
+  await expect(continuedActivityTable.locator("tbody tr")).toHaveCount(1);
+  await expect(continuedActivityTable.locator("tbody td").first()).toContainText("nomor 12 berjalan");
+});
+
 test("appendix rows with import-style bullet lists stay inside preview pages", async ({ page }) => {
   const base = completeDraft();
   const scenarioBase = base.appendixScenarios[0];
