@@ -3627,7 +3627,7 @@ test("schedule combines a shared year across different months in preview and DOC
     pilotSchedule: { startDate: "2026-07-23", endDate: "2026-08-04" },
   });
 
-  const expected = "23-31 Juli dan 1-4 Agustus 2026";
+  const expected = "23 Juli - 4 Agustus 2026";
   await expect(page.locator("[data-schedule-date]")).toHaveText(expected);
 
   const downloadPromise = page.waitForEvent("download");
@@ -3636,7 +3636,7 @@ test("schedule combines a shared year across different months in preview and DOC
   const docxExpected = expected.replaceAll("-", "\u2011").replaceAll(" ", "\u00A0");
   expect(xml).toContain(docxExpected);
   expect(xml).not.toContain(expected.replaceAll(" ", "\u00A0"));
-  expect(xml).not.toContain("23\u00A0Juli\u00A0dan\u00A04\u00A0Agustus\u00A02026");
+  expect(xml).not.toContain("23\u201131\u00A0Juli\u00A0dan\u00A01\u20114\u00A0Agustus\u00A02026");
 });
 
 test("all memo calendars share grouped-date rules in preview and DOCX", async ({ page }) => {
@@ -3742,14 +3742,19 @@ test("activity and appendix dates share individual grouping, punctuation, month,
       expected: "5-7, 15, 20, 28 Agustus, dan 4 September 2026",
     },
     {
+      id: "activity-date-cross-month-gap",
+      dates: ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01", "2026-11-03"],
+      expected: "26 Oktober - 1 dan 3 November 2026",
+    },
+    {
       id: "activity-date-cross-month",
       dates: ["2026-08-31", "2026-09-01"],
-      expected: "31 Agustus dan 1 September 2026",
+      expected: "31 Agustus - 1 September 2026",
     },
     {
       id: "activity-date-cross-year",
       dates: ["2026-12-31", "2027-01-01"],
-      expected: "31 Desember 2026 dan 1 Januari 2027",
+      expected: "31 Desember 2026 - 1 Januari 2027",
     },
   ];
   const scenarioBase = completeDraft().appendixScenarios[0];

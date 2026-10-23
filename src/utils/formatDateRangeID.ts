@@ -158,12 +158,6 @@ export function formatDateRangeID(startValue: string, endValue: string, selected
   return formatActivityDateRangeID(startValue, endValue, selectedDates);
 }
 
-type ActivityMonthGroup = {
-  year: number;
-  month: number;
-  segments: { start: string; end: string }[];
-};
-
 function activityDatesFromRange(startValue: string, endValue: string) {
   const start = parseDateValue(startValue);
   const end = parseDateValue(endValue);
@@ -195,40 +189,30 @@ function activityDateValues(
   return activityDatesFromRange(startValue, endValue);
 }
 
-function activityMonthGroups(values: readonly string[]): ActivityMonthGroup[] {
-  const grouped = new Map<string, string[]>();
+type DatePiece = {
+  date: Date;
+  segmentIndex: number;
+  joiner: "" | "-" | " - ";
+};
 
-  normalizeActivityDateSelection(values).forEach((value) => {
-    const date = parseDateValue(value);
-    if (!date) return;
-    const key = `${date.getFullYear()}-${date.getMonth()}`;
-    const dates = grouped.get(key) ?? [];
-    dates.push(value);
-    grouped.set(key, dates);
-  });
-
-  return Array.from(grouped.values()).map((dates) => {
-    const first = parseDateValue(dates[0]);
-    return {
-      year: first?.getFullYear() ?? 0,
-      month: first?.getMonth() ?? 0,
-      segments: compactDateSegments(dates),
-    };
-  });
+function monthKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth()}`;
 }
 
-function activityGroupDayText(group: ActivityMonthGroup, includeConjunction = true) {
-  const parts = group.segments.map((segment) => {
+function activityDatePieces(values: readonly string[]): DatePiece[] {
+  const pieces: DatePiece[] = [];
+
+  compactDateSegments(normalizeActivityDateSelection(values)).forEach((segment, segmentIndex) => {
     const start = parseDateValue(segment.start);
     const end = parseDateValue(segment.end);
-    if (!start || !end) return "";
-    if (segment.start === segment.end) return dayFormatter.format(start);
-    return `${dayFormatter.format(start)}-${dayFormatter.format(end)}`;
-  }).filter(Boolean);
-  if (parts.length <= 1) return parts[0] ?? "";
-  if (!includeConjunction) return parts.join(", ");
-  if (parts.length === 2) return `${parts[0]} dan ${parts[1]}`;
-  return `${parts.slice(0, -1).join(", ")}, dan ${parts.at(-1)}`;
+    if (!start || !end) return;
+    pieces.push({ date: start, segmentIndex, joiner: "" });
+    if (segment.start === segment.end) return;
+    // A run that crosses into another month names both months: "26 Oktober - 3 November".
+    pieces.push({ date: end, segmentIndex, joiner: monthKey(start) === monthKey(end) ? "-" : " - " });
+  });
+
+  return pieces;
 }
 
 export function formatActivityDateRangeID(
@@ -236,30 +220,35 @@ export function formatActivityDateRangeID(
   endValue: string,
   selectedDates?: readonly string[],
 ) {
-  const groups = activityMonthGroups(activityDateValues(startValue, endValue, selectedDates));
-  if (!groups.length) return "-";
+  const pieces = activityDatePieces(activityDateValues(startValue, endValue, selectedDates));
+  if (!pieces.length) return "-";
 
-  const lastGroupHasMultipleSegments = (groups.at(-1)?.segments.length ?? 0) > 1;
-  const groupTexts = groups.map((group, index) => {
-    const representative = new Date(0);
-    representative.setHours(0, 0, 0, 0);
-    representative.setFullYear(group.year, group.month, 1);
-    const nextGroup = groups[index + 1];
-    const showYear = !nextGroup || nextGroup.year !== group.year;
-    const isLastGroup = index === groups.length - 1;
-    const includeConjunction = groups.length === 1 || (isLastGroup && lastGroupHasMultipleSegments);
-    return `${activityGroupDayText(group, includeConjunction)} ${monthFormatter.format(representative)}${
-      showYear ? ` ${group.year}` : ""
-    }`;
-  });
+  const segmentCount = pieces.at(-1)!.segmentIndex + 1;
+  const lastMonth = monthKey(pieces.at(-1)!.date);
+  const lastMonthSegmentCount = new Set(
+    pieces.filter((piece) => monthKey(piece.date) === lastMonth).map((piece) => piece.segmentIndex),
+  ).size;
+  // "dan" always precedes the last run; the serial comma follows the list it closes:
+  // the final month's runs when it holds several, otherwise every run in the memo date.
+  const listSize = lastMonthSegmentCount > 1 ? lastMonthSegmentCount : segmentCount;
+  const finalConjunction = listSize >= 3 ? ", dan " : " dan ";
 
-  if (groupTexts.length === 1) return groupTexts[0];
-  if (lastGroupHasMultipleSegments) return groupTexts.join(", ");
-  if (groupTexts.length === 2) {
-    const partCount = groups.reduce((total, group) => total + group.segments.length, 0);
-    return `${groupTexts[0]}${partCount >= 3 ? ", dan " : " dan "}${groupTexts[1]}`;
-  }
-  return `${groupTexts.slice(0, -1).join(", ")}, dan ${groupTexts.at(-1)}`;
+  return pieces.map((piece, index) => {
+    const next = pieces[index + 1];
+    let text = "";
+    if (index > 0) {
+      if (piece.joiner) text += piece.joiner;
+      else text += piece.segmentIndex === segmentCount - 1 ? finalConjunction : ", ";
+    }
+    text += dayFormatter.format(piece.date);
+    if (!next || monthKey(next.date) !== monthKey(piece.date)) {
+      text += ` ${monthFormatter.format(piece.date)}`;
+    }
+    if (!next || next.date.getFullYear() !== piece.date.getFullYear()) {
+      text += ` ${piece.date.getFullYear()}`;
+    }
+    return text;
+  }).join("");
 }
 
 export function activityDateSelectionError(
