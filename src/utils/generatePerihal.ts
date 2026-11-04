@@ -5,9 +5,9 @@ export function generatePerihal(metadata: Pick<MemoMetadata, "memoType" | "proje
 
   switch (metadata.memoType) {
     case "Nasional":
-      return `Implementasi ${project}`;
+      return `Verifikasi Implementasi ${project}`;
     case "Pilot":
     default:
-      return `Pilot Implementasi ${project}`;
+      return `Verifikasi Pilot Implementasi ${project}`;
   }
 }

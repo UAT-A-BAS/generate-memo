@@ -1977,7 +1977,7 @@ test("labels split development and activity tables as continuations in preview a
   ).toHaveCount(1);
   await expect(
     page.locator("aside").getByText(
-      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
+      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Verifikasi Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
       { exact: true },
     ),
   ).toHaveCount(1);
@@ -2549,7 +2549,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
   await expect(schedulePage).toHaveCount(1);
   await expect(
     schedulePage.getByRole("heading", {
-      name: "Perihal: Pilot Implementasi BDS Web Gen 2 versi 4.3.0, Sambungan",
+      name: "Perihal: Verifikasi Pilot Implementasi BDS Web Gen 2 versi 4.3.0, Sambungan",
       exact: true,
     }),
   ).toBeVisible();
@@ -4540,7 +4540,7 @@ test("DOCX keeps one non-overlapping grid for Word PDF/XPS", async ({ page }) =>
   for (const marker of [
     ">Pengantar</w:t>",
     ">Jadwal Pilot Implementasi</w:t>",
-    ">Akses Link Pilot Implementasi",
+    ">Akses Link Verifikasi Pilot Implementasi",
     ">Lampiran</w:t>",
     ">PIC yang Dapat Dihubungi</w:t>",
   ]) {
