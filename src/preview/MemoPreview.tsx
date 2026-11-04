@@ -1,3 +1,4 @@
+import { perihalBodyText } from "@/utils/generatePerihal";
 import { Fragment } from "react";
 import type { MemoDraft, Recipient } from "@/types/memo";
 import type { PreviewBlock, PreviewPage } from "@/pagination/paginate";
@@ -328,7 +329,7 @@ function renderBlock(
       return (
         <PreviewSection title="Pengantar" rule={sectionRule} fieldId="projectName">
           <p>
-            Sehubungan dengan akan dilakukannya {draft.metadata.perihal}, berikut kami sampaikan
+            Sehubungan dengan akan dilakukannya {perihalBodyText(draft.metadata.perihal)}, berikut kami sampaikan
             informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.
           </p>
         </PreviewSection>
@@ -361,7 +362,7 @@ function renderBlock(
       return (
         <PreviewSection title={scheduleTitle(draft)} rule={sectionRule} fieldId="schedule">
           <p>
-            {draft.metadata.perihal} akan dilaksanakan pada tanggal{" "}
+            {perihalBodyText(draft.metadata.perihal)} akan dilaksanakan pada tanggal{" "}
             <strong data-schedule-date className="whitespace-nowrap">
               {formatDateRangeID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate, draft.pilotSchedule.dates)}
             </strong>.
@@ -371,8 +372,8 @@ function renderBlock(
     case "access-link":
       const accessLink = draft.metadata.accessLink.trim();
       return (
-        <PreviewSection title={`Akses Link ${draft.metadata.perihal}`} rule={sectionRule} fieldId="accessLink">
-          <p>{draft.metadata.perihal} dapat diakses melalui link berikut:</p>
+        <PreviewSection title={`Akses Link ${perihalBodyText(draft.metadata.perihal)}`} rule={sectionRule} fieldId="accessLink">
+          <p>{perihalBodyText(draft.metadata.perihal)} dapat diakses melalui link berikut:</p>
           {accessLink ? (
             <a
               href={/^[a-z][a-z\d+.-]*:/i.test(accessLink) ? accessLink : `https://${accessLink}`}
@@ -400,7 +401,7 @@ function renderBlock(
           rule={sectionRule}
           fieldId={draft.contacts[0] ? `contact-name-${draft.contacts[0].id}` : undefined}
         >
-          <p>PIC yang dapat dihubungi sehubungan dengan {draft.metadata.perihal} adalah:</p>
+          <p>PIC yang dapat dihubungi sehubungan dengan {perihalBodyText(draft.metadata.perihal)} adalah:</p>
           <div className="mt-1 grid gap-0.5">
             {draft.contacts.map((contact) => (
               <ContactLine key={contact.id} single={draft.contacts.length === 1}>
@@ -632,7 +633,7 @@ function renderGroupedBlocks(
           key={`activity-${index}`}
         >
           {!continuation ? (
-            <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {draft.metadata.perihal}:</p>
+            <p className="mb-2">Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama {perihalBodyText(draft.metadata.perihal)}:</p>
           ) : null}
           <MemoTable
             headers={numbered ? ["No.", "Aktivitas", "PIC", "Waktu"] : ["Aktivitas", "PIC", "Waktu"]}

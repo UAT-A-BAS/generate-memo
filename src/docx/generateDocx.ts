@@ -1,3 +1,4 @@
+import { perihalBodyText } from "@/utils/generatePerihal";
 import {
   AlignmentType,
   BorderStyle,
@@ -1305,7 +1306,7 @@ function blockChildren(
       return [
         ...leadingSectionSpacer(sectionRule),
         previewSection("Pengantar", [
-          paragraph(`Sehubungan dengan akan dilakukannya ${draft.metadata.perihal}, berikut kami sampaikan informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.`, { size: 22 }),
+          paragraph(`Sehubungan dengan akan dilakukannya ${perihalBodyText(draft.metadata.perihal)}, berikut kami sampaikan informasi dan tindak lanjut yang harus dilakukan oleh Cabang dan Unit Kerja terkait.`, { size: 22 }),
         ], sectionRule),
       ];
     case "reference":
@@ -1335,7 +1336,7 @@ function blockChildren(
           new Paragraph({
             spacing: wordSpacing(),
             children: [
-              run(`${draft.metadata.perihal} akan dilaksanakan pada tanggal `, { size: 22 }),
+              run(`${perihalBodyText(draft.metadata.perihal)} akan dilaksanakan pada tanggal `, { size: 22 }),
               run(formatDateRangeNonBreakingID(draft.pilotSchedule.startDate, draft.pilotSchedule.endDate, draft.pilotSchedule.dates), { bold: true, size: 22 }),
               run(".", { size: 22 }),
             ],
@@ -1345,9 +1346,9 @@ function blockChildren(
     case "access-link":
       return [
         ...leadingSectionSpacer(sectionRule),
-        previewSection(`Akses Link ${draft.metadata.perihal}`, [
+        previewSection(`Akses Link ${perihalBodyText(draft.metadata.perihal)}`, [
           hyperlinkAfterTextParagraph(
-            `${draft.metadata.perihal} dapat diakses melalui link berikut:`,
+            `${perihalBodyText(draft.metadata.perihal)} dapat diakses melalui link berikut:`,
             draft.metadata.accessLink,
             { size: 22 },
           ),
@@ -1378,7 +1379,7 @@ function blockChildren(
       return [
         ...leadingSectionSpacer(sectionRule),
         previewSection("PIC yang Dapat Dihubungi", [
-          paragraph(`PIC yang dapat dihubungi sehubungan dengan ${draft.metadata.perihal} adalah:`, { size: 22 }),
+          paragraph(`PIC yang dapat dihubungi sehubungan dengan ${perihalBodyText(draft.metadata.perihal)} adalah:`, { size: 22 }),
           ...draft.contacts.map((contact) =>
             contactParagraph(`${contact.name} – ${contact.email}`, {
               size: 22,
@@ -1537,7 +1538,7 @@ function pageChildren(
               previewSection(
                 title,
                 [
-                paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${draft.metadata.perihal}:`, {
+                paragraph(`Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama ${perihalBodyText(draft.metadata.perihal)}:`, {
                   size: 22,
                   spacingAfter: 120,
                 }),

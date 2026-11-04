@@ -704,7 +704,9 @@ test("updates generated perihal from metadata", async ({ page }) => {
   await page.goto("http://localhost:3002");
   await page.getByLabel("Nama Project").fill("Project Smoke Test");
 
-  await expect(page.locator("aside").getByText("Pilot Implementasi Project Smoke Test").first()).toBeVisible();
+  await expect(page.locator("aside").getByText("Verifikasi Pilot Implementasi Project Smoke Test", { exact: true }).first()).toBeVisible();
+  await expect(page.locator("aside")).toContainText("Sehubungan dengan akan dilakukannya Pilot Implementasi Project Smoke Test,");
+  await expect(page.locator("aside")).not.toContainText("dilakukannya Verifikasi");
 });
 
 test("uses Memo Generator as the browser title", async ({ page }) => {
@@ -1977,7 +1979,7 @@ test("labels split development and activity tables as continuations in preview a
   ).toHaveCount(1);
   await expect(
     page.locator("aside").getByText(
-      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Verifikasi Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
+      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
       { exact: true },
     ),
   ).toHaveCount(1);
@@ -4540,7 +4542,7 @@ test("DOCX keeps one non-overlapping grid for Word PDF/XPS", async ({ page }) =>
   for (const marker of [
     ">Pengantar</w:t>",
     ">Jadwal Pilot Implementasi</w:t>",
-    ">Akses Link Verifikasi Pilot Implementasi",
+    ">Akses Link Pilot Implementasi",
     ">Lampiran</w:t>",
     ">PIC yang Dapat Dihubungi</w:t>",
   ]) {

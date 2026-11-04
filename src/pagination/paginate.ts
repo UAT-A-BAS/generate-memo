@@ -1,3 +1,4 @@
+import { perihalBodyText } from "@/utils/generatePerihal";
 import type {
   ActivityRow,
   CustomSection,
@@ -898,8 +899,8 @@ export function paginateMemoDraft(draft: MemoDraft): PreviewPage[] {
   const appendixPages = packPages(appendixBlocks(draft), {
     kind: "appendix",
     orientation: "landscape",
-    title: `Lampiran - Skenario ${draft.metadata.perihal}`,
-    continuationTitle: `Lampiran - Skenario ${draft.metadata.perihal}, Sambungan`,
+    title: `Lampiran - Skenario ${perihalBodyText(draft.metadata.perihal)}`,
+    continuationTitle: `Lampiran - Skenario ${perihalBodyText(draft.metadata.perihal)}, Sambungan`,
   });
 
   const validationPage: PreviewPage = {
