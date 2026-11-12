@@ -8,7 +8,14 @@ export const BODY_COLUMN_INDENT = 1830;
 export const BODY_COLUMN_RIGHT_INDENT = 0;
 export const VISIBLE_TABLE_RIGHT_INSET = 80;
 const MAIN_BODY_TABLE_RIGHT_INSET = 86;
-export const BODY_TITLE_WIDTH = 1530;
+/**
+ * Width of the section-title cell that sits left of the body column. It is
+ * sized so the longest generated label, "Jadwal Verifikasi Pilot
+ * Implementasi", wraps onto two balanced lines instead of leaving a single
+ * orphaned word. The gap cell absorbs the difference so BODY_COLUMN_INDENT,
+ * and therefore every letterhead and body value, never moves.
+ */
+export const BODY_TITLE_WIDTH = 1650;
 export const BODY_COLUMN_GAP = BODY_COLUMN_INDENT - BODY_TITLE_WIDTH;
 export const CONTINUATION_RULE_INDENT = BODY_COLUMN_INDENT;
 export const WORD_LINE_MULTIPLE_108 = 259;

@@ -106,7 +106,8 @@ function PreviewSection({
       role={fieldId ? "button" : undefined}
       tabIndex={fieldId ? 0 : undefined}
     >
-      <div className="grid grid-cols-[102px_minmax(0,1fr)] gap-5 text-[14.67px] leading-[1.08]">
+      {/* 110px title + 12px gap = 122px, matching BODY_COLUMN_INDENT (1830 twips). */}
+      <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3 text-[14.67px] leading-[1.08]">
         <h3 className={`${titleRuleClass} text-[13.33px] leading-[1.08]`}>
           {typeof title === "string" ? <strong>{title}</strong> : title}
         </h3>
@@ -277,7 +278,7 @@ function renderBlock(
         : undefined;
       return (
         <div className="mt-[57px] text-[14.67px] leading-[1.15]">
-          <div className="grid grid-cols-[102px_20px_minmax(0,1fr)] gap-y-[5px]">
+          <div className="grid grid-cols-[110px_12px_minmax(0,1fr)] gap-y-[5px]">
             <span
               className={firstRecipientFieldId ? "preview-field-target" : undefined}
               data-preview-field-id={firstRecipientFieldId}
