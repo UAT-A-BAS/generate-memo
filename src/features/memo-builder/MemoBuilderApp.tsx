@@ -111,7 +111,7 @@ const bureaus: Bureau[] = [
 ];
 
 function scheduleTitle(type: MemoType) {
-  return type === "Pilot" ? "Jadwal Pilot Implementasi" : "Jadwal Implementasi";
+  return type === "Pilot" ? "Jadwal Verifikasi Pilot Implementasi" : "Jadwal Verifikasi Implementasi";
 }
 
 function alphaIndex(index: number) {

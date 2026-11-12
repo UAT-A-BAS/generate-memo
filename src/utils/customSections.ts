@@ -46,8 +46,8 @@ export function customSectionAnchorLabel(
 ) {
   if (anchor === "pilot-schedule") {
     return memoType === "Pilot"
-      ? "Setelah Jadwal Pilot Implementasi"
-      : "Setelah Jadwal Implementasi";
+      ? "Setelah Jadwal Verifikasi Pilot Implementasi"
+      : "Setelah Jadwal Verifikasi Implementasi";
   }
 
   return ANCHOR_LABELS[anchor] ?? ANCHOR_LABELS.introduction;

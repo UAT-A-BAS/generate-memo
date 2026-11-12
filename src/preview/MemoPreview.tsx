@@ -70,7 +70,7 @@ function RichTextView({ html }: { html: string }) {
 }
 
 function scheduleTitle(draft: MemoDraft) {
-  return draft.metadata.memoType === "Pilot" ? "Jadwal Pilot Implementasi" : "Jadwal Implementasi";
+  return draft.metadata.memoType === "Pilot" ? "Jadwal Verifikasi Pilot Implementasi" : "Jadwal Verifikasi Implementasi";
 }
 
 function initialsText(draft: MemoDraft) {

@@ -12,7 +12,11 @@ export function generatePerihal(metadata: Pick<MemoMetadata, "memoType" | "proje
   }
 }
 
-/** Perihal as used inside memo sentences and section titles, without the "Verifikasi" prefix. */
+/**
+ * Perihal as used inside memo sentences and section titles. The "Verifikasi"
+ * prefix is part of the memo wording everywhere, so this only normalizes
+ * whitespace; the Perihal field itself already carries the same prefix.
+ */
 export function perihalBodyText(perihal: string) {
-  return perihal.trim().replace(/^verifikasi\s+/i, "");
+  return perihal.trim().replace(/\s+/g, " ");
 }

@@ -705,8 +705,8 @@ test("updates generated perihal from metadata", async ({ page }) => {
   await page.getByLabel("Nama Project").fill("Project Smoke Test");
 
   await expect(page.locator("aside").getByText("Verifikasi Pilot Implementasi Project Smoke Test", { exact: true }).first()).toBeVisible();
-  await expect(page.locator("aside")).toContainText("Sehubungan dengan akan dilakukannya Pilot Implementasi Project Smoke Test,");
-  await expect(page.locator("aside")).not.toContainText("dilakukannya Verifikasi");
+  await expect(page.locator("aside")).toContainText("Sehubungan dengan akan dilakukannya Verifikasi Pilot Implementasi Project Smoke Test,");
+  await expect(page.locator("aside")).not.toContainText("dilakukannya Verifikasi Verifikasi");
 });
 
 test("uses Memo Generator as the browser title", async ({ page }) => {
@@ -1170,7 +1170,7 @@ test("exports DOCX from current draft", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("Memo Pilot Implementasi (BDS Web Gen 2 versi 4 3 0).docx");
+  expect(download.suggestedFilename()).toBe("Memo Verifikasi Pilot Implementasi (BDS Web Gen 2 versi 4 3 0).docx");
 
   const { xml, rels } = await docxPartsFrom(download);
   const headingTable = documentTables(xml)[0];
@@ -1979,7 +1979,7 @@ test("labels split development and activity tables as continuations in preview a
   ).toHaveCount(1);
   await expect(
     page.locator("aside").getByText(
-      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
+      "Berikut ini adalah aktivitas yang perlu dilakukan oleh Cabang dan Unit Kerja selama Verifikasi Pilot Implementasi BDS Web Gen 2 versi 4.3.0:",
       { exact: true },
     ),
   ).toHaveCount(1);
@@ -2546,7 +2546,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
   });
   await expect(contactPage).toHaveCount(1);
   const schedulePage = mainPages.filter({
-    has: page.getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true }),
+    has: page.getByRole("heading", { name: "Jadwal Verifikasi Pilot Implementasi", exact: true }),
   });
   await expect(schedulePage).toHaveCount(1);
   await expect(
@@ -2567,7 +2567,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
   await expect(continuationRule).toHaveCount(1);
   const continuationRuleBox = await continuationRule.boundingBox();
   const scheduleTitleBox = await schedulePage
-    .getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true })
+    .getByRole("heading", { name: "Jadwal Verifikasi Pilot Implementasi", exact: true })
     .boundingBox();
   expect(continuationRuleBox).toBeTruthy();
   expect(scheduleTitleBox).toBeTruthy();
@@ -2613,7 +2613,7 @@ test("closing blocks use one-line spacing and continuation content starts compac
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Buat dokumen Word cepat" }).click();
   const xml = await documentXmlFrom(await downloadPromise);
-  const scheduleIndex = xml.indexOf("Jadwal Pilot Implementasi");
+  const scheduleIndex = xml.indexOf("Jadwal Verifikasi Pilot Implementasi");
   const scheduleContinuationIndex = xml.lastIndexOf("Perihal:  </w:t>", scheduleIndex);
   const scheduleContext = xml.slice(scheduleContinuationIndex, scheduleIndex);
   expect(scheduleContinuationIndex).toBeGreaterThan(-1);
@@ -2896,7 +2896,7 @@ test("letterhead values and every section below share one left column in preview
   for (const marker of [
     ">Pengantar</w:t>",
     ">Lingkup Pengembangan</w:t>",
-    ">Jadwal Pilot Implementasi</w:t>",
+    ">Jadwal Verifikasi Pilot Implementasi</w:t>",
     ">Aktivitas Cabang dan Unit Kerja</w:t>",
   ]) {
     const wrapperGrid = gridOf(documentTableAround(xml, marker));
@@ -3226,7 +3226,7 @@ test("collaboration syncs metadata fields between pages", async ({ browser }) =>
   await expect(first.getByLabel("Nama Project")).toHaveValue("Collab Nama Project", {
     timeout: 10000,
   });
-  await expect(first.locator("aside").getByText("Pilot Implementasi Collab Nama Project").first()).toBeVisible();
+  await expect(first.locator("aside").getByText("Verifikasi Pilot Implementasi Collab Nama Project").first()).toBeVisible();
 
   await firstContext.close();
   await secondContext.close();
@@ -3611,7 +3611,7 @@ test("schedule keeps the complete date range together in preview and DOCX", asyn
 
   const scheduleSection = page
     .locator("aside section")
-    .filter({ has: page.getByRole("heading", { name: "Jadwal Pilot Implementasi", exact: true }) });
+    .filter({ has: page.getByRole("heading", { name: "Jadwal Verifikasi Pilot Implementasi", exact: true }) });
   const date = scheduleSection.locator("[data-schedule-date]");
   await expect(date).toHaveText("12-19 Juni 2026");
   await expect(date).toHaveClass(/whitespace-nowrap/);
@@ -4541,8 +4541,8 @@ test("DOCX keeps one non-overlapping grid for Word PDF/XPS", async ({ page }) =>
 
   for (const marker of [
     ">Pengantar</w:t>",
-    ">Jadwal Pilot Implementasi</w:t>",
-    ">Akses Link Pilot Implementasi",
+    ">Jadwal Verifikasi Pilot Implementasi</w:t>",
+    ">Akses Link Verifikasi Pilot Implementasi",
     ">Lampiran</w:t>",
     ">PIC yang Dapat Dihubungi</w:t>",
   ]) {

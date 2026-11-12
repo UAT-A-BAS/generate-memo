@@ -135,7 +135,7 @@ function wordSpacing(
 }
 
 function scheduleTitle(draft: MemoDraft) {
-  return draft.metadata.memoType === "Pilot" ? "Jadwal Pilot Implementasi" : "Jadwal Implementasi";
+  return draft.metadata.memoType === "Pilot" ? "Jadwal Verifikasi Pilot Implementasi" : "Jadwal Verifikasi Implementasi";
 }
 
 function initialsText(draft: MemoDraft) {
@@ -1664,8 +1664,8 @@ export function memoDocxFileName(draft: MemoDraft) {
 
   const prefix =
     draft.metadata.memoType === "Pilot"
-      ? "Memo Pilot Implementasi"
-      : "Memo Implementasi";
+      ? "Memo Verifikasi Pilot Implementasi"
+      : "Memo Verifikasi Implementasi";
 
   return `${prefix} (${safeProject || "Draft"}).docx`;
 }
